@@ -1,0 +1,12 @@
+# Normalise line endings in the repository (LF), whatever the contributor's OS.
+* text=auto eol=lf
+
+# Binary assets
+*.png binary
+*.ico binary
+*.gz binary
+
+# Generated / vendored files: don't diff or count them in language stats
+public/data/mystic-forge-recipes.js linguist-generated=true -diff
+public/lib/** linguist-vendored=true
+package-lock.json -diff

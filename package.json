@@ -1,0 +1,34 @@
+{
+  "name": "gw2-visualizer",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "GW2 Visualizer: interactive Guild Wars 2 crafting tree explorer (static web app, no build step).",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node tools/dev-server.mjs --open",
+    "serve": "node tools/dev-server.mjs",
+    "check": "node tools/check.mjs && node tools/vendor-libs.mjs --check",
+    "lint": "eslint .",
+    "test": "node --test tests/",
+    "verify": "npm run check && npm run lint && npm run format:check && npm test",
+    "build": "node tools/build-site.mjs",
+    "icons": "node tools/generate-icons.mjs",
+    "update-forge": "node tools/update-mystic-forge.mjs",
+    "format": "prettier --write \"**/*.{js,mjs,css}\"",
+    "format:check": "prettier --check \"**/*.{js,mjs,css}\"",
+    "snapshot": "node tools/build-data-snapshot.mjs",
+    "vendor": "node tools/vendor-libs.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "cytoscape": "3.34.3",
+    "cytoscape-dagre": "4.0.1",
+    "eslint": "^10.0.0",
+    "globals": "^17.12.0",
+    "prettier": "3.9.9"
+  }
+}
