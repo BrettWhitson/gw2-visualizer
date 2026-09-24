@@ -1,0 +1,37 @@
+# HTTP headers for Netlify / Cloudflare Pages (GitHub Pages ignores this file; index.html carries a CSP <meta> instead).
+# Keep the Content-Security-Policy in sync with the <meta http-equiv="Content-Security-Policy"> in index.html.
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://render.guildwars2.com; connect-src 'self' https://api.guildwars2.com https://wiki.guildwars2.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin
+
+# Unhashed file names: HTML, the service worker and app modules must revalidate so releases show up promptly.
+/
+  Cache-Control: no-cache
+/index.html
+  Cache-Control: no-cache
+/sw.js
+  Cache-Control: no-cache
+/manifest.webmanifest
+  Cache-Control: no-cache
+/src/*
+  Cache-Control: public, max-age=0, must-revalidate
+/css/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Rarely changing assets.
+/lib/*
+  Cache-Control: public, max-age=604800
+/icons/*
+  Cache-Control: public, max-age=604800
+/data/*
+  Cache-Control: public, max-age=3600
+
+# Development-only files never need to be served.
+/tools/*
+  X-Robots-Tag: noindex
+/tests/*
+  X-Robots-Tag: noindex

@@ -1,0 +1,23 @@
+{
+  "name": "GW2 Visualizer (unofficial fansite)",
+  "short_name": "GW2 Visualizer",
+  "description": "Unofficial fansite. Search any Guild Wars 2 item and explore its full crafting tree — Mystic Forge recipes, trading post costs and a shopping list.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0d1017",
+  "theme_color": "#151a24",
+  "categories": ["games", "utilities"],
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    {
+      "src": "icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
