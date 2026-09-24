@@ -3,6 +3,14 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `public/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
+## 0.4.0 — 2026-09-24
+
+- Ready for the web: installable PWA with an offline shell, Content Security Policy, pinned GW2 API schema version.
+- Node-based tooling (dev server, checks, site build), ESLint, unit tests and GitHub Actions (CI, Pages deploy,
+  weekly Mystic Forge data refresh).
+- MIT license; ArenaNet Content Terms of Use notice and "unofficial fansite" labelling; wiki data attributed under
+  GFDL 1.3 and fetched with an identifying User-Agent and `maxlag`.
+
 ## 0.3.0 — 2026-09-23
 
 - Performance: O(n) tidy tree layout, cheaper hover and price updates.
