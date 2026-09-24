@@ -1,0 +1,62 @@
+# Publishes _site/ to GitHub Pages on every push to main and once a day, with a fresh game-data snapshot
+# (after the same checks as CI). Visitors download that one compressed file instead of each calling the GW2 API
+# ~150 times; this workflow is the only client that crawls the API for recipes and items.
+# One-time setup: repository Settings → Pages → Source: "GitHub Actions".
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 6 * * *" # daily, off the hour
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - name: Build the game-data snapshot
+        id: snapshot
+        run: npm run snapshot
+        continue-on-error: true
+      # If the GW2 API is down, keep serving yesterday's snapshot rather than none (visitors would fall back to
+      # the API themselves). Skipped quietly on the very first deploy, when nothing is published yet.
+      - name: Reuse the published snapshot
+        if: steps.snapshot.outcome == 'failure'
+        run: |
+          mkdir -p public/data/snapshot
+          base="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/snapshot"
+          curl -fsSL "$base/meta.json" -o public/data/snapshot/meta.json &&
+            curl -fsSL "$base/game-data.json.gz" -o public/data/snapshot/game-data.json.gz ||
+            rm -rf public/data/snapshot
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,40 @@
+# Re-reads Mystic Forge recipes from the GW2 wiki's query API every week and opens a pull request if anything changed.
+# Merge the PR to publish the new data (the Pages deploy runs on merge).
+# One-time setup: Settings → Actions → General → Workflow permissions → allow GitHub Actions to create pull requests.
+name: Refresh Mystic Forge data
+
+on:
+  schedule:
+    - cron: '17 6 * * 1' # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run update-forge
+        env:
+          # Contact details for the wiki's User-Agent etiquette: this repository's URL.
+          WIKI_CONTACT: ${{ github.server_url }}/${{ github.repository }}
+      - run: npm test
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/refresh-forge-data
+          commit-message: 'data: refresh Mystic Forge recipes from the GW2 wiki'
+          title: 'Refresh Mystic Forge recipes'
+          body: |
+            Automated weekly re-read of Mystic Forge recipes (`npm run update-forge`).
+            Tests passed against the new data. Review the diff size, then merge to deploy.
+          add-paths: public/data/mystic-forge-recipes.js
+          delete-branch: true
