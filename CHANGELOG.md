@@ -3,6 +3,14 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `public/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
+## 0.5.0 — 2026-09-25
+
+- Toolbar ribbon with node / level spacing sliders (replacing Compact / Cozy / Spacious), label fade by zoom, and
+  Customize presets.
+- Depth slider with − / +; smooth wheel and pinch zoom; animated flow stays on the selected node.
+- Toggle for Mystic Forge material promotions.
+- Renamed to **GW2 Visualizer**.
+
 ## 0.4.0 — 2026-09-24
 
 - Ready for the web: installable PWA with an offline shell, Content Security Policy, pinned GW2 API schema version.
