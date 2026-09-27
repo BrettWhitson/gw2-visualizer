@@ -1,0 +1,7 @@
+# Vendored, generated or built files keep their own formatting.
+public/lib/
+public/data/
+_site/
+node_modules/
+package-lock.json
+public/data/snapshot/

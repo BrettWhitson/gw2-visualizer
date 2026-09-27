@@ -3,6 +3,16 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `public/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
+## 0.7.0 — 2026-09-27
+
+- **Path** modes: Craft all, Cheapest (buy or craft, whichever costs less, recursively) and Fewest crafts.
+- Details → **Source** chips with hover cards: crafting disciplines and recipes, Mystic Forge, trading post prices,
+  and vendors and containers looked up on the Guild Wars 2 Wiki on demand (cached a week).
+- Edge customization: line style, arrow shape / end / size, corner radius, curvature, lineage colours, flow speed.
+- Spacing-aware radial tree layout; spacing sliders range from 0 to 6×.
+- Prettier formatting for all JavaScript and CSS.
+- Fixed: repeated "invalid endpoints" warnings during merged-view transitions.
+
 ## 0.6.0 — 2026-09-26
 
 - **Settings** dialog for app behaviour (prices, recipes, interaction, animation, game data, shortcuts), separate from
