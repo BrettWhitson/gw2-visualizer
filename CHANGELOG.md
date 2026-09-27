@@ -3,6 +3,15 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `public/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
+## 0.6.0 — 2026-09-26
+
+- **Settings** dialog for app behaviour (prices, recipes, interaction, animation, game data, shortcuts), separate from
+  **Customize** (how the graph looks).
+- Transitions run in one batched animation loop; surviving elements are reused between renders.
+- Faster startup: game data sources load in parallel and a fresh cache is used immediately.
+- Trading post prices refresh after 5 minutes; concurrent price requests share one fetch.
+- Recent items on the start screen and in the empty search box; double-click a ribbon control to reset it.
+
 ## 0.5.0 — 2026-09-25
 
 - Toolbar ribbon with node / level spacing sliders (replacing Compact / Cozy / Spacious), label fade by zoom, and
