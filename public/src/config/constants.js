@@ -5,7 +5,7 @@
 
 // ---------------------------------------------------------------- release
 /** Bump on every release: it versions the service-worker cache so users get the new build. */
-export const APP_VERSION = "0.7.0";
+export const APP_VERSION = "0.8.0";
 export const REPOSITORY_URL = ""; // set once the project is public: shown in About and used as the wiki contact
 
 /** ArenaNet's Content Terms of Use require fan sites to be labelled unofficial, including in the browser title bar. */

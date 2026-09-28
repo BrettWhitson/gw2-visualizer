@@ -3,6 +3,24 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `public/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
+## 0.8.0 — 2026-09-28
+
+- **Data snapshot:** the deploy workflow publishes a daily, gzipped snapshot of every recipe and item (~0.7 MB).
+  Visitors download that one file instead of each making ~150 GW2 API requests; returning visitors make no API calls
+  on startup. The API is only used directly when no snapshot is published.
+- **Direction now names the crafting flow** (raw materials → result): "left to right" puts the result on the right.
+  Saved settings are converted so existing layouts don't change.
+- Separate **Layout** and **Style** presets in the ribbon.
+- Collapse handles on the toolbar and side panel edges; the side panel is resizable (drag or arrow keys).
+- − / + fine-tuning on every slider, in the ribbon and in Customize (hold to repeat).
+- Keyboard navigation of the graph with screen-reader announcements; reduced-motion and high-contrast support.
+- New app icon and an SVG icon set for the interface.
+- Updated Cytoscape.js 3.34.3 and cytoscape-dagre 4.0.1 (bundles the maintained `@dagrejs/dagre`); both are now pinned
+  dev dependencies copied into `public/lib/` by `npm run vendor`.
+- Fixed: node spacing jumped at 0.75× in merged view; spacing is now linear across the slider.
+- Fixed: the edge curvature slider didn't appear when routing was changed from the ribbon.
+- Layout regression tests run the real layout code against headless Cytoscape.
+
 ## 0.7.0 — 2026-09-27
 
 - **Path** modes: Craft all, Cheapest (buy or craft, whichever costs less, recursively) and Fewest crafts.
