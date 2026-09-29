@@ -10,7 +10,7 @@ Current version: **0.9.0** · [Changelog](CHANGELOG.md) · [Next steps](#next-st
 
 ## Quick start
 
-Requires [Node.js](https://nodejs.org/) 20 or newer.
+Requires [Node.js](https://nodejs.org/) 22 or newer.
 
 ```bash
 npm install

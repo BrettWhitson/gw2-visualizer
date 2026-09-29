@@ -3,6 +3,11 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `public/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
+## Unreleased
+
+- About links to the GitHub repository.
+- Tests run on Node 22 (the minimum is now Node 22).
+
 ## 0.9.0 — 2026-09-29
 
 - **Forces** replace the node / level spacing sliders, like Obsidian's graph view: center, repel, link strength
