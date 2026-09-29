@@ -6,7 +6,7 @@ Search any Guild Wars 2 item and explore its full crafting tree as an interactiv
 trading post costs, the cheapest buy-or-craft path, where every ingredient comes from, and a shopping list. Runs
 entirely in the browser and installs as a PWA.
 
-Current version: **0.9.0** · [Changelog](CHANGELOG.md) · [Next steps](#next-steps) · [Roadmap](#roadmap) · [Considerations](#considerations)
+**Live: [gw2visualizer.com](https://gw2visualizer.com)** · Current version: **0.9.0** · [Changelog](CHANGELOG.md) · [Next steps](#next-steps) · [Roadmap](#roadmap) · [Considerations](#considerations)
 
 ## Quick start
 

@@ -172,9 +172,20 @@ input[type="number"] {
 .spacer {
   flex: 1;
 }
-button.icon {
+button.icon,
+a.icon {
   padding: 4px 10px;
   font-size: 15px;
+}
+/* A link styled as an icon button (the header's GitHub link). */
+a.icon {
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+}
+a.icon:hover {
+  border-color: var(--accent);
 }
 
 /* ---------- ribbon (toolbar) ----------
@@ -1607,6 +1618,10 @@ button.danger:hover:not(:disabled) {
   stroke-linejoin: round;
   vertical-align: -3px;
 }
+.ico.filled {
+  fill: currentColor;
+  stroke: none;
+}
 .edge-handle .ico {
   width: 12px;
   height: 12px;
@@ -1617,11 +1632,13 @@ button.danger:hover:not(:disabled) {
   height: 14px;
 }
 #zoomCtl .ico,
-button.icon .ico {
+button.icon .ico,
+a.icon .ico {
   width: 18px;
   height: 18px;
 }
 button.icon,
+a.icon,
 #zoomCtl button {
   display: inline-grid;
   place-items: center;

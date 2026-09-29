@@ -205,8 +205,13 @@ export class CraftingTreeApp {
 
   async start() {
     $("#appVersion").textContent = `v${APP_VERSION}`;
-    if (REPOSITORY_URL) $("#repositoryLink").href = REPOSITORY_URL;
-    else $("#repositoryLink").closest("li")?.remove();
+    if (REPOSITORY_URL) {
+      $("#repositoryLink").href = REPOSITORY_URL;
+      $("#headerRepoLink").href = REPOSITORY_URL;
+    } else {
+      $("#repositoryLink").closest("li")?.remove();
+      $("#headerRepoLink").remove();
+    }
     this.#bindGlobalControls();
     this.optionPanels.forEach((panel) => panel.render());
     this.toolbar.sync();
