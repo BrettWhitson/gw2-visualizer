@@ -3,6 +3,14 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `public/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
+## Unreleased
+
+- **Forces** replace the node / level spacing sliders, like Obsidian's graph view: center, repel, link strength
+  and link distance. Every layout runs the same deterministic simulation: layered layouts keep their levels
+  (link distance apart) and sibling order, radial layouts keep evenly spaced rings, and Force-directed moves freely.
+  Saved spacing settings are converted.
+- Fixed: in radial layouts the first rings bunched up in the middle while the outer rings were pushed far out.
+
 ## 0.8.0 — 2026-09-28
 
 - **Data snapshot:** the deploy workflow publishes a daily, gzipped snapshot of every recipe and item (~0.7 MB).

@@ -186,7 +186,7 @@ test("the old concentric engine becomes the radial direction", async () => {
   assert.equal(store.values.direction, "radial");
 });
 
-test("saved density presets become equivalent slider values", async () => {
+test("saved density and spacing settings become equivalent forces", async () => {
   installFakeLocalStorage({
     "gw2ct.settings.v2": JSON.stringify({
       density: "compact",
@@ -197,14 +197,17 @@ test("saved density presets become equivalent slider values", async () => {
   const { SettingsStore } =
     await import("../public/src/core/settings-store.js");
   const store = new SettingsStore();
-  assert.ok(!("density" in store.values) && !("spacingScale" in store.values));
+  for (const gone of [
+    "density",
+    "spacingScale",
+    "siblingGapScale",
+    "levelGapScale",
+  ])
+    assert.ok(!(gone in store.values), `${gone} removed`);
   assert.equal(store.values.nodeSizeScale, 0.7);
-  assert.equal(
-    store.values.siblingGapScale,
-    0.9,
-    "compact 0.45 × old spacing 2",
-  );
-  assert.equal(store.values.levelGapScale, 1.1);
+  // compact: node spacing 0.45 × 2 = 0.9 → repel 0.9 × 8; level spacing 0.55 × 2 = 1.1 → distance 1.1 × 120.
+  assert.equal(store.values.repelForce, 7);
+  assert.equal(store.values.linkDistance, 130);
 });
 
 test("settings schema is self-consistent", () => {

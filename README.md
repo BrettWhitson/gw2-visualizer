@@ -36,14 +36,20 @@ The app is plain ES modules, which browsers only load over http, so opening `pub
 | Tab to the graph, then arrows | ↑ product, ↓ first ingredient, ← → siblings, Enter expand / collapse, Home result |
 
 **Toolbar (ribbon).** View (tree / merged, depth), Recipes (Path, forge promotions), Presets (a *Layout* preset and a
-*Style* preset, independent of each other), Layout (flow direction, engine), Spacing (between nodes / levels), Style
+*Style* preset, independent of each other), Layout (flow direction, engine), Forces (repel, link distance), Style
 (colour mode, edge routing) and Labels (names / quantities / cost, fade when zoomed out). Every slider has − / + for
 fine steps (hold to repeat) and any row resets on double-click. The toolbar and side panel collapse from handles on
 their own edges; drag the side panel's edge to resize it.
 
 **Direction** describes the crafting flow, raw materials → result: *left → right* puts the raw materials on the left
 and the finished item on the right; *upward* (the default) puts the result on top; *radial* puts it in the centre
-with each level on a ring around it. Spacing runs from 0 (touching) to 6× and changes by the same amount per step.
+with each level on a ring around it.
+
+**Forces** work like Obsidian's graph view: *center* pulls everything toward the middle, *repel* pushes nodes apart
+(the main spacing control), *link strength* pulls ingredients toward what they're used for, and *link distance* is
+the gap between levels or rings. Every layout runs the same simulation: layered layouts keep their levels and never
+reorder siblings (so edges don't cross), radial layouts keep evenly spaced rings, and Force-directed moves freely.
+Results are deterministic: the same tree always lays out the same way.
 
 **Path.** *Craft all* crafts every ingredient with its default recipe. *Cheapest* picks, for every item, the lowest
 cost of buying it or crafting it with any of its recipes, all the way down, using trading post prices (ingredients
@@ -169,8 +175,8 @@ public/                    the web app, served as-is
     data/                  Gw2ApiClient, IndexedDbStore, GameData (+ core-data-sources: snapshot / API),
                            PriceBook, WikiSources, ItemSearchIndex
     model/                 TreeState, CraftTreeBuilder, PathPlanner, buildGraphModel
-    graph/                 GraphView, GraphTransition, SmoothWheelZoom, layouts, stylesheet, NodeAppearance,
-                           PNG export
+    graph/                 GraphView, GraphTransition, SmoothWheelZoom, layouts (seeds) + force-simulation,
+                           stylesheet, NodeAppearance, PNG export
     ui/                    Toolbar, OptionsPanel (Customize + Settings), range steppers, Legend, SearchBox,
                            Tooltip, DetailsPanel, ShoppingListPanel, toasts, status bar / overlay / side panel
     utils/                 dom, async, format helpers

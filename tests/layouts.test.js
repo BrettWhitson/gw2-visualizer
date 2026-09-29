@@ -1,5 +1,5 @@
-// Layout regressions, run against real (headless) Cytoscape: direction semantics, radial rings, spacing behaviour,
-// and transitions finishing cleanly.
+// Layout regressions, run against real (headless) Cytoscape: direction semantics, the force controls, radial
+// rings, and transitions finishing cleanly.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import cytoscape from "cytoscape";
@@ -31,12 +31,12 @@ const ELEMENTS = [
 ];
 const RAW = ["a1", "a2", "b1"];
 
-/** Lay the sample tree out with these settings; returns positions by id. */
-function layout(overrides) {
+/** Lay a tree (the sample one by default) out with these settings; returns positions by id. */
+function layout(overrides, elements = ELEMENTS) {
   const cy = cytoscape({
     headless: true,
     styleEnabled: true,
-    elements: structuredClone(ELEMENTS),
+    elements: structuredClone(elements),
     style: [{ selector: "node", style: { width: 40, height: 40 } }],
   });
   try {
@@ -92,35 +92,81 @@ test("radial: result in the centre, every level on a wider ring", () => {
   assert.ok(Math.hypot(p.a1.x - p.a2.x, p.a1.y - p.a2.y) >= 40);
 });
 
-test("node spacing is linear in the slider: equal steps, no jumps", () => {
+test("repel is the spacing control: stronger repel spreads siblings further", () => {
   for (const viewMode of ["tree", "merged"]) {
-    const widths = [0.5, 0.75, 1, 1.25, 1.5].map((siblingGapScale) =>
-      width(
-        layout({
-          viewMode,
-          direction: "TB",
-          siblingGapScale,
-          levelGapScale: 0.15,
-        }),
-      ),
+    const widths = [2, 8, 16].map((repelForce) =>
+      width(layout({ viewMode, direction: "TB", repelForce })),
     );
-    const steps = widths.slice(1).map((w, i) => w - widths[i]);
     assert.ok(
-      steps.every((step) => step > 0),
-      `${viewMode}: wider with more spacing`,
-    );
-    const spread = Math.max(...steps) - Math.min(...steps);
-    assert.ok(
-      spread < 1,
-      `${viewMode}: equal steps (got ${steps.map((s) => s.toFixed(1))})`,
+      widths[0] < widths[1] && widths[1] < widths[2],
+      `${viewMode}: ${widths.map(Math.round)}`,
     );
   }
 });
 
-test("zero spacing packs siblings edge to edge without overlapping", () => {
-  const p = layout({ direction: "TB", siblingGapScale: 0, levelGapScale: 0 });
+test("link distance is the exact gap between levels in layered layouts", () => {
+  const p = layout({ direction: "TB", linkDistance: 150 });
+  assert.equal(Math.round(p.a.y - p.a1.y), 150);
+  assert.equal(Math.round(p.result.y - p.a.y), 150);
+  assert.equal(Math.round(p.a1.y), Math.round(p.b1.y), "one level, one line");
+});
+
+test("siblings never overlap, even with no repel", () => {
+  const p = layout({ direction: "TB", repelForce: 0, centerForce: 1 });
   assert.ok(Math.abs(p.a1.x - p.a2.x) >= 40 - 0.01);
-  assert.ok(Math.abs(p.a.y - p.a1.y) >= 40 - 0.01);
+  assert.ok(Math.abs(p.a.x - p.b.x) >= 40 - 0.01);
+});
+
+test("radial rings are evenly spaced by link distance, even when outer rings are crowded", () => {
+  // result → 3 products → 6 ingredients each → 3 raw materials each: 54 nodes on the outer ring.
+  const elements = [{ data: { id: "r" }, classes: "root" }];
+  const link = (source, target) =>
+    elements.push(
+      { data: { id: target }, classes: "" },
+      { data: { id: `${source}>${target}`, source, target } },
+    );
+  for (let a = 0; a < 3; a++) {
+    link("r", `a${a}`);
+    for (let b = 0; b < 6; b++) {
+      link(`a${a}`, `a${a}b${b}`);
+      for (let c = 0; c < 3; c++) link(`a${a}b${b}`, `a${a}b${b}c${c}`);
+    }
+  }
+  const p = layout({ direction: "radial", linkDistance: 150 }, elements);
+  const meanRadius = (depth) => {
+    const ids = Object.keys(p).filter(
+      (id) => id !== "r" && (id.match(/[abc]/g) ?? []).length === depth,
+    );
+    return (
+      ids.reduce(
+        (sum, id) => sum + Math.hypot(p[id].x - p.r.x, p[id].y - p.r.y),
+        0,
+      ) / ids.length
+    );
+  };
+  const rings = [1, 2, 3].map(meanRadius);
+  // Each ring within 15% of depth × distance (busy rings bulge a little), and evenly stepped: no ring flung outward.
+  const steps = rings.map((radius, i) => radius - (rings[i - 1] ?? 0));
+  assert.ok(
+    Math.max(...steps) / Math.min(...steps) < 1.3,
+    `even steps (${steps.map(Math.round)})`,
+  );
+  for (const [i, radius] of rings.entries())
+    assert.ok(
+      Math.abs(radius - (i + 1) * 150) < (i + 1) * 150 * 0.15,
+      `ring ${i + 1} at ${Math.round(radius)}, expected about ${(i + 1) * 150} (${rings.map(Math.round)})`,
+    );
+});
+
+test("force layout: deterministic, and a stronger center force gathers it tighter", () => {
+  const loose = layout({ layoutEngine: "force", centerForce: 0 });
+  assert.deepEqual(
+    layout({ layoutEngine: "force", centerForce: 0 }),
+    loose,
+    "same input, same layout",
+  );
+  const tight = layout({ layoutEngine: "force", centerForce: 1 });
+  assert.ok(width(tight) < width(loose));
 });
 
 test("an interrupted transition leaves every node at its final position, fully visible", () => {

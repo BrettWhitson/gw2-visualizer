@@ -1,4 +1,5 @@
-import { LAYOUT_BASE, PERFORMANCE_LIMITS } from "../config/constants.js";
+import { LAYOUT_BASE } from "../config/constants.js";
+import { simulateForces } from "./force-simulation.js";
 import {
   isDirectionalLayout,
   isHorizontalDirection,
@@ -9,58 +10,59 @@ import {
 /**
  * Position every node for the current layout settings (synchronously, no animation — GraphView animates).
  *
- * Spacing: `siblingGapScale` / `levelGapScale` scale both the gap between nodes and how much of each label's overhang
- * is reserved (0 = boxes touching, labels may overlap; 1 = labels fully clear; above 1 = extra room in proportion).
- * Everything is linear in the slider, so each step changes spacing by the same amount.
+ * Two stages:
+ *  1. a deterministic seed: tidy tree (tree view), dagre (merged view), breadth-first, or a radial tree; the force
+ *     engine starts from the previous positions (or the radial seed on a new tree);
+ *  2. the force simulation (force-simulation.js) with the four force sliders: center, repel, link, distance.
+ *     Layered layouts keep their levels (distance apart) and sibling order; radial layouts keep rings
+ *     (distance apart); the force engine moves freely.
  * @param {import('cytoscape').Core} cy
  * @param {typeof import('../config/settings-schema.js').DEFAULT_SETTINGS} s
  * @param {{ hasPreviousPositions: boolean }} context
  */
 export function runLayout(cy, s, { hasPreviousPositions }) {
-  const spacing = {
-    siblingGap: LAYOUT_BASE.siblingGap * s.siblingGapScale,
-    levelGap: LAYOUT_BASE.levelGap * s.levelGapScale,
-    breadthLabelShare: s.siblingGapScale,
-    extentLabelShare: s.levelGapScale,
+  const forces = {
+    center: s.centerForce,
+    repel: s.repelForce,
+    link: s.linkForce,
+    distance: s.linkDistance,
   };
+  // Seeds space siblings in proportion to repel (and reserve that share of each label), levels by the distance.
+  const labelShare = Math.min(1.5, s.repelForce / FORCE_REFERENCE.repel);
+  const siblingGap = s.repelForce * 3;
+  const levelGap = Math.max(0, s.linkDistance - LAYOUT_BASE.nodeSize);
   const common = {
     animate: false,
     fit: false,
     nodeDimensionsIncludeLabels: true,
   };
-  // Cytoscape's engines measure nodes through layoutDimensions(); serve them the same partial-label footprint the
-  // tidy and radial layouts use, so spacing changes smoothly (no jump where labels suddenly start to count).
   const horizontal = isHorizontalDirection(s.direction);
   const growth = treeDirection(s.direction); // root → ingredients
-  const shares =
-    s.layoutEngine === "force"
-      ? [spacing.breadthLabelShare, spacing.breadthLabelShare]
-      : horizontal
-        ? [spacing.extentLabelShare, spacing.breadthLabelShare]
-        : [spacing.breadthLabelShare, spacing.extentLabelShare];
+  const shares = horizontal ? [1, labelShare] : [labelShare, 1];
   const run = (options) =>
     withFootprints(cy, ...shares, () => cy.layout(options).run());
 
   if (s.layoutEngine === "force") {
-    const isLarge =
-      cy.nodes().length > PERFORMANCE_LIMITS.fastForceLayoutAboveNodes;
-    run({
-      ...common,
-      name: "cose",
-      randomize: !hasPreviousPositions,
-      idealEdgeLength: () => LAYOUT_BASE.nodeSize + spacing.levelGap,
-      nodeRepulsion: () => 400 + 6000 * s.siblingGapScale,
-      gravity: 0.3,
-      numIter: isLarge ? 400 : 1200,
-      nodeOverlap: 10,
-      componentSpacing: 80,
-    });
+    if (!hasPreviousPositions)
+      radialTreeLayout(cy, { siblingGap, ringStep: s.linkDistance });
+    simulateForces(cy, { mode: "free", ...forces });
     return;
   }
   if (s.direction === "radial") {
-    radialTreeLayout(cy, spacing);
+    const tree = radialTreeLayout(cy, {
+      siblingGap,
+      ringStep: s.linkDistance,
+    });
+    if (tree)
+      simulateForces(cy, {
+        mode: "radial",
+        ...forces,
+        depthById: tree.depthById,
+        rootId: tree.rootId,
+      });
     return;
   }
+
   if (s.layoutEngine === "tree") {
     const rotate = DIRECTION_TRANSFORMS[growth] ?? ((p) => p);
     run({
@@ -68,33 +70,50 @@ export function runLayout(cy, s, { hasPreviousPositions }) {
       name: "breadthfirst",
       directed: true,
       roots: cy.nodes(".root"),
-      avoidOverlap: s.siblingGapScale > 0,
-      spacingFactor: 0.25 + 0.75 * s.siblingGapScale,
+      avoidOverlap: true,
+      spacingFactor: 0.5 + labelShare * 0.5,
       transform: (_node, position) => rotate(position),
     });
-    return;
-  }
-  // Layered: tree view is a true tree → the fast tidy layout. Merged view is a DAG → dagre.
-  if (
+  } else if (!(
     s.viewMode === "tree" &&
     tidyTreeLayout(cy, {
       direction: growth,
       alignment: s.treeAlignment,
-      ...spacing,
+      siblingGap,
+      levelGap,
+      breadthLabelShare: labelShare,
     })
-  )
-    return;
-  run({
-    ...common,
-    name: "dagre",
-    rankDir: growth,
-    nodeSep: spacing.siblingGap,
-    rankSep: spacing.levelGap,
-    edgeSep: 6,
-    ranker: s.dagreRanker,
-    align: s.treeAlignment || undefined,
+  )) {
+    // Merged view is a DAG → dagre.
+    run({
+      ...common,
+      name: "dagre",
+      rankDir: growth,
+      nodeSep: siblingGap,
+      rankSep: levelGap,
+      edgeSep: 6,
+      ranker: s.dagreRanker,
+      align: s.treeAlignment || undefined,
+    });
+  }
+  // Space each node needs across its level: its box plus its share of the label, plus the repel gap.
+  const breadth = (node) => {
+    const { w, h } = footprint(node, ...shares);
+    return horizontal ? h : w;
+  };
+  const gapById = new Map(
+    cy.nodes().map((node) => [node.id(), breadth(node) + siblingGap]),
+  );
+  simulateForces(cy, {
+    mode: "layered",
+    axis: horizontal ? "x" : "y",
+    ...forces,
+    minGapById: (id) => gapById.get(id),
   });
 }
+
+/** The force settings' defaults: the seed layouts scale label room and gaps relative to these. */
+const FORCE_REFERENCE = { repel: 8 };
 
 /**
  * Run `layout` while every node reports its partial-label footprint from layoutDimensions() (patched on the shared
@@ -294,28 +313,24 @@ export function tidyTreeLayout(
 }
 
 /**
- * Radial tidy tree: the root in the centre, each depth on its own ring, every subtree in an angular wedge
- * proportional to the band it needs. Node spacing sets the band (so siblings keep at least that much arc between
- * them) and level spacing the gap between rings; a ring grows further out when its nodes wouldn't otherwise fit.
- * @returns {boolean} false when there's no root to lay out
+ * Radial seed: the root in the centre, depth n on the ring at n × ringStep, and every subtree in an angular wedge
+ * proportional to the band it needs (so big branches get more of the circle). Rings are evenly spaced; the force
+ * simulation then resolves crowding on busy rings by letting them bulge slightly.
+ * @returns {{ rootId: string, depthById: Map<string, number> } | null}
  */
-export function radialTreeLayout(
-  cy,
-  { siblingGap, levelGap, breadthLabelShare = 1, extentLabelShare = 1 },
-) {
+export function radialTreeLayout(cy, { siblingGap, ringStep }) {
   const tree = spanningTree(cy);
-  if (!tree) return false;
-
-  // Rings run in every direction, so a node's footprint is its larger side (label share applied per axis).
+  if (!tree) return null;
   const sizeById = new Map();
   cy.nodes().forEach((node) => {
-    const { w, h } = footprint(node, breadthLabelShare, extentLabelShare);
+    const { w, h } = node.layoutDimensions({
+      nodeDimensionsIncludeLabels: false,
+    });
     sizeById.set(node.id(), Math.max(w, h));
   });
   const bandById = computeBands(tree, (id) => sizeById.get(id), siblingGap);
   const totalBand = bandById.get(tree.rootId);
 
-  // Angular wedge of each node (in band units along the full circle) and its centre.
   const centerById = new Map();
   for (const stack = [[tree.rootId, 0]]; stack.length;) {
     const [id, start] = stack.pop();
@@ -332,29 +347,11 @@ export function radialTreeLayout(
     centerById.set(id, start + bandById.get(id) / 2);
   }
 
-  // Ring radii: at least the previous ring + both rings' half sizes + the level gap, and far enough out that each
-  // node's wedge is as long (in arc) as the band it needs.
-  const ringSize = [],
-    ringNeed = [];
-  for (const id of tree.preOrder) {
-    const depth = tree.depthById.get(id);
-    ringSize[depth] = Math.max(ringSize[depth] || 0, sizeById.get(id));
-    const wedge = (bandById.get(id) / totalBand) * 2 * Math.PI;
-    const need = depth ? (sizeById.get(id) + siblingGap) / wedge : 0;
-    ringNeed[depth] = Math.max(ringNeed[depth] || 0, need);
-  }
-  const radii = [0];
-  for (let depth = 1; depth < ringSize.length; depth++) {
-    const stepOut =
-      radii[depth - 1] + (ringSize[depth - 1] + ringSize[depth]) / 2 + levelGap;
-    radii[depth] = Math.max(stepOut, ringNeed[depth]);
-  }
-
   cy.batch(() =>
     cy.nodes().forEach((node) => {
       const center = centerById.get(node.id());
       if (center == null) return;
-      const radius = radii[tree.depthById.get(node.id())];
+      const radius = tree.depthById.get(node.id()) * ringStep;
       const angle = (center / totalBand) * 2 * Math.PI - Math.PI / 2;
       node.position({
         x: radius * Math.cos(angle),
@@ -362,7 +359,7 @@ export function radialTreeLayout(
       });
     }),
   );
-  return true;
+  return { rootId: tree.rootId, depthById: tree.depthById };
 }
 
 /**

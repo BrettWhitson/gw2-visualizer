@@ -353,54 +353,54 @@
             </div>
             <h2 class="rcaption" id="rgLayout">Layout</h2>
           </section>
-          <section class="rgroup layout" aria-labelledby="rgSpacing">
+          <section class="rgroup layout" aria-labelledby="rgForces">
             <div class="rctl num">
-              <label class="rlabel" for="rbNodes">Nodes</label>
+              <label class="rlabel" for="rbRepel">Repel</label>
               <button
                 type="button"
                 class="step"
                 data-step="-1"
-                aria-label="Less space between nodes"
-                title="Less space between nodes"
+                aria-label="Weaker repel (tighter)"
+                title="Weaker repel (tighter)"
               >
                 &minus;
               </button>
-              <input id="rbNodes" type="range" data-setting="siblingGapScale" />
+              <input id="rbRepel" type="range" data-setting="repelForce" />
               <button
                 type="button"
                 class="step"
                 data-step="1"
-                aria-label="More space between nodes"
-                title="More space between nodes"
+                aria-label="Stronger repel (more space)"
+                title="Stronger repel (more space)"
               >
                 +
               </button>
-              <output for="rbNodes" data-output="siblingGapScale"></output>
+              <output for="rbRepel" data-output="repelForce"></output>
             </div>
             <div class="rctl num">
-              <label class="rlabel" for="rbLevels">Levels</label>
+              <label class="rlabel" for="rbDistance">Distance</label>
               <button
                 type="button"
                 class="step"
                 data-step="-1"
-                aria-label="Less space between levels"
-                title="Less space between levels"
+                aria-label="Shorter links"
+                title="Shorter links"
               >
                 &minus;
               </button>
-              <input id="rbLevels" type="range" data-setting="levelGapScale" />
+              <input id="rbDistance" type="range" data-setting="linkDistance" />
               <button
                 type="button"
                 class="step"
                 data-step="1"
-                aria-label="More space between levels"
-                title="More space between levels"
+                aria-label="Longer links"
+                title="Longer links"
               >
                 +
               </button>
-              <output for="rbLevels" data-output="levelGapScale"></output>
+              <output for="rbDistance" data-output="linkDistance"></output>
             </div>
-            <h2 class="rcaption" id="rgSpacing">Spacing</h2>
+            <h2 class="rcaption" id="rgForces">Forces</h2>
           </section>
           <section class="rgroup style" aria-labelledby="rgStyle">
             <div class="rctl">

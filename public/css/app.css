@@ -389,6 +389,7 @@ main.panel-collapsed .panel-resizer {
 /* header text buttons */
 .hbtn {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 6px;
   min-height: 30px;

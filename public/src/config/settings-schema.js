@@ -25,8 +25,11 @@ export const DEFAULT_SETTINGS = Object.freeze({
   layoutEngine: "layered", // layered | tree (breadth-first) | force
   dagreRanker: "network-simplex",
   treeAlignment: "", // '' | UL | UR | DL | DR
-  siblingGapScale: 1, // space between nodes on the same level
-  levelGapScale: 1, // space between levels
+  // forces (force-simulation.js): like Obsidian's graph view
+  centerForce: 0.2, // pull toward the middle
+  repelForce: 8, // push nodes apart (spacing)
+  linkForce: 0.5, // pull connected nodes together
+  linkDistance: 120, // px between levels / rings; the length links settle at
   ingredientOrder: "recipe", // recipe | qty | cost | complexity | rarity | name
   preferMysticForge: false,
   // nodes
@@ -98,8 +101,8 @@ export const LEGACY_SETTING_KEYS = {
   engine: "layoutEngine",
   ranker: "dagreRanker",
   align: "treeAlignment",
-  nodeSepK: "siblingGapScale",
-  rankSepK: "levelGapScale",
+  nodeSepK: "siblingGapScale", // → repelForce (see migrateLegacySettings)
+  rankSepK: "levelGapScale", // → linkDistance
   sortBy: "ingredientOrder",
   mfFirst: "preferMysticForge",
   colorBy: "nodeColorMode",
@@ -187,6 +190,18 @@ export function migrateLegacySettings(saved) {
   }
   delete saved.density;
   delete saved.spacingScale;
+  // The node / level spacing sliders became forces: node spacing → repel, level spacing → link distance.
+  if ("siblingGapScale" in saved || "levelGapScale" in saved) {
+    const sibling = saved.siblingGapScale ?? 1,
+      level = saved.levelGapScale ?? 1;
+    saved.repelForce ??= Math.min(20, Math.round(sibling * 8 * 2) / 2);
+    saved.linkDistance ??= Math.min(
+      400,
+      Math.max(20, Math.round((level * 120) / 5) * 5),
+    );
+    delete saved.siblingGapScale;
+    delete saved.levelGapScale;
+  }
   // Revision 2: Direction now names the crafting flow (raw → result), the opposite of the old tree-growth meaning.
   // Flip saved directions so everyone keeps the layout they had.
   if ((saved.settingsRevision ?? 1) < 2 && saved.direction) {
@@ -286,28 +301,6 @@ export const CUSTOMIZE_GROUPS = [
         ],
       },
       {
-        key: "siblingGapScale",
-        label: "Node spacing",
-        hint: "Space between nodes on the same level (on the same ring when radial). 0 = touching; below 1, labels may overlap.",
-        type: "range",
-        min: 0,
-        max: 6,
-        step: 0.05,
-        redraw: Redraw.relayout,
-        unit: "×",
-      },
-      {
-        key: "levelGapScale",
-        label: "Level spacing",
-        hint: "Space between levels (between rings when radial). 0 = touching; below 1, labels may overlap.",
-        type: "range",
-        min: 0,
-        max: 6,
-        step: 0.05,
-        redraw: Redraw.relayout,
-        unit: "×",
-      },
-      {
         key: "ingredientOrder",
         label: "Order ingredients",
         type: "select",
@@ -320,6 +313,56 @@ export const CUSTOMIZE_GROUPS = [
           ["rarity", "Rarity"],
           ["name", "Name"],
         ],
+      },
+    ],
+  },
+  {
+    id: "forces",
+    title: "Forces",
+    options: [
+      {
+        key: "centerForce",
+        label: "Center",
+        hint: "Pulls everything toward the middle, keeping the graph compact. In radial layouts the result stays pinned in the centre.",
+        type: "range",
+        min: 0,
+        max: 1,
+        step: 0.05,
+        redraw: Redraw.relayout,
+        unit: "force",
+      },
+      {
+        key: "repelForce",
+        label: "Repel",
+        hint: "Pushes nodes apart: the main spacing control. Low values pack nodes tightly (labels may overlap).",
+        type: "range",
+        min: 0,
+        max: 20,
+        step: 0.5,
+        redraw: Redraw.relayout,
+        unit: "force",
+      },
+      {
+        key: "linkForce",
+        label: "Link strength",
+        hint: "How strongly each ingredient is pulled toward the item it's used for (in layered layouts: under it).",
+        type: "range",
+        min: 0,
+        max: 1,
+        step: 0.05,
+        redraw: Redraw.relayout,
+        unit: "force",
+      },
+      {
+        key: "linkDistance",
+        label: "Link distance",
+        hint: "Length links settle at: the gap between levels, or between rings in radial layouts.",
+        type: "range",
+        min: 20,
+        max: 400,
+        step: 5,
+        redraw: Redraw.relayout,
+        unit: "px",
       },
     ],
   },
@@ -955,6 +998,8 @@ export function formatOptionValue(option, value) {
       return number === 0 && option.key === "labelFadeZoom"
         ? "never"
         : `${Math.round(number * 100)}%`;
+    case "force":
+      return number.toFixed(number >= 2 || number === 0 ? 1 : 2);
     case "×":
       return `${number.toFixed(2)}×`;
     case "levels":
@@ -966,7 +1011,7 @@ export function formatOptionValue(option, value) {
 
 /**
  * Presets come in two independent kinds, each owning a slice of the Customize options:
- *  - layout: the Layout section (engine, direction, spacing, alignment, ordering);
+ *  - layout: the Layout and Forces sections (engine, direction, alignment, ordering; center / repel / link forces);
  *  - style:  how things look (Nodes, Labels, Edges, Mystic Forge, Highlight, Canvas).
  * Applying a preset resets its slice to defaults, then applies its values; the other slice is untouched. Filters,
  * what you're viewing (ribbon: view, depth, path) and app behaviour (Settings) are never part of a preset.
@@ -979,7 +1024,7 @@ const groupKeys = (...ids) =>
 export const PRESET_KINDS = {
   layout: {
     label: "Layout",
-    keys: groupKeys("layout"),
+    keys: groupKeys("layout", "forces"),
     presets: {
       Standard: { description: "Layered, top to bottom.", values: {} },
       "Left to right": {
@@ -988,11 +1033,11 @@ export const PRESET_KINDS = {
       },
       Compact: {
         description: "Tight spacing for big trees (labels may overlap).",
-        values: { siblingGapScale: 0.4, levelGapScale: 0.5 },
+        values: { repelForce: 3, linkDistance: 70 },
       },
       Spacious: {
         description: "Room to breathe: generous gaps between nodes and levels.",
-        values: { siblingGapScale: 1.8, levelGapScale: 1.6 },
+        values: { repelForce: 15, linkDistance: 190 },
       },
       Radial: {
         description: "Root in the middle, one ring per level.",

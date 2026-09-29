@@ -202,7 +202,6 @@ export const PERFORMANCE_LIMITS = {
   dimOnHoverBelowElements: 2500,
   maxFlowAnimatedEdges: 1500,
   fullRateFlowEdges: 300, // above this, the flow animation drops to ~20 fps
-  fastForceLayoutAboveNodes: 400,
   hoverDelayMs: 35,
 };
 
