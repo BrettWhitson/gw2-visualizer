@@ -64,6 +64,8 @@ export class CraftingTreeApp {
     nodesById: new Map(),
   };
   #priceRequestGeneration = 0;
+  /** The page's own title, restored when the graph is cleared. */
+  #startTitle = document.title;
   #lastErrorAt = 0;
 
   constructor() {
@@ -242,7 +244,7 @@ export class CraftingTreeApp {
     }
     this.treeState.openRoot(itemId, { recordHistory, quantity });
     this.recentItems.add(itemId);
-    $("#btnBack").disabled = !this.treeState.history.length;
+    this.#syncRootControls();
     $("#rootQty").value = this.treeState.rootQuantity;
     this.searchBox.setText(item.name);
     document.title = `${item.name} — ${SITE_TITLE}`;
@@ -251,13 +253,44 @@ export class CraftingTreeApp {
     this.selectNode(this.graphView.rootNodeId);
   }
 
+  /** Clear the graph and return to the start screen. Back (Alt+←) reopens what was cleared. */
+  clearGraph() {
+    if (!this.treeState.hasRoot) return;
+    this.#priceRequestGeneration++; // drop price responses for the cleared tree
+    this.treeState.clear();
+    this.tooltip.hide();
+    this.ribbonPopout.close({ restoreFocus: false });
+    this.legend.clearSelection();
+    this.graphView.clear();
+    this.tree = null;
+    this.graph = { nodes: [], edges: [], nodesById: new Map() };
+    this.legend.update(this.graph.nodesById, 0);
+    this.detailsPanel.render(null);
+    this.shoppingListPanel.render(null);
+    this.statusBar.setCounts(0, 0);
+    $("#rootQty").value = this.treeState.rootQuantity;
+    this.#syncRootControls();
+    this.searchBox.setText("");
+    document.title = this.#startTitle;
+    history.replaceState(null, "", location.pathname + location.search);
+    this.#renderRecentItems();
+    $("#empty").hidden = false;
+    this.searchBox.focus();
+  }
+
   goBack() {
     const previous = this.treeState.popHistory();
     if (previous) {
       this.treeState.rootQuantity = previous.quantity;
       this.openItem(previous.itemId, { recordHistory: false });
     }
+    this.#syncRootControls();
+  }
+
+  /** Back needs history; Clear needs a graph. */
+  #syncRootControls() {
     $("#btnBack").disabled = !this.treeState.history.length;
+    $("#btnClear").disabled = !this.treeState.hasRoot;
   }
 
   setRootQuantity(quantity) {
@@ -829,6 +862,9 @@ export class CraftingTreeApp {
       case "back":
         this.goBack();
         break;
+      case "clear-graph":
+        this.clearGraph();
+        break;
       case "toggle-sidebar":
         this.toggleSidePanel();
         break;
@@ -903,6 +939,7 @@ export class CraftingTreeApp {
       "?": () => this.openSettings("shortcutsSection"),
       t: () => this.toggleRibbon(),
       p: () => this.toggleSidePanel(),
+      x: () => this.clearGraph(),
       "[": () => this.stepDepth(-1),
       "]": () => this.stepDepth(1),
       f: () => this.graphView.fit(),
@@ -987,7 +1024,10 @@ export class CraftingTreeApp {
 
   #openFromLocationHash() {
     const target = TreeState.parseHash(location.hash);
-    if (!target) return;
+    if (!target) {
+      this.clearGraph(); // the hash was removed (e.g. browser Back to the bare URL)
+      return;
+    }
     if (
       target.itemId !== this.treeState.rootItemId ||
       target.quantity !== this.treeState.rootQuantity

@@ -25,9 +25,26 @@ export class TreeState {
         itemId: this.rootItemId,
         quantity: this.rootQuantity,
       });
+    // Reopening the item that was just cleared: it's back, so it's no longer something to go Back to.
+    if (!this.hasRoot && this.history.at(-1)?.itemId === itemId)
+      this.history.pop();
     this.rootItemId = itemId;
     if (quantity) this.rootQuantity = quantity;
     this.resetExpansion();
+    this.selectedNodeId = null;
+  }
+
+  /** Back to no item (the start screen). The current root goes into history, so Back brings it back. */
+  clear() {
+    if (this.hasRoot)
+      this.history.push({
+        itemId: this.rootItemId,
+        quantity: this.rootQuantity,
+      });
+    this.rootItemId = null;
+    this.rootQuantity = 1;
+    this.resetExpansion();
+    this.recipeChoiceByItemId.clear();
     this.selectedNodeId = null;
   }
 

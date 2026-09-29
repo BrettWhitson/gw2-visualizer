@@ -59,6 +59,32 @@ test("async helpers", async () => {
 
 // ---------------------------------------------------------------- tree state / URL
 
+test("clearing the tree returns to no item, and Back can reopen it", () => {
+  const state = new TreeState();
+  state.openRoot(7, { quantity: 4 });
+  state.recipeChoiceByItemId.set(9, 1);
+  state.selectedNodeId = "n1";
+  state.clear();
+  assert.equal(state.hasRoot, false);
+  assert.equal(state.rootQuantity, 1);
+  assert.equal(state.recipeChoiceByItemId.size, 0);
+  assert.equal(state.selectedNodeId, null);
+  assert.deepEqual(state.history, [{ itemId: 7, quantity: 4 }]);
+  state.openRoot(7);
+  assert.equal(
+    state.history.length,
+    0,
+    "reopening the cleared item doesn't leave it in history",
+  );
+  state.clear();
+  state.clear();
+  assert.equal(
+    state.history.length,
+    1,
+    "clearing an empty view adds nothing to history",
+  );
+});
+
 test("TreeState history, hash and recipe cycling", () => {
   const state = new TreeState();
   state.openRoot(1);

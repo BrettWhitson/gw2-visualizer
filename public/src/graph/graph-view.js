@@ -177,6 +177,18 @@ export class GraphView {
     }
   }
 
+  /** Remove the whole graph: no elements, no running animation, flow or physics. */
+  clear() {
+    this.#finishAnimations();
+    this.#stopFlow();
+    this.#stopPhysics();
+    this.#simulation = null;
+    this.#isLineageShown = false;
+    this.#lineageOwner = { nodeId: null, isPinned: false };
+    this.cy.stop(true, false);
+    this.cy.elements().remove();
+  }
+
   /** Update labels/colours/classes without re-layout (e.g. when prices arrive). */
   updateInPlace(nodeUpdates, edgeUpdates) {
     this.cy.batch(() => {

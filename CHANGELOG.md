@@ -6,6 +6,7 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 ## Unreleased
 
 - About and a new header button link to the source code on GitHub.
+- **Clear graph** (✕ in the header, or `X`) returns to the start screen; Back reopens the cleared item.
 - Live at [gw2visualizer.com](https://gw2visualizer.com).
 - Tests run on Node 22 (the minimum is now Node 22).
 

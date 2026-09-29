@@ -31,7 +31,7 @@ The app is plain ES modules, which browsers only load over http, so opening `pub
 | Double-click | Expand / collapse (collapsed = buy it instead of crafting; the shopping list updates) |
 | Right-click (long-press on touch) | Cycle alternate recipes |
 | Shift+click | Make that item the root |
-| `/` `F` `R` `+` `-` `Esc` `Alt+←` | Search · fit · centre on the result · zoom · clear / deselect · back |
+| `/` `F` `R` `+` `-` `Esc` `Alt+←` `X` | Search · fit · centre on the result · zoom · clear / deselect · back · clear the graph |
 | `[` `]` `T` `P` `,` `?` | Depth less / more · toggle toolbar · toggle side panel · Settings · all shortcuts |
 | Tab to the graph, then arrows | ↑ product, ↓ first ingredient, ← → siblings, Enter expand / collapse, Home result |
 
