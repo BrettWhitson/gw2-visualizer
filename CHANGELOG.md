@@ -10,6 +10,10 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
   (link distance apart) and sibling order, radial layouts keep evenly spaced rings, and Force-directed moves freely.
   Saved spacing settings are converted.
 - Fixed: in radial layouts the first rings bunched up in the middle while the outer rings were pushed far out.
+- **Layered customization:** each ribbon section has ↺ (reset that section) and ⌄ (a popout with the section's
+  full options: every force, all node / edge / canvas styling, labels and highlight, layout, filters, recipe
+  settings), with a link to the same place in the Customize panel, which still has everything.
+- Fixed: option sliders in the side panel pushed their value readouts and reset buttons out of view.
 
 ## 0.8.0 — 2026-09-28
 

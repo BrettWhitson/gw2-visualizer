@@ -21,13 +21,15 @@ const COMMIT_DELAY_MS = { [Redraw.restyle]: 16, default: 140 };
  *  - − / + nudge a slider by one step; hold to repeat.
  *  - Double-clicking a row resets it to its default (a preset row resets to Standard). Pills are excluded.
  *  - `data-preset-select="layout|style"` selects apply a preset of that kind and show "Custom" when nothing matches.
+ *  - Each section's caption has ↺ (reset the section) and ⌄ (its popout of further options; see RibbonPopout).
  */
 export class Toolbar {
   /**
    * @param {HTMLElement} root
    * @param {import('../core/settings-store.js').SettingsStore} settings
    * @param {{ onSettingChange(key: string, value: unknown, redraw: string): void,
-   *           onPreset(kind: string, name: string): void }} callbacks
+   *           onPreset(kind: string, name: string): void, onSectionReset(sectionId: string): void,
+   *           onSectionToggle(sectionId: string, button: HTMLElement): void }} callbacks
    */
   constructor(root, settings, callbacks) {
     this.root = root;
@@ -192,6 +194,18 @@ export class Toolbar {
 
     this.root.addEventListener("click", (event) => {
       if (event.target.closest(".step")) return; // handled by bindRangeSteppers
+      // Section caption: ↺ resets the section, ⌄ opens its popout of further options.
+      const reset = event.target.closest("[data-section-reset]");
+      if (reset) {
+        this.#flash(reset.closest(".rgroup"));
+        this.callbacks.onSectionReset(reset.dataset.sectionReset);
+        return;
+      }
+      const toggle = event.target.closest("[data-section-toggle]");
+      if (toggle) {
+        this.callbacks.onSectionToggle(toggle.dataset.sectionToggle, toggle);
+        return;
+      }
       const segmentButton = event.target.closest(".seg[data-setting] button");
       if (segmentButton)
         emit(

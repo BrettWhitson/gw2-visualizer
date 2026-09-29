@@ -76,6 +76,12 @@
       <symbol id="i-chevron-up" viewBox="0 0 24 24">
         <path d="M6 15l6-6 6 6" />
       </symbol>
+      <symbol id="i-chevron-down" viewBox="0 0 24 24">
+        <path d="M6 9l6 6 6-6" />
+      </symbol>
+      <symbol id="i-reset" viewBox="0 0 24 24">
+        <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4.2h4.2" />
+      </symbol>
       <symbol id="i-chevron-right" viewBox="0 0 24 24">
         <path d="M9 6l6 6-6 6" />
       </symbol>
@@ -247,7 +253,33 @@
               </button>
               <output for="rbDepth" data-output="maxDepth"></output>
             </div>
-            <h2 class="rcaption" id="rgView">View</h2>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgView">View</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="view"
+                title="Reset View to defaults"
+                aria-label="Reset View to defaults"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-toggle="view"
+                aria-expanded="false"
+                aria-controls="ribbonPopout"
+                title="More View options"
+                aria-label="More View options"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-chevron-down"></use>
+                </svg>
+              </button>
+            </div>
           </section>
           <section class="rgroup" aria-labelledby="rgRecipes">
             <div class="rctl">
@@ -269,7 +301,33 @@
                 /><span>Promotions</span></label
               >
             </div>
-            <h2 class="rcaption" id="rgRecipes">Recipes</h2>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgRecipes">Recipes</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="recipes"
+                title="Reset Recipes to defaults"
+                aria-label="Reset Recipes to defaults"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-toggle="recipes"
+                aria-expanded="false"
+                aria-controls="ribbonPopout"
+                title="More Recipes options"
+                aria-label="More Recipes options"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-chevron-down"></use>
+                </svg>
+              </button>
+            </div>
           </section>
           <section class="rgroup presets" aria-labelledby="rgPresets">
             <div class="rctl">
@@ -280,7 +338,20 @@
               <label class="rlabel" for="rbStylePreset">Style</label>
               <select id="rbStylePreset" data-preset-select="style"></select>
             </div>
-            <h2 class="rcaption" id="rgPresets">Presets</h2>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgPresets">Presets</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="presets"
+                title="Reset both presets to Standard"
+                aria-label="Reset both presets to Standard"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+            </div>
           </section>
           <section class="rgroup layout" aria-labelledby="rgLayout">
             <div class="rctl">
@@ -351,7 +422,33 @@
                 <option value="force">Force-directed</option>
               </select>
             </div>
-            <h2 class="rcaption" id="rgLayout">Layout</h2>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgLayout">Layout</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="layout"
+                title="Reset Layout to defaults"
+                aria-label="Reset Layout to defaults"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-toggle="layout"
+                aria-expanded="false"
+                aria-controls="ribbonPopout"
+                title="More Layout options"
+                aria-label="More Layout options"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-chevron-down"></use>
+                </svg>
+              </button>
+            </div>
           </section>
           <section class="rgroup layout" aria-labelledby="rgForces">
             <div class="rctl num">
@@ -400,7 +497,33 @@
               </button>
               <output for="rbDistance" data-output="linkDistance"></output>
             </div>
-            <h2 class="rcaption" id="rgForces">Forces</h2>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgForces">Forces</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="forces"
+                title="Reset Forces to defaults"
+                aria-label="Reset Forces to defaults"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-toggle="forces"
+                aria-expanded="false"
+                aria-controls="ribbonPopout"
+                title="More Forces options"
+                aria-label="More Forces options"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-chevron-down"></use>
+                </svg>
+              </button>
+            </div>
           </section>
           <section class="rgroup style" aria-labelledby="rgStyle">
             <div class="rctl">
@@ -422,7 +545,33 @@
                 <option value="straight">Straight</option>
               </select>
             </div>
-            <h2 class="rcaption" id="rgStyle">Style</h2>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgStyle">Style</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="style"
+                title="Reset Style to defaults"
+                aria-label="Reset Style to defaults"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-toggle="style"
+                aria-expanded="false"
+                aria-controls="ribbonPopout"
+                title="More Style options"
+                aria-label="More Style options"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-chevron-down"></use>
+                </svg>
+              </button>
+            </div>
           </section>
           <section class="rgroup style" aria-labelledby="rgLabels">
             <div class="rctl pills">
@@ -465,10 +614,43 @@
               </button>
               <output for="rbFade" data-output="labelFadeZoom"></output>
             </div>
-            <h2 class="rcaption" id="rgLabels">Labels</h2>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgLabels">Labels</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="labels"
+                title="Reset Labels to defaults"
+                aria-label="Reset Labels to defaults"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-toggle="labels"
+                aria-expanded="false"
+                aria-controls="ribbonPopout"
+                title="More Labels options"
+                aria-label="More Labels options"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-chevron-down"></use>
+                </svg>
+              </button>
+            </div>
           </section>
         </div>
       </nav>
+      <div
+        id="ribbonPopout"
+        class="ribbon-popout"
+        role="dialog"
+        aria-modal="false"
+        hidden
+      ></div>
       <button
         type="button"
         id="ribbonHandle"

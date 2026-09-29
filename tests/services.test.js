@@ -99,3 +99,42 @@ test("Customize and Settings panels split the options, and presets only touch Cu
     "filters are not part of a preset",
   );
 });
+
+test("every ribbon control belongs to a section, so its section reset covers it", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { RIBBON_SECTIONS, sectionResetKeys } =
+    await import("../public/src/ui/ribbon-sections.js");
+  const { VIEW_OPTION_GROUPS } =
+    await import("../public/src/config/settings-schema.js");
+  const html = readFileSync(
+    new URL("../public/index.html", import.meta.url),
+    "utf8",
+  );
+  const ribbon = html.slice(
+    html.indexOf('<nav id="toolbar"'),
+    html.indexOf("</nav>"),
+  );
+  const controls = [...ribbon.matchAll(/data-setting="(\w+)"/g)].map(
+    (m) => m[1],
+  );
+  const groupIds = new Set(VIEW_OPTION_GROUPS.map((group) => group.id));
+  for (const [id, section] of Object.entries(RIBBON_SECTIONS))
+    for (const group of section.groups)
+      assert.ok(groupIds.has(group), `${id}: unknown group ${group}`);
+  const covered = new Set(
+    Object.keys(RIBBON_SECTIONS).flatMap((id) =>
+      sectionResetKeys(id, VIEW_OPTION_GROUPS),
+    ),
+  );
+  for (const key of controls)
+    assert.ok(
+      covered.has(key),
+      `ribbon control ${key} is reset by some section`,
+    );
+  // Each section's ⌄ opens exactly the section it names.
+  for (const [, section] of ribbon.matchAll(/data-section-toggle="(\w+)"/g))
+    assert.ok(
+      RIBBON_SECTIONS[section]?.groups.length,
+      `${section} has a popout`,
+    );
+});

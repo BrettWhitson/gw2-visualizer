@@ -8,9 +8,10 @@ import { escapeHtml } from "../utils/dom.js";
 import { bindRangeSteppers, syncStepButtons } from "./range-stepper.js";
 
 /**
- * A panel of setting controls built from option groups (see settings-schema.js). Used twice:
+ * A panel of setting controls built from option groups (see settings-schema.js). Used for:
  *  - Customize (side panel): the look (presets are picked from the ribbon);
- *  - Settings (dialog): behaviour.
+ *  - Settings (dialog): behaviour;
+ *  - the ribbon's section popouts (compact: no filter / reset-all header).
  * Groups render as collapsible sections. Changed options are marked and can be reset individually (↺ or
  * double-click a slider), per section, or all at once. A filter box narrows the list by name.
  */
@@ -18,21 +19,32 @@ export class OptionsPanel {
   #openGroups;
   #filterText = "";
   #groups;
+  #compact;
+  #idPrefix;
   /** Which options were visible at the last render (a change means the panel must re-render). */
   #visibleSignature = "";
 
   /**
    * @param {HTMLElement} element
    * @param {import('../core/settings-store.js').SettingsStore} settings
-   * @param {{ groups: typeof import('../config/settings-schema.js').VIEW_OPTION_GROUPS, initiallyOpen?: string[] }} config
-   *   initiallyOpen: group ids expanded at first (default: all)
+   * @param {{ groups: typeof import('../config/settings-schema.js').VIEW_OPTION_GROUPS, initiallyOpen?: string[],
+   *           compact?: boolean, idPrefix?: string }} config
+   *   initiallyOpen: group ids expanded at first (default: all); idPrefix: keeps control ids unique when two panels
+   *   show the same option
    * @param {{ onOptionChange(key: string, value: unknown, redraw: string): void, onReset(keys: string[]): void }} callbacks
    */
-  constructor(element, settings, { groups, initiallyOpen }, callbacks) {
+  constructor(
+    element,
+    settings,
+    { groups, initiallyOpen, compact = false, idPrefix = "opt" },
+    callbacks,
+  ) {
     this.element = element;
     this.settings = settings;
     this.callbacks = callbacks;
     this.#groups = groups;
+    this.#compact = compact;
+    this.#idPrefix = idPrefix;
     this.#openGroups = new Set(
       initiallyOpen ?? groups.map((group) => group.id),
     );
@@ -51,15 +63,27 @@ export class OptionsPanel {
     ).length;
     const filterValue = escapeHtml(this.#filterText);
 
-    this.element.innerHTML = `
+    const head = this.#compact
+      ? ""
+      : `
       <div class="cz-head">
         <input type="search" class="cz-filter" placeholder="Filter options…" aria-label="Filter options" value="${filterValue}">
         <button type="button" class="cz-reset-all" data-reset-all ${changedCount ? "" : "disabled"}
                 title="Reset every option here to its default">Reset all${changedCount ? ` (${changedCount})` : ""}</button>
-      </div>
+      </div>`;
+    this.element.innerHTML = `${head}
       ${this.#groups.map((group) => this.#groupHtml(group, values)).join("")}`;
     this.#visibleSignature = this.#visibilitySignature();
     this.#applyFilter();
+  }
+
+  /** Open one section and scroll it into view (e.g. "More in Customize" from a ribbon popout). */
+  revealGroup(groupId) {
+    this.#openGroups.add(groupId);
+    this.render();
+    this.element
+      .querySelector(`.cz-group[data-group="${groupId}"]`)
+      ?.scrollIntoView({ block: "start" });
   }
 
   #visibilitySignature() {
@@ -132,7 +156,7 @@ export class OptionsPanel {
         );
         return `<div class="opt${option.type === "checkbox" ? " chk" : ""}${modified ? " modified" : ""}" data-option="${option.key}"
                    data-label="${escapeHtml(option.label.toLowerCase())}">
-          <label for="opt-${option.key}"${option.hint ? ` title="${escapeHtml(option.hint)}"` : ""}>${escapeHtml(option.label)}</label>
+          <label for="${this.#idPrefix}-${option.key}"${option.hint ? ` title="${escapeHtml(option.hint)}"` : ""}>${escapeHtml(option.label)}</label>
           ${this.#controlHtml(option, values[option.key])}
           <button type="button" class="opt-reset" data-reset="${option.key}" title="Reset to default (${escapeHtml(defaultText)})" aria-label="Reset ${escapeHtml(option.label)}">&#8634;</button>
         </div>`;
@@ -166,7 +190,7 @@ export class OptionsPanel {
   }
 
   #controlHtml(option, value) {
-    const id = `opt-${option.key}`;
+    const id = `${this.#idPrefix}-${option.key}`;
     switch (option.type) {
       case "select":
         return `<select id="${id}" data-setting="${option.key}">${option.choices

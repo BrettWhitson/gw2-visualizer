@@ -1,7 +1,8 @@
 /**
  * Force simulation for every layout, in the spirit of Obsidian's graph view: four forces with one slider each.
  *
- *  - center:   pulls nodes toward the middle (keeps the graph compact)
+ *  - center:   pulls nodes toward the middle (keeps the graph compact); in radial layouts, how tightly nodes hold
+ *              to their ring (the result itself is pinned in the middle)
  *  - repel:    pushes nodes away from each other (spacing)
  *  - link:     pulls connected nodes together (how tightly ingredients cluster around their product)
  *  - distance: the length links settle at (the gap between levels / rings)
@@ -129,7 +130,7 @@ export function simulateForces(cy, options) {
         applyCross(i, -layered.cross[i] * strength);
       return;
     }
-    if (radial) return; // the result is pinned; the ring force does the gathering
+    if (radial) return; // the result is pinned; center sets the ring force instead (pullToRings)
     for (let i = 0; i < count; i++) {
       vx[i] -= x[i] * strength;
       vy[i] -= y[i] * strength;
@@ -355,9 +356,9 @@ export function simulateForces(cy, options) {
     return { root, ring };
   }
 
-  /** Pull every node toward the ring for its depth. */
+  /** Pull every node toward the ring for its depth: loosely at center 0 (organic), firmly at 1 (crisp rings). */
   function pullToRings(alpha) {
-    const strength = SCALE.radial * alpha;
+    const strength = SCALE.radial * (0.75 + 1.25 * center) * alpha; // default center 0.2 → ×1
     for (let i = 0; i < count; i++) {
       if (i === radial.root) continue;
       const r = Math.hypot(x[i], y[i]) || 0.01;

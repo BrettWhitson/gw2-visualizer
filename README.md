@@ -41,6 +41,10 @@ The app is plain ES modules, which browsers only load over http, so opening `pub
 fine steps (hold to repeat) and any row resets on double-click. The toolbar and side panel collapse from handles on
 their own edges; drag the side panel's edge to resize it.
 
+**Three layers of customization.** The ribbon holds the everyday controls. Each ribbon section's ⌄ opens a popout with
+that section's full options (for example every force, or all node, edge and canvas styling), and ↺ resets the
+section. The **Customize** panel has everything in one place.
+
 **Direction** describes the crafting flow, raw materials → result: *left → right* puts the raw materials on the left
 and the finished item on the right; *upward* (the default) puts the result on top; *radial* puts it in the centre
 with each level on a ring around it.
@@ -177,7 +181,8 @@ public/                    the web app, served as-is
     model/                 TreeState, CraftTreeBuilder, PathPlanner, buildGraphModel
     graph/                 GraphView, GraphTransition, SmoothWheelZoom, layouts (seeds) + force-simulation,
                            stylesheet, NodeAppearance, PNG export
-    ui/                    Toolbar, OptionsPanel (Customize + Settings), range steppers, Legend, SearchBox,
+    ui/                    Toolbar (+ ribbon-sections, RibbonPopout), OptionsPanel (Customize, Settings,
+                           popouts), range steppers, Legend, SearchBox,
                            Tooltip, DetailsPanel, ShoppingListPanel, toasts, status bar / overlay / side panel
     utils/                 dom, async, format helpers
 ```

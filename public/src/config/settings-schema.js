@@ -323,7 +323,7 @@ export const CUSTOMIZE_GROUPS = [
       {
         key: "centerForce",
         label: "Center",
-        hint: "Pulls everything toward the middle, keeping the graph compact. In radial layouts the result stays pinned in the centre.",
+        hint: "Pulls everything toward the middle, keeping the graph compact. In radial layouts: how tightly nodes keep to their ring (low = organic, high = crisp rings).",
         type: "range",
         min: 0,
         max: 1,

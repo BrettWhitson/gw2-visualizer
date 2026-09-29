@@ -13,6 +13,7 @@ import {
   CUSTOMIZE_GROUPS,
   Redraw,
   SETTINGS_GROUPS,
+  VIEW_OPTION_GROUPS,
 } from "./config/settings-schema.js";
 import { SettingsStore } from "./core/settings-store.js";
 import { RecentItems } from "./core/recent-items.js";
@@ -35,6 +36,8 @@ import { SearchBox } from "./ui/search-box.js";
 import { Legend } from "./ui/legend.js";
 import { OptionsPanel } from "./ui/options-panel.js";
 import { Toolbar } from "./ui/toolbar.js";
+import { RibbonPopout } from "./ui/ribbon-popout.js";
+import { sectionResetKeys } from "./ui/ribbon-sections.js";
 import { StatusBar, LoadingOverlay, SidePanel } from "./ui/app-chrome.js";
 import { ToastCenter } from "./ui/toast.js";
 import {
@@ -151,11 +154,25 @@ export class CraftingTreeApp {
       { groups: SETTINGS_GROUPS },
       optionCallbacks,
     );
-    this.optionPanels = [this.customizePanel, this.settingsPanel];
+    this.ribbonPopout = new RibbonPopout($("#ribbonPopout"), this.settings, {
+      ...optionCallbacks,
+      onOpenInCustomize: (groupId) => {
+        this.openCustomizeTab();
+        this.customizePanel.revealGroup(groupId);
+      },
+    });
+    this.optionPanels = [
+      this.customizePanel,
+      this.settingsPanel,
+      this.ribbonPopout,
+    ];
     this.toolbar = new Toolbar($("#toolbar"), this.settings, {
       onSettingChange: (key, value, redraw) =>
         this.changeSetting(key, value, redraw),
       onPreset: (kind, name) => this.applyPreset(kind, name),
+      onSectionReset: (sectionId) => this.resetSection(sectionId),
+      onSectionToggle: (sectionId, button) =>
+        this.ribbonPopout.toggle(sectionId, button),
     });
     this.searchBox = new SearchBox({
       input: $("#search"),
@@ -352,7 +369,21 @@ export class CraftingTreeApp {
     else this.legend.update(this.graph.nodesById, 0);
   }
 
+  /** A ribbon section's ↺: its controls and popout options back to defaults (Presets: both to Standard). */
+  resetSection(sectionId) {
+    if (sectionId === "presets") {
+      this.settings.applyPreset("layout", "Standard");
+      this.applyPreset("style", "Standard");
+      return;
+    }
+    const keys = sectionResetKeys(sectionId, VIEW_OPTION_GROUPS);
+    if (keys.includes("maxDepth") || keys.includes("viewMode"))
+      this.treeState.resetExpansion();
+    this.resetSettings(keys);
+  }
+
   toggleRibbon() {
+    this.ribbonPopout.close({ restoreFocus: false });
     this.settings.set("ribbonCollapsed", !this.settings.values.ribbonCollapsed);
     this.#applyRibbonState();
   }
@@ -875,7 +906,8 @@ export class CraftingTreeApp {
       "=": () => this.graphView.zoomBy(1.3),
       "-": () => this.graphView.zoomBy(1 / 1.3),
       Escape: () => {
-        if (!this.legend.clearSelection()) this.selectNode(null);
+        if (this.ribbonPopout.isOpen) this.ribbonPopout.close();
+        else if (!this.legend.clearSelection()) this.selectNode(null);
       },
     };
     if (event.key === "ArrowLeft" && event.altKey) {
