@@ -6,14 +6,19 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 ## Unreleased
 
 - **Forces** replace the node / level spacing sliders, like Obsidian's graph view: center, repel, link strength
-  and link distance. Every layout runs the same deterministic simulation: layered layouts keep their levels
-  (link distance apart) and sibling order, radial layouts keep evenly spaced rings, and Force-directed moves freely.
-  Saved spacing settings are converted.
+  and link distance, acting in every direction in every layout. Layered layouts pull nodes toward their level and
+  radial layouts toward evenly spaced rings instead of pinning them; Force-directed has no structure. A collision
+  force keeps nodes and labels from overlapping, and center also sets how firmly nodes keep to their level or ring
+  (0 = loose and organic, 1 = crisp). Saved spacing settings are converted.
 - Fixed: in radial layouts the first rings bunched up in the middle while the outer rings were pushed far out.
 - **Layered customization:** each ribbon section has ↺ (reset that section) and ⌄ (a popout with the section's
   full options: every force, all node / edge / canvas styling, labels and highlight, layout, filters, recipe
   settings), with a link to the same place in the Customize panel, which still has everything.
 - Fixed: option sliders in the side panel pushed their value readouts and reset buttons out of view.
+- **Physics on drag:** dragging a node pulls its neighbours along and pushes others aside; the graph settles when
+  you let go (Settings → Interaction).
+- Removed the Breadth-first engine (it duplicated Layered); saved settings switch to Layered.
+- The app icon appears in the page header.
 
 ## 0.8.0 — 2026-09-28
 

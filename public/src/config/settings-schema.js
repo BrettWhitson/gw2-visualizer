@@ -22,7 +22,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   sidebarWidth: 360, // px, dragged with the side panel's edge
   ribbonCollapsed: false,
   // layout
-  layoutEngine: "layered", // layered | tree (breadth-first) | force
+  layoutEngine: "layered", // layered | force
   dagreRanker: "network-simplex",
   treeAlignment: "", // '' | UL | UR | DL | DR
   // forces (force-simulation.js): like Obsidian's graph view
@@ -76,6 +76,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   flowSpeed: 1,
   pinSelectionLineage: true, // keep the selected node's lineage (and flow) highlighted after the pointer leaves
   showTooltips: true,
+  dragPhysics: true, // dragging a node moves the others (live force simulation)
   showBuyCheaperHint: true,
   // filters
   hideRawMaterials: false,
@@ -209,6 +210,8 @@ export function migrateLegacySettings(saved) {
     saved.direction = flipped[saved.direction] ?? saved.direction;
   }
   saved.settingsRevision = 2;
+  // The Breadth-first engine duplicated Layered and was removed.
+  if (saved.layoutEngine === "tree") saved.layoutEngine = "layered";
   // The "Concentric rings" engine was folded into the radial direction (a spacing-aware radial tree).
   if (saved.layoutEngine === "concentric") {
     saved.layoutEngine = "layered";
@@ -251,10 +254,9 @@ export const CUSTOMIZE_GROUPS = [
         label: "Engine",
         type: "select",
         redraw: Redraw.fit,
-        hint: "Layered: tidy tree / dagre. Breadth-first: Cytoscape's level layout. Force-directed ignores the direction.",
+        hint: "Layered: levels along the flow direction (or rings when radial). Force-directed: free-floating, no direction.",
         choices: [
           ["layered", "Layered"],
-          ["tree", "Breadth-first"],
           ["force", "Force-directed"],
         ],
       },
@@ -868,6 +870,13 @@ export const SETTINGS_GROUPS = [
         hint: "The selected node keeps its highlighted lineage and animated flow after the pointer leaves",
         type: "checkbox",
         redraw: Redraw.restyle,
+      },
+      {
+        key: "dragPhysics",
+        label: "Physics on drag",
+        hint: "Dragging a node pulls its neighbours along and pushes others aside; the graph settles when you let go",
+        type: "checkbox",
+        redraw: Redraw.none,
       },
       {
         key: "showTooltips",

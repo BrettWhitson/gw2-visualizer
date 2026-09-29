@@ -104,11 +104,74 @@ test("repel is the spacing control: stronger repel spreads siblings further", ()
   }
 });
 
-test("link distance is the exact gap between levels in layered layouts", () => {
+test("layered: levels sit about one link distance apart", () => {
   const p = layout({ direction: "TB", linkDistance: 150 });
-  assert.equal(Math.round(p.a.y - p.a1.y), 150);
-  assert.equal(Math.round(p.result.y - p.a.y), 150);
-  assert.equal(Math.round(p.a1.y), Math.round(p.b1.y), "one level, one line");
+  for (const [upper, lower] of [
+    ["a1", "a"],
+    ["a", "result"],
+  ]) {
+    const gap = p[lower].y - p[upper].y;
+    assert.ok(
+      Math.abs(gap - 150) < 15,
+      `${upper} → ${lower}: ${Math.round(gap)}`,
+    );
+  }
+});
+
+test("link strength pulls links toward the link distance (stronger = closer)", () => {
+  const edgeError = (linkForce) => {
+    const p = layout({ layoutEngine: "force", linkDistance: 150, linkForce });
+    const lengths = ELEMENTS.filter((e) => e.data.source).map((e) =>
+      Math.hypot(
+        p[e.data.source].x - p[e.data.target].x,
+        p[e.data.source].y - p[e.data.target].y,
+      ),
+    );
+    return (
+      lengths.reduce((sum, length) => sum + Math.abs(length - 150), 0) /
+      lengths.length
+    );
+  };
+  assert.ok(
+    edgeError(1) < edgeError(0.1),
+    `strong ${edgeError(1).toFixed(1)} vs weak ${edgeError(0.1).toFixed(1)}`,
+  );
+});
+
+test("dragging a node pulls its neighbours along (live physics)", () => {
+  const cy = cytoscape({
+    headless: true,
+    styleEnabled: true,
+    elements: structuredClone(ELEMENTS),
+    style: [{ selector: "node", style: { width: 40, height: 40 } }],
+  });
+  try {
+    const settings = { ...DEFAULT_SETTINGS, layoutEngine: "force" };
+    const simulation = runLayout(cy, settings, { hasPreviousPositions: false });
+    const before = Object.fromEntries(
+      cy.nodes().map((n) => [n.id(), { ...n.position() }]),
+    );
+    const target = { x: before.a1.x + 600, y: before.a1.y };
+    simulation.fix("a1", target); // grab a1 and drag it far to the right
+    simulation.reheat(0.3);
+    for (let i = 0; i < 80; i++) simulation.tick();
+    simulation.apply("a1");
+    const moved = (id) => cy.getElementById(id).position().x - before[id].x;
+    assert.ok(
+      moved("a") > 100,
+      `a1's product follows (${Math.round(moved("a"))}px)`,
+    );
+    assert.ok(
+      moved("a") > moved("b1"),
+      "direct neighbours move more than distant nodes",
+    );
+    simulation.release("a1");
+    simulation.reheat(0);
+    for (let i = 0; i < 400 && simulation.isActive; i++) simulation.tick();
+    assert.ok(!simulation.isActive, "it settles after release");
+  } finally {
+    cy.destroy();
+  }
 });
 
 test("siblings never overlap, even with no repel", () => {

@@ -11,11 +11,11 @@ import {
  * Position every node for the current layout settings (synchronously, no animation — GraphView animates).
  *
  * Two stages:
- *  1. a deterministic seed: tidy tree (tree view), dagre (merged view), breadth-first, or a radial tree; the force
- *     engine starts from the previous positions (or the radial seed on a new tree);
- *  2. the force simulation (force-simulation.js) with the four force sliders: center, repel, link, distance.
- *     Layered layouts keep their levels (distance apart) and sibling order; radial layouts keep rings
- *     (distance apart); the force engine moves freely.
+ *  1. a deterministic seed: tidy tree (tree view), dagre (merged view) or a radial tree; the force engine starts
+ *     from the previous positions (or the radial seed on a new tree);
+ *  2. the force simulation (force-simulation.js) with the four force sliders, acting in every direction, plus a
+ *     pull toward each node's level (layered) or ring (radial).
+ * Returns the simulation, which GraphView keeps so dragging a node moves the others.
  * @param {import('cytoscape').Core} cy
  * @param {typeof import('../config/settings-schema.js').DEFAULT_SETTINGS} s
  * @param {{ hasPreviousPositions: boolean }} context
@@ -27,54 +27,34 @@ export function runLayout(cy, s, { hasPreviousPositions }) {
     link: s.linkForce,
     distance: s.linkDistance,
   };
-  // Seeds space siblings in proportion to repel (and reserve that share of each label), levels by the distance.
-  const labelShare = Math.min(1.5, s.repelForce / FORCE_REFERENCE.repel);
+  // Seeds space siblings in proportion to repel; collision boxes reserve that share of each label's width
+  // (low repel packs tighter and lets labels overlap).
+  const labelShare = Math.min(1, s.repelForce / FORCE_REFERENCE.repel);
   const siblingGap = s.repelForce * 3;
   const levelGap = Math.max(0, s.linkDistance - LAYOUT_BASE.nodeSize);
-  const common = {
-    animate: false,
-    fit: false,
-    nodeDimensionsIncludeLabels: true,
-  };
   const horizontal = isHorizontalDirection(s.direction);
   const growth = treeDirection(s.direction); // root → ingredients
-  const shares = horizontal ? [1, labelShare] : [labelShare, 1];
-  const run = (options) =>
-    withFootprints(cy, ...shares, () => cy.layout(options).run());
+  const sizeById = (id) => footprint(cy.getElementById(id), labelShare, 1);
 
   if (s.layoutEngine === "force") {
     if (!hasPreviousPositions)
       radialTreeLayout(cy, { siblingGap, ringStep: s.linkDistance });
-    simulateForces(cy, { mode: "free", ...forces });
-    return;
+    return simulateForces(cy, { mode: "free", ...forces, sizeById });
   }
   if (s.direction === "radial") {
-    const tree = radialTreeLayout(cy, {
-      siblingGap,
-      ringStep: s.linkDistance,
+    const tree = radialTreeLayout(cy, { siblingGap, ringStep: s.linkDistance });
+    if (!tree) return null;
+    return simulateForces(cy, {
+      mode: "radial",
+      ...forces,
+      depthById: tree.depthById,
+      rootId: tree.rootId,
+      sizeById,
     });
-    if (tree)
-      simulateForces(cy, {
-        mode: "radial",
-        ...forces,
-        depthById: tree.depthById,
-        rootId: tree.rootId,
-      });
-    return;
   }
 
-  if (s.layoutEngine === "tree") {
-    const rotate = DIRECTION_TRANSFORMS[growth] ?? ((p) => p);
-    run({
-      ...common,
-      name: "breadthfirst",
-      directed: true,
-      roots: cy.nodes(".root"),
-      avoidOverlap: true,
-      spacingFactor: 0.5 + labelShare * 0.5,
-      transform: (_node, position) => rotate(position),
-    });
-  } else if (!(
+  // Layered: seed with the tidy tree (tree view) or dagre (merged view is a DAG), then simulate.
+  const seeded =
     s.viewMode === "tree" &&
     tidyTreeLayout(cy, {
       direction: growth,
@@ -82,33 +62,31 @@ export function runLayout(cy, s, { hasPreviousPositions }) {
       siblingGap,
       levelGap,
       breadthLabelShare: labelShare,
-    })
-  )) {
-    // Merged view is a DAG → dagre.
-    run({
-      ...common,
-      name: "dagre",
-      rankDir: growth,
-      nodeSep: siblingGap,
-      rankSep: levelGap,
-      edgeSep: 6,
-      ranker: s.dagreRanker,
-      align: s.treeAlignment || undefined,
     });
+  if (!seeded) {
+    const shares = horizontal ? [1, labelShare] : [labelShare, 1];
+    withFootprints(cy, ...shares, () =>
+      cy
+        .layout({
+          name: "dagre",
+          animate: false,
+          fit: false,
+          nodeDimensionsIncludeLabels: true,
+          rankDir: growth,
+          nodeSep: siblingGap,
+          rankSep: levelGap,
+          edgeSep: 6,
+          ranker: s.dagreRanker,
+          align: s.treeAlignment || undefined,
+        })
+        .run(),
+    );
   }
-  // Space each node needs across its level: its box plus its share of the label, plus the repel gap.
-  const breadth = (node) => {
-    const { w, h } = footprint(node, ...shares);
-    return horizontal ? h : w;
-  };
-  const gapById = new Map(
-    cy.nodes().map((node) => [node.id(), breadth(node) + siblingGap]),
-  );
-  simulateForces(cy, {
+  return simulateForces(cy, {
     mode: "layered",
     axis: horizontal ? "x" : "y",
     ...forces,
-    minGapById: (id) => gapById.get(id),
+    sizeById,
   });
 }
 
@@ -133,14 +111,6 @@ function withFootprints(cy, widthLabelShare, heightLabelShare, layout) {
     prototype.layoutDimensions = measure;
   }
 }
-
-/** breadthfirst lays out top→bottom; rotate its output for the other directions. */
-const DIRECTION_TRANSFORMS = {
-  TB: (p) => p,
-  BT: (p) => ({ x: p.x, y: -p.y }),
-  LR: (p) => ({ x: p.y, y: p.x }),
-  RL: (p) => ({ x: -p.y, y: p.x }),
-};
 
 /**
  * Space a node takes up for layout: the node itself plus a share of its label's overhang on each axis.

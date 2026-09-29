@@ -40,6 +40,9 @@ export class GraphView {
   #labelOpacity = 1;
   /** Serialized stylesheet currently installed (restyling the whole graph is skipped when it wouldn't change). */
   #appliedStyleKey = "";
+  /** The latest layout's force simulation, kept so dragging a node moves the others. */
+  #simulation = null;
+  #physicsFrame = 0;
   /** @type {import('./graph-transition.js').GraphTransition | null} */
   #transition = null;
 
@@ -137,8 +140,8 @@ export class GraphView {
       this.#syncElements(nodeElements, edgeElements, startPositionOf);
       this.#applyStyle();
     });
-    runLayout(cy, s, {
-      nodesById,
+    this.#stopPhysics();
+    this.#simulation = runLayout(cy, s, {
       hasPreviousPositions: previous.nodes.size > 0,
     });
     updateCurvedEdges(cy, s);
@@ -624,6 +627,7 @@ export class GraphView {
     });
     cy.on("mouseout", "node", () => h.onNodeHoverEnd?.());
     cy.on("grab", "node", () => h.onNodeHoverEnd?.());
+    this.#bindDragPhysics();
     cy.on("zoom pan", () => h.onViewportChange?.());
 
     let pointerFrame = 0,
@@ -800,6 +804,62 @@ export class GraphView {
   }
 
   /** Jump any in-flight transition to its end state. */
+  // ---------------------------------------------------------------- drag physics
+
+  /**
+   * Obsidian-style dragging: grabbing a node reheats the layout's force simulation with the node held under the
+   * pointer, so neighbours follow and others make room; after release the graph cools down and settles.
+   */
+  #bindDragPhysics() {
+    const cy = this.cy;
+    let draggedId = null;
+    cy.on("grab", "node", (event) => {
+      const simulation = this.#simulation;
+      if (
+        !this.#values.dragPhysics ||
+        !simulation ||
+        event.target.hasClass("ghost")
+      )
+        return;
+      this.#finishAnimations();
+      simulation.syncFromGraph(); // pick up any manual moves since the last layout
+      draggedId = event.target.id();
+      simulation.fix(draggedId, event.target.position());
+      simulation.reheat(0.3);
+      this.#startPhysics(() => draggedId);
+    });
+    cy.on("drag", "node", (event) => {
+      if (draggedId === event.target.id())
+        this.#simulation?.fix(draggedId, event.target.position());
+    });
+    cy.on("free", "node", (event) => {
+      if (draggedId !== event.target.id()) return;
+      this.#simulation?.release(draggedId);
+      this.#simulation?.reheat(0); // cool down from here
+      draggedId = null;
+    });
+  }
+
+  #startPhysics(getDraggedId) {
+    if (this.#physicsFrame) return;
+    const step = () => {
+      const simulation = this.#simulation;
+      if (!simulation?.isActive) {
+        this.#physicsFrame = 0;
+        return;
+      }
+      simulation.tick();
+      simulation.apply(getDraggedId());
+      this.#physicsFrame = requestAnimationFrame(step);
+    };
+    this.#physicsFrame = requestAnimationFrame(step);
+  }
+
+  #stopPhysics() {
+    cancelAnimationFrame(this.#physicsFrame);
+    this.#physicsFrame = 0;
+  }
+
   #finishAnimations() {
     this.#transition?.finish();
     this.#transition = null;

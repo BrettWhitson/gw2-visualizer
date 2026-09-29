@@ -1,119 +1,196 @@
 /**
- * Force simulation for every layout, in the spirit of Obsidian's graph view: four forces with one slider each.
+ * Force simulation behind every layout, in the spirit of Obsidian's graph view. Four forces, one slider each, all
+ * acting in every direction:
  *
- *  - center:   pulls nodes toward the middle (keeps the graph compact); in radial layouts, how tightly nodes hold
- *              to their ring (the result itself is pinned in the middle)
- *  - repel:    pushes nodes away from each other (spacing)
- *  - link:     pulls connected nodes together (how tightly ingredients cluster around their product)
- *  - distance: the length links settle at (the gap between levels / rings)
+ *  - center:   pulls nodes toward the middle (keeps the graph compact)
+ *  - repel:    pushes nodes away from each other
+ *  - link:     how strongly links pull their ends toward the link distance (0 = links don't pull at all)
+ *  - distance: the length links settle at
  *
- * Three modes share those forces:
- *  - "free":    everything moves in 2D (the Force-directed engine);
- *  - "layered": each node stays on its level along the flow axis (level n at n × distance); forces act across
- *               the level, and siblings keep their order so edges never cross;
- *  - "radial":  the result is pinned in the centre and each node is pulled toward the ring for its depth
- *               (depth × distance). Crowded rings bulge a little instead of pushing every outer ring away.
+ * Plus a structure force for the layout, and collision so nodes (and their labels) don't overlap:
+ *  - "free":    no structure (the Force-directed engine);
+ *  - "layered": each node is pulled toward the line for its level, `distance` apart along the flow axis;
+ *  - "radial":  the result is pinned in the centre; each node is pulled toward the ring for its depth.
+ * Center also sets how firmly nodes hold their level or ring (0 loose, 1 crisp).
  *
- * Deterministic: the same input always gives the same layout (no random starts; ties are broken by index).
- * Runs synchronously for a fixed number of ticks; GraphView animates from the old positions to the result.
+ * The simulation keeps running while a node is dragged: the dragged node is held under the pointer and everything
+ * else reacts (neighbours follow, others make room), then it cools down and settles, as in Obsidian.
+ * Deterministic: the same input gives the same layout (no random starts; ties are broken by index).
  */
 
 /** Slider value → simulation strength. */
-const SCALE = { repel: 70, center: 0.06, link: 0.7, radial: 0.9 };
+const SCALE = { repel: 70, center: 0.03, link: 0.9, structure: 1.1 };
 const VELOCITY_DECAY = 0.4;
 const BARNES_HUT_THETA = 0.9;
+const ALPHA_MIN = 0.001;
 
-/** Fewer ticks for big graphs: the seed layout is already close, and repel is O(n log n) per tick. */
+/** Ticks to settle a fresh layout: fewer for big graphs (repel is O(n log n) per tick). */
 export function ticksFor(nodeCount) {
-  return nodeCount < 300 ? 300 : nodeCount < 1000 ? 180 : 100;
+  return nodeCount < 300 ? 300 : nodeCount < 1000 ? 200 : 120;
 }
 
-/**
- * @param {import('cytoscape').Core} cy  positions are read (as the seed) and written back
- * @param {{ mode: 'free' | 'layered' | 'radial', axis?: 'x' | 'y', center: number, repel: number, link: number,
- *           distance: number, depthById?: Map<string, number>, rootId?: string, ticks?: number,
- *           minGapById?: (id: string) => number }} options
- *   axis: layered only, the flow axis (levels are spread along it)
- *   depthById / rootId: radial only
- *   minGapById: layered only, the space a node needs across its level (for order-preserving collision)
- */
-export function simulateForces(cy, options) {
-  const nodes = cy.nodes().toArray();
-  const count = nodes.length;
-  if (count < 2) return;
-  const { mode, center, repel, link, distance } = options;
-  const ticks = options.ticks ?? ticksFor(count);
-  const indexById = new Map(nodes.map((node, i) => [node.id(), i]));
-  const x = new Float64Array(count),
-    y = new Float64Array(count),
-    vx = new Float64Array(count),
-    vy = new Float64Array(count);
-  nodes.forEach((node, i) => {
-    const p = node.position();
-    // Tiny deterministic offsets so coincident seeds can separate.
-    x[i] = p.x + ((i % 7) - 3) * 0.01;
-    y[i] = p.y + ((i % 5) - 2) * 0.01;
-  });
+export class ForceSimulation {
+  alpha = 1;
+  alphaTarget = 0;
 
-  const links = [];
-  const degree = new Uint32Array(count);
-  cy.edges().forEach((edge) => {
-    const s = indexById.get(edge.data("source")),
-      t = indexById.get(edge.data("target"));
-    if (s == null || t == null || s === t) return;
-    links.push([s, t]);
-    degree[s]++;
-    degree[t]++;
-  });
+  /**
+   * @param {import('cytoscape').Core} cy  current positions are the starting point
+   * @param {{ mode: 'free' | 'layered' | 'radial', axis?: 'x' | 'y', center: number, repel: number, link: number,
+   *           distance: number, depthById?: Map<string, number>, rootId?: string,
+   *           sizeById?: (id: string) => { w: number, h: number } }} options
+   *   axis: layered only, the flow axis levels are spread along
+   *   depthById / rootId: radial rings
+   *   sizeById: collision box per node, including its label (default: the node box)
+   */
+  constructor(cy, options) {
+    this.cy = cy;
+    this.options = options;
+    this.nodes = cy.nodes().not(".ghost").toArray();
+    const count = (this.count = this.nodes.length);
+    this.indexById = new Map(this.nodes.map((node, i) => [node.id(), i]));
+    this.x = new Float64Array(count);
+    this.y = new Float64Array(count);
+    this.vx = new Float64Array(count);
+    this.vy = new Float64Array(count);
+    /** Fixed (dragged / pinned) positions, NaN when free. */
+    this.fx = new Float64Array(count).fill(NaN);
+    this.fy = new Float64Array(count).fill(NaN);
+    this.halfW = new Float64Array(count);
+    this.halfH = new Float64Array(count);
+    this.nodes.forEach((node, i) => {
+      const p = node.position();
+      // Tiny deterministic offsets so coincident seeds can separate.
+      this.x[i] = p.x + ((i % 7) - 3) * 0.01;
+      this.y[i] = p.y + ((i % 5) - 2) * 0.01;
+      const size =
+        options.sizeById?.(node.id()) ??
+        node.layoutDimensions({ nodeDimensionsIncludeLabels: false });
+      this.halfW[i] = size.w / 2;
+      this.halfH[i] = size.h / 2;
+    });
 
-  const layered = mode === "layered" ? setUpLevels() : null;
-  const radial = mode === "radial" ? setUpRings() : null;
+    this.links = [];
+    this.degree = new Uint32Array(count);
+    cy.edges().forEach((edge) => {
+      const s = this.indexById.get(edge.data("source")),
+        t = this.indexById.get(edge.data("target"));
+      if (s == null || t == null || s === t) return;
+      this.links.push([s, t]);
+      this.degree[s]++;
+      this.degree[t]++;
+    });
 
-  let alpha = 1;
-  const alphaDecay = 1 - Math.pow(0.001, 1 / ticks);
-  for (let tick = 0; tick < ticks; tick++) {
-    applyLinks(alpha);
-    if (layered) repelWithinLevels(alpha);
-    else repelBarnesHut(alpha);
-    applyCenter(alpha);
-    if (radial) pullToRings(alpha);
-    for (let i = 0; i < count; i++) {
+    this.root = this.indexById.get(options.rootId ?? cy.nodes(".root").id());
+    this.structureTarget = new Float64Array(count); // level coordinate or ring radius
+    if (options.mode === "radial") {
+      this.nodes.forEach((node, i) => {
+        this.structureTarget[i] =
+          (options.depthById?.get(node.id()) ?? 0) * options.distance;
+      });
+      if (this.root != null) {
+        this.fx[this.root] = 0;
+        this.fy[this.root] = 0;
+      }
+    } else if (options.mode === "layered") {
+      this.#setUpLevels();
+    }
+  }
+
+  /** Settle synchronously (a fresh layout). */
+  run(ticks = ticksFor(this.count)) {
+    const decay = 1 - Math.pow(ALPHA_MIN, 1 / ticks);
+    for (let i = 0; i < ticks; i++) this.tick(decay);
+    return this;
+  }
+
+  /** Still moving? (the live, animated mode stops when this turns false) */
+  get isActive() {
+    return this.alpha > ALPHA_MIN * 5 || this.alphaTarget > 0;
+  }
+
+  /** Warm up again (a node was grabbed) and stay warm while `alphaTarget` > 0. */
+  reheat(alphaTarget = 0.3) {
+    this.alphaTarget = alphaTarget;
+    this.alpha = Math.max(this.alpha, alphaTarget);
+  }
+
+  /** Hold a node at a position (while dragged). */
+  fix(id, position) {
+    const i = this.indexById.get(id);
+    if (i == null) return;
+    this.fx[i] = position.x;
+    this.fy[i] = position.y;
+  }
+
+  /** Let a dragged node move freely again (the pinned radial root stays pinned). */
+  release(id) {
+    const i = this.indexById.get(id);
+    if (i == null || (this.options.mode === "radial" && i === this.root))
+      return;
+    this.fx[i] = NaN;
+    this.fy[i] = NaN;
+  }
+
+  /** Re-read positions from Cytoscape (nodes may have been moved by hand since the simulation ran). */
+  syncFromGraph() {
+    this.nodes.forEach((node, i) => {
+      if (node.removed()) return;
+      const p = node.position();
+      this.x[i] = p.x;
+      this.y[i] = p.y;
+      this.vx[i] = this.vy[i] = 0;
+    });
+  }
+
+  /** Write positions back to Cytoscape, optionally skipping one node (the one under the pointer). */
+  apply(skipId = null) {
+    this.cy.batch(() =>
+      this.nodes.forEach((node, i) => {
+        if (node.id() !== skipId && !node.removed())
+          node.position({ x: this.x[i], y: this.y[i] });
+      }),
+    );
+  }
+
+  /** One step. `decay` sets how fast alpha moves toward alphaTarget (≈300 ticks to settle by default). */
+  tick(decay = 0.0228) {
+    const { center, repel, link } = this.options;
+    const alpha = this.alpha;
+    this.#links(link * SCALE.link * alpha);
+    this.#repel(repel * SCALE.repel * alpha);
+    if (this.options.mode !== "radial")
+      this.#center(center * SCALE.center * alpha);
+    this.#structure(alpha);
+    const { x, y, vx, vy, fx, fy } = this;
+    for (let i = 0; i < this.count; i++) {
+      if (!Number.isNaN(fx[i])) {
+        x[i] = fx[i];
+        y[i] = fy[i];
+        vx[i] = vy[i] = 0;
+        continue;
+      }
       vx[i] *= 1 - VELOCITY_DECAY;
       vy[i] *= 1 - VELOCITY_DECAY;
       x[i] += vx[i];
       y[i] += vy[i];
     }
-    if (layered) keepLevelsAndOrder();
-    if (radial) {
-      x[radial.root] = 0;
-      y[radial.root] = 0;
-    }
-    alpha -= alpha * alphaDecay;
+    this.#collide();
+    this.alpha += (this.alphaTarget - this.alpha) * decay;
   }
-
-  cy.batch(() =>
-    nodes.forEach((node, i) => node.position({ x: x[i], y: y[i] })),
-  );
 
   // ---------------------------------------------------------------- forces
 
-  function applyLinks(alpha) {
-    const strength = link * SCALE.link * alpha;
+  /** Springs toward the link distance; the busier end of a link moves less. */
+  #links(strength) {
     if (!strength) return;
-    for (const [s, t] of links) {
-      const bias = degree[s] / (degree[s] + degree[t]); // the busier end moves less
-      if (layered) {
-        // Only across the level: pull the ingredient under its product.
-        const cross = layered.cross;
-        const pull = (cross[t] - cross[s]) * strength * 0.5;
-        applyCross(t, -pull * bias);
-        applyCross(s, pull * (1 - bias));
-        continue;
-      }
+    const { x, y, vx, vy, degree } = this;
+    const distance = this.options.distance;
+    for (const [s, t] of this.links) {
       const dx = x[t] + vx[t] - x[s] - vx[s] || 0.01,
         dy = y[t] + vy[t] - y[s] - vy[s] || 0.01;
       const length = Math.hypot(dx, dy);
       const pull = ((length - distance) / length) * strength * 0.5;
+      const bias = degree[s] / (degree[s] + degree[t]);
       vx[t] -= dx * pull * bias;
       vy[t] -= dy * pull * bias;
       vx[s] += dx * pull * (1 - bias);
@@ -121,28 +198,58 @@ export function simulateForces(cy, options) {
     }
   }
 
-  function applyCenter(alpha) {
-    const strength = center * SCALE.center * alpha;
+  #center(strength) {
     if (!strength) return;
-    if (layered) {
-      // Across levels only: compact each level toward the middle.
-      for (let i = 0; i < count; i++)
-        applyCross(i, -layered.cross[i] * strength);
-      return;
-    }
-    if (radial) return; // the result is pinned; center sets the ring force instead (pullToRings)
-    for (let i = 0; i < count; i++) {
-      vx[i] -= x[i] * strength;
-      vy[i] -= y[i] * strength;
+    for (let i = 0; i < this.count; i++) {
+      this.vx[i] -= this.x[i] * strength;
+      this.vy[i] -= this.y[i] * strength;
     }
   }
 
-  /** Many-body repulsion in 2D, approximated with a Barnes-Hut quadtree. */
-  function repelBarnesHut(alpha) {
-    const strength = repel * SCALE.repel * alpha;
+  /** Levels (layered) or rings (radial). Center sets how firmly nodes hold them. */
+  #structure(alpha) {
+    const mode = this.options.mode;
+    if (mode === "free") return;
+    const strength =
+      SCALE.structure * (0.15 + 4.25 * this.options.center) * alpha; // 0 loose, default 0.2 → ×1, 1 crisp
+    const { x, y, vx, vy, structureTarget: target } = this;
+    for (let i = 0; i < this.count; i++) {
+      if (mode === "layered") {
+        if (this.options.axis === "x") vx[i] += (target[i] - x[i]) * strength;
+        else vy[i] += (target[i] - y[i]) * strength;
+        continue;
+      }
+      if (i === this.root) continue;
+      const r = Math.hypot(x[i], y[i]) || 0.01;
+      const k = ((target[i] - r) / r) * strength;
+      vx[i] += x[i] * k;
+      vy[i] += y[i] * k;
+    }
+  }
+
+  /**
+   * Levels come from the seed layout's positions along the flow axis (ranked), respaced `distance` apart relative
+   * to the result's level.
+   */
+  #setUpLevels() {
+    const along = this.options.axis === "x" ? this.x : this.y;
+    const rounded = Array.from(along, (value) => Math.round(value));
+    const ranks = [...new Set(rounded)].sort((a, b) => a - b);
+    const rankOf = new Map(ranks.map((value, rank) => [value, rank]));
+    const rootRank = rankOf.get(rounded[this.root ?? 0]);
+    for (let i = 0; i < this.count; i++) {
+      this.structureTarget[i] =
+        (rankOf.get(rounded[i]) - rootRank) * this.options.distance;
+      along[i] = this.structureTarget[i]; // start on the level
+    }
+  }
+
+  /** Many-body repulsion, approximated with a Barnes-Hut quadtree. */
+  #repel(strength) {
     if (!strength) return;
-    const tree = buildQuadtree();
-    for (let i = 0; i < count; i++) {
+    const { x, y, vx, vy } = this;
+    const tree = buildQuadtree(x, y, this.count);
+    for (let i = 0; i < this.count; i++) {
       const stack = [tree];
       while (stack.length) {
         const cell = stack.pop();
@@ -163,36 +270,78 @@ export function simulateForces(cy, options) {
     }
   }
 
-  function buildQuadtree() {
-    let minX = Infinity,
-      minY = Infinity,
-      maxX = -Infinity,
-      maxY = -Infinity;
-    for (let i = 0; i < count; i++) {
-      minX = Math.min(minX, x[i]);
-      minY = Math.min(minY, y[i]);
-      maxX = Math.max(maxX, x[i]);
-      maxY = Math.max(maxY, y[i]);
+  /**
+   * Keep node boxes (with labels) apart: overlapping pairs are pushed apart along the axis where they overlap least.
+   * A uniform grid finds the neighbours in O(n).
+   */
+  #collide() {
+    const { x, y, halfW, halfH, fx } = this;
+    let cell = 1;
+    for (let i = 0; i < this.count; i++)
+      cell = Math.max(cell, halfW[i] * 2, halfH[i] * 2);
+    const grid = new Map();
+    const key = (gx, gy) => `${gx},${gy}`;
+    for (let i = 0; i < this.count; i++) {
+      const k = key(Math.floor(x[i] / cell), Math.floor(y[i] / cell));
+      if (!grid.has(k)) grid.set(k, []);
+      grid.get(k).push(i);
     }
-    const size = Math.max(maxX - minX, maxY - minY, 1);
-    const root = newCell(minX, minY, size);
-    for (let i = 0; i < count; i++) insert(root, i, 0);
-    summarize(root);
-    return root;
+    for (let i = 0; i < this.count; i++) {
+      const gx = Math.floor(x[i] / cell),
+        gy = Math.floor(y[i] / cell);
+      for (let ox = -1; ox <= 1; ox++)
+        for (let oy = -1; oy <= 1; oy++) {
+          for (const j of grid.get(key(gx + ox, gy + oy)) ?? []) {
+            if (j <= i) continue;
+            const overlapX = halfW[i] + halfW[j] - Math.abs(x[j] - x[i]),
+              overlapY = halfH[i] + halfH[j] - Math.abs(y[j] - y[i]);
+            if (overlapX <= 0 || overlapY <= 0) continue;
+            const iFixed = !Number.isNaN(fx[i]),
+              jFixed = !Number.isNaN(fx[j]);
+            if (iFixed && jFixed) continue;
+            const share = iFixed ? 0 : jFixed ? 1 : 0.5; // how much of the push i takes
+            if (overlapX < overlapY) {
+              const sign = x[j] > x[i] || (x[j] === x[i] && j > i) ? 1 : -1;
+              x[i] -= sign * overlapX * share;
+              x[j] += sign * overlapX * (1 - share);
+            } else {
+              const sign = y[j] > y[i] || (y[j] === y[i] && j > i) ? 1 : -1;
+              y[i] -= sign * overlapY * share;
+              y[j] += sign * overlapY * (1 - share);
+            }
+          }
+        }
+    }
   }
+}
 
-  function newCell(left, top, size) {
-    return {
-      left,
-      top,
-      size,
-      index: null,
-      children: null,
-      mass: 0,
-      cx: 0,
-      cy: 0,
-    };
+/** Build, settle and apply a layout in one go. Returns the simulation (kept for live dragging). */
+export function simulateForces(cy, options) {
+  if (cy.nodes().length < 2) return null;
+  const simulation = new ForceSimulation(cy, options);
+  simulation.run(options.ticks);
+  simulation.apply();
+  simulation.alpha = 0; // settled
+  return simulation;
+}
+
+// ---------------------------------------------------------------- Barnes-Hut quadtree
+
+function buildQuadtree(x, y, count) {
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  for (let i = 0; i < count; i++) {
+    minX = Math.min(minX, x[i]);
+    minY = Math.min(minY, y[i]);
+    maxX = Math.max(maxX, x[i]);
+    maxY = Math.max(maxY, y[i]);
   }
+  const root = newCell(minX, minY, Math.max(maxX - minX, maxY - minY, 1));
+  for (let i = 0; i < count; i++) insert(root, i, 0);
+  summarize(root);
+  return root;
 
   function insert(cell, i, depth) {
     if (!cell.children && cell.index == null && !cell.mass) {
@@ -248,123 +397,17 @@ export function simulateForces(cy, options) {
     cell.cx = mass ? sx / mass : 0;
     cell.cy = mass ? sy / mass : 0;
   }
+}
 
-  // ---------------------------------------------------------------- layered mode
-
-  /**
-   * Levels come from the seed layout's positions along the flow axis (ranked), respaced to `distance` apart.
-   * `order` keeps each level's seed order across the axis; the simulation never reorders siblings.
-   */
-  function setUpLevels() {
-    const along = options.axis === "x" ? x : y;
-    const cross = options.axis === "x" ? y : x;
-    const crossVelocity = options.axis === "x" ? vy : vx;
-    const alongVelocity = options.axis === "x" ? vx : vy;
-    const rootIndex = indexById.get(cy.nodes(".root").id()) ?? 0;
-    const rounded = Array.from(along, (value) => Math.round(value));
-    const ranks = [...new Set(rounded)].sort((a, b) => a - b);
-    const rankOf = new Map(ranks.map((value, rank) => [value, rank]));
-    const rootRank = rankOf.get(rounded[rootIndex]);
-    const target = new Float64Array(count);
-    const levels = new Map();
-    for (let i = 0; i < count; i++) {
-      const rank = rankOf.get(rounded[i]);
-      target[i] = (rank - rootRank) * distance;
-      if (!levels.has(rank)) levels.set(rank, []);
-      levels.get(rank).push(i);
-    }
-    for (const level of levels.values())
-      level.sort((a, b) => cross[a] - cross[b] || a - b);
-    const gap = new Float64Array(count);
-    nodes.forEach((node, i) => {
-      gap[i] = options.minGapById?.(node.id()) ?? 40;
-    });
-    return {
-      along,
-      cross,
-      crossVelocity,
-      alongVelocity,
-      target,
-      levels: [...levels.values()],
-      gap,
-    };
-  }
-
-  function applyCross(i, amount) {
-    layered.crossVelocity[i] += amount;
-  }
-
-  /** Repulsion between near neighbours on the same level (1D, so O(n) per tick). */
-  function repelWithinLevels(alpha) {
-    const strength = repel * SCALE.repel * alpha;
-    if (!strength) return;
-    const cross = layered.cross;
-    for (const level of layered.levels) {
-      for (let a = 0; a < level.length; a++) {
-        for (let b = a + 1; b < Math.min(level.length, a + 4); b++) {
-          const i = level[a],
-            j = level[b];
-          const d = Math.max(cross[j] - cross[i], 1);
-          const push = strength / (d * d);
-          applyCross(i, -push * d * 0.5);
-          applyCross(j, push * d * 0.5);
-        }
-      }
-    }
-  }
-
-  /**
-   * Fix each node on its level, and keep siblings in their seed order at least their footprint apart. Two sweeps
-   * (left→right, right→left) each give a valid placement; their average is valid too and doesn't drift sideways.
-   */
-  function keepLevelsAndOrder() {
-    const { along, alongVelocity, cross, target, levels, gap } = layered;
-    for (let i = 0; i < count; i++) {
-      along[i] = target[i];
-      alongVelocity[i] = 0;
-    }
-    for (const level of levels) {
-      const n = level.length;
-      if (n < 2) continue;
-      const forward = new Float64Array(n),
-        backward = new Float64Array(n);
-      forward[0] = cross[level[0]];
-      for (let k = 1; k < n; k++) {
-        const minimum =
-          forward[k - 1] + (gap[level[k - 1]] + gap[level[k]]) / 2;
-        forward[k] = Math.max(cross[level[k]], minimum);
-      }
-      backward[n - 1] = cross[level[n - 1]];
-      for (let k = n - 2; k >= 0; k--) {
-        const maximum =
-          backward[k + 1] - (gap[level[k + 1]] + gap[level[k]]) / 2;
-        backward[k] = Math.min(cross[level[k]], maximum);
-      }
-      for (let k = 0; k < n; k++)
-        cross[level[k]] = (forward[k] + backward[k]) / 2;
-    }
-  }
-
-  // ---------------------------------------------------------------- radial mode
-
-  function setUpRings() {
-    const root = indexById.get(options.rootId) ?? 0;
-    const ring = new Float64Array(count);
-    nodes.forEach((node, i) => {
-      ring[i] = (options.depthById?.get(node.id()) ?? 0) * distance;
-    });
-    return { root, ring };
-  }
-
-  /** Pull every node toward the ring for its depth: loosely at center 0 (organic), firmly at 1 (crisp rings). */
-  function pullToRings(alpha) {
-    const strength = SCALE.radial * (0.75 + 1.25 * center) * alpha; // default center 0.2 → ×1
-    for (let i = 0; i < count; i++) {
-      if (i === radial.root) continue;
-      const r = Math.hypot(x[i], y[i]) || 0.01;
-      const k = ((radial.ring[i] - r) / r) * strength;
-      vx[i] += x[i] * k;
-      vy[i] += y[i] * k;
-    }
-  }
+function newCell(left, top, size) {
+  return {
+    left,
+    top,
+    size,
+    index: null,
+    children: null,
+    mass: 0,
+    cx: 0,
+    cy: 0,
+  };
 }

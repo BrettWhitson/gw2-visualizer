@@ -1735,3 +1735,16 @@ button.icon,
 .ribbon-popout {
   overflow-x: hidden;
 }
+
+/* ---------- header: app icon beside the name ---------- */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.brand-icon {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+}

@@ -25,7 +25,7 @@ The app is plain ES modules, which browsers only load over http, so opening `pub
 | Action | Does |
 |---|---|
 | Drag background / scroll or pinch | Pan / zoom (smooth; speed in Settings) |
-| Drag a node | Move it |
+| Drag a node | Move it; its neighbours follow and the graph resettles |
 | Hover | Tooltip; highlights the node's ingredients and its path to the result |
 | Click | Select: Details panel (sources, prices, recipe, "used in"); its lineage stays highlighted |
 | Double-click | Expand / collapse (collapsed = buy it instead of crafting; the shopping list updates) |
@@ -49,11 +49,12 @@ section. The **Customize** panel has everything in one place.
 and the finished item on the right; *upward* (the default) puts the result on top; *radial* puts it in the centre
 with each level on a ring around it.
 
-**Forces** work like Obsidian's graph view: *center* pulls everything toward the middle, *repel* pushes nodes apart
-(the main spacing control), *link strength* pulls ingredients toward what they're used for, and *link distance* is
-the gap between levels or rings. Every layout runs the same simulation: layered layouts keep their levels and never
-reorder siblings (so edges don't cross), radial layouts keep evenly spaced rings, and Force-directed moves freely.
-Results are deterministic: the same tree always lays out the same way.
+**Forces** work like Obsidian's graph view, in every direction: *center* pulls everything toward the middle,
+*repel* pushes nodes apart, *link strength* is how strongly links pull toward the *link distance* (the length they
+settle at). Every layout runs the same simulation with one extra pull: toward each node's level (layered) or ring
+(radial); *center* also sets how firmly nodes keep to it, from loose and organic (0) to crisp (1). Force-directed
+has no structure at all. Nodes and labels never overlap, results are deterministic, and **dragging a node** pulls
+its neighbours along and pushes others aside until the graph settles (turn off in Settings → Interaction).
 
 **Path.** *Craft all* crafts every ingredient with its default recipe. *Cheapest* picks, for every item, the lowest
 cost of buying it or crafting it with any of its recipes, all the way down, using trading post prices (ingredients
@@ -135,7 +136,7 @@ npm run icons          # regenerate public/icons/ from tools/generate-icons.mjs
 
 - Tests (`tests/`, Node's built-in `node:test`) cover tree building and cost roll-up, the Path planner, graph
   projection, search, data loading, caching and the snapshot path, price and wiki lookups, settings migrations, and
-  layout behaviour (flow direction, radial rings, spacing) against real headless Cytoscape.
+  layout behaviour (flow direction, radial rings, forces, drag physics) against real headless Cytoscape.
 - The service worker is skipped on localhost so you always run fresh code; add `?sw=1` to test offline and install
   behaviour locally.
 
