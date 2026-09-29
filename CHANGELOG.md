@@ -3,7 +3,7 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `public/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
-## Unreleased
+## 0.9.0 — 2026-09-29
 
 - **Forces** replace the node / level spacing sliders, like Obsidian's graph view: center, repel, link strength
   and link distance, acting in every direction in every layout. Layered layouts pull nodes toward their level and

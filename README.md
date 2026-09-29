@@ -6,7 +6,7 @@ Search any Guild Wars 2 item and explore its full crafting tree as an interactiv
 trading post costs, the cheapest buy-or-craft path, where every ingredient comes from, and a shopping list. Runs
 entirely in the browser and installs as a PWA.
 
-Current version: **0.8.0** · [Changelog](CHANGELOG.md) · [Roadmap](#roadmap)
+Current version: **0.9.0** · [Changelog](CHANGELOG.md) · [Next steps](#next-steps) · [Roadmap](#roadmap) · [Considerations](#considerations)
 
 ## Quick start
 
@@ -102,6 +102,30 @@ The snapshot is rebuilt daily by the deploy workflow, the only client that downl
 GW2 API. Without a published snapshot (e.g. local development before `npm run snapshot`) the app downloads from the
 API itself. Mystic Forge recipes are bundled with the site (weekly `refresh-forge-data` workflow).
 
+## Next steps
+
+Near-term polish on what's already here.
+
+**Graph engine improvements and tweaking**
+- Tune the force defaults per layout and view (tree vs merged, small vs 1,000+ node trees) so each looks good
+  without adjustment.
+- Keep dragged nodes where they're dropped (pin on drop, double-click or a button to release) and remember manual
+  positions across re-renders of the same tree.
+- Run large simulations off the main thread (Web Worker) and warm-start re-layouts from the current positions so
+  small setting changes don't reshuffle the whole graph.
+- Better edge routing in layered layouts: fewer crossings, and bundling for items used many times in merged view.
+
+**Control ribbon tweaks**
+- Let users choose which controls appear in each ribbon section, and save custom Layout / Style presets.
+- A compact single-row ribbon mode, and better overflow on narrow screens than horizontal scrolling.
+- Show a changed-from-default marker on ribbon sections, matching the Customize panel.
+
+**UI/UX improvements**
+- A first-visit tour of the ribbon layers, keyboard navigation and the Path modes.
+- Screen-reader pass on the popouts and details panel; check colour contrast of every node palette.
+- Clearer loading and error states for the snapshot, prices and wiki lookups, with retry where it's safe.
+- Touch: larger drag targets on phones and a long-press menu in place of right-click cycling.
+
 ## Roadmap
 
 Ideas, roughly in order; none of this is promised.
@@ -116,6 +140,50 @@ Ideas, roughly in order; none of this is promised.
   - account progression: legendary armoury, masteries, unlocks;
   - account value: total value of items, materials and currencies, and how it changes over time.
 - Shopping list export (CSV / clipboard) and a trading post watchlist.
+
+## Considerations
+
+Larger architectural changes that have been weighed but not made. Each is worth revisiting when the trigger in
+*When* applies.
+
+**Moving to a web framework** (Svelte, Preact, Lit or similar, with Vite)
+- *For:* the panels, ribbon, popouts and options are hand-wired DOM that the app keeps in sync with settings
+  (`render` / `syncValues` / `refreshStatus`); a component model with reactive state would remove that plumbing and
+  make new UI cheaper. It would also bring TypeScript, hot reload and bundling almost for free.
+- *Against:* a build step and toolchain to maintain, a larger download, and a rewrite of the UI layer for no
+  visible change. The data, model and graph layers would carry over unchanged either way.
+- *Middle ground:* Lit web components, or TypeScript checking of the existing JSDoc (`jsconfig.json` is already
+  there), both without a bundler.
+- *When:* the Roadmap's extra visualizers (characters, achievements, account) start; several views sharing
+  components is where a framework pays for itself.
+
+**Writing our own graph rendering engine** (Canvas 2D or WebGL, e.g. with PixiJS)
+- *For:* layout and the force simulation are already ours, so Cytoscape is mainly the renderer, interaction and
+  style system. A purpose-built WebGL renderer would handle merged views of several thousand nodes smoothly and
+  give full control over edge drawing, flow animation and export.
+- *Against:* hit-testing, text rendering and label fading, pan / zoom, touch gestures, keyboard access, PNG export
+  and the stylesheet all have to be rebuilt and tested; Cytoscape does these well today.
+- *Alternatives:* a WebGL graph library such as sigma.js, or keeping Cytoscape and drawing only the heavy parts
+  (edges, flow animation) on a separate canvas layer.
+- *When:* profiling shows rendering, not layout, is what limits large trees.
+
+**Layout engine choices**
+- The force simulation is custom so it's deterministic and can keep levels and rings. d3-force would bring a
+  well-tested core but still need the structure and collision forces added.
+- ELK's layered algorithm places nodes with fewer edge crossings than dagre, at the cost of a much larger library
+  (or a Web Worker build).
+- Moving the simulation to a Web Worker (or WebAssembly) keeps the page responsive on very large trees; see Next steps.
+
+**A small backend**
+- The site is fully static: the daily snapshot covers recipes and items, and visitors fetch prices directly from
+  the GW2 API. A serverless function or edge cache in front of `/v2/commerce/prices` would cut those per-visitor
+  requests further and allow price history.
+- API-key features should stay in the browser so the site never holds anyone's key; that argues for keeping the
+  backend limited to shared, public data.
+
+**Data snapshot growth**
+- The snapshot is one ~0.7 MB gzip file. If more data is added (for achievements, skins, currencies), split it by
+  kind and load parts on demand, or publish daily deltas instead of a full file.
 
 ## Development
 
@@ -241,8 +309,9 @@ fallbacks when storage, the snapshot or the wiki is unavailable, and a pinned GW
   that use game content and the API. This app is run by an individual, free and non-commercial, labelled as an
   **unofficial fansite** (header, footer, About, exported PNGs and the browser title bar, which the terms require),
   uses no ArenaNet logos, loads item icons from ArenaNet's render service, and shows the required notice. The deployed
-  site serves a snapshot of API data so visitors don't each re-download it. Before adding ads, donation links or paid
-  features, re-read section II.3: only limited, non-intrusive advertising is allowed without a written agreement.
+  site serves a snapshot of API data so visitors don't each re-download it. It has no ads, donation links or paid
+  features; the terms (section II.3) allow only limited, non-intrusive advertising without a written agreement with
+  ArenaNet.
 - **Guild Wars 2 Wiki:** only the official query API is used, never HTML pages, following
   [MediaWiki API etiquette](https://www.mediawiki.org/wiki/API:Etiquette). The weekly recipe updater sends an
   identifying User-Agent with contact details (it refuses to run without one), makes sequential requests with pauses,
