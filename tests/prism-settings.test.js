@@ -14,6 +14,7 @@ import {
   resolveNodeStyle,
   resolveRouting,
 } from "prism/style.js";
+import { tokenTheme } from "../web/src/render/theme-tokens.js";
 import { DEFAULT_SETTINGS } from "../web/src/config/settings-schema.js";
 import { FORGE_COLOR, UI_COLORS } from "../web/src/config/constants.js";
 
@@ -25,7 +26,7 @@ function nodeStyle(classes, data = {}, s = settings()) {
     new Set(prismClasses(classes)),
     data,
     prismOptions(s),
-    prismTheme(s),
+    { ...tokenTheme(), ...prismTheme(s) }, // as WebGLGraphView composes it
     gw2ClassRules(s),
   );
 }
@@ -34,7 +35,7 @@ function edgeStyle(classes, data = {}, s = settings()) {
     new Set(prismClasses(classes)),
     data,
     prismOptions(s),
-    prismTheme(s),
+    { ...tokenTheme(), ...prismTheme(s) }, // as WebGLGraphView composes it
     gw2ClassRules(s),
   );
 }

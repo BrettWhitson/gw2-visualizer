@@ -7,31 +7,60 @@
 export const TP_FEE = 0.15;
 
 /**
- * Edge colours by where the ingredient comes from (getSourceCategory), from the Hybrid mockup. Literal colours:
- * Prism's class rules take hex, not CSS variables.
+ * Edge colours by where the ingredient comes from (getSourceCategory), following the source tokens in
+ * css/app.css (`--s-*`), with literal fallbacks: Prism's class rules take colours, not CSS variables.
  */
 export const EDGE_SOURCES = {
-  craft: { label: "Crafted", color: "#6ea0ff" },
-  mf: { label: "Mystic Forge", color: "#b28cff" },
-  raw: { label: "Bought / raw", color: "#e0a05a" },
-  currency: { label: "Currency", color: "#5cc9a7", pattern: "dashed" },
-  generic: { label: "Generic", color: "#8d939e", pattern: "dotted" },
+  craft: { label: "Crafted", token: "s-craft", color: "#6ea0ff" },
+  mf: { label: "Mystic Forge", token: "s-forge", color: "#b28cff" },
+  raw: { label: "Bought / raw", token: "s-buy", color: "#e0a05a" },
+  currency: {
+    label: "Currency",
+    token: "s-vendor",
+    color: "#5cc9a7",
+    pattern: "dashed",
+  },
+  generic: {
+    label: "Generic",
+    token: "s-bound",
+    color: "#6b717c",
+    pattern: "dotted",
+  },
 };
 
-/** Prism class rules for the `src-<category>` edge classes NodeAppearance adds. */
-export function edgeSourceRules() {
+/** A CSS custom property's value on the page, or null (outside a browser, or unset). */
+function cssToken(name) {
+  const style =
+    globalThis.document &&
+    globalThis.getComputedStyle?.(document.documentElement);
+  return style?.getPropertyValue(`--${name}`).trim() || null;
+}
+
+/** The colour for a source category: its token, else the fallback. */
+export function edgeSourceColor(category, readToken = cssToken) {
+  const source = EDGE_SOURCES[category];
+  return readToken(source.token) || source.color;
+}
+
+/**
+ * Prism class rules for the `src-<category>` edge classes NodeAppearance adds.
+ * @param {(token: string) => string | null} [readToken]
+ */
+export function edgeSourceRules(readToken = cssToken) {
   const edges = {};
-  for (const [category, { color, pattern }] of Object.entries(EDGE_SOURCES))
+  for (const [category, { pattern }] of Object.entries(EDGE_SOURCES)) {
+    const color = edgeSourceColor(category, readToken);
     edges[`src-${category}`] = pattern ? { color, pattern } : { color };
+  }
   return { edges };
 }
 
 /** Legend entries for the edge key; their keys reuse the legend's "source:" matcher. */
 export function edgeSourceLegendEntries() {
-  return Object.entries(EDGE_SOURCES).map(([category, { label, color }]) => ({
+  return Object.entries(EDGE_SOURCES).map(([category, { label }]) => ({
     key: `source:${category}`,
     label: `${label} edges`,
-    color,
+    color: edgeSourceColor(category),
     line: true,
     count: 0,
   }));

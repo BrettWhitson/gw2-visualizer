@@ -12,13 +12,30 @@ import { SOURCE_COLORS } from "../web/src/config/constants.js";
 test("edge source rules cover every source category but the root, with literal colours", () => {
   const categories = Object.keys(SOURCE_COLORS).filter((c) => c !== "root");
   assert.deepEqual(Object.keys(EDGE_SOURCES).sort(), categories.sort());
-  const { edges } = edgeSourceRules();
+  const { edges } = edgeSourceRules(() => null); // no page: the fallbacks
   for (const category of categories) {
     const rule = edges[`src-${category}`];
     assert.match(rule.color, /^#[0-9a-f]{6}$/); // Prism rejects var() and color-mix()
   }
   assert.equal(edges["src-currency"].pattern, "dashed");
   assert.equal(edges["src-craft"].pattern, undefined);
+});
+
+test("edge source colours follow the page's --s-* tokens when set", () => {
+  const tokens = { "s-craft": "#123456" };
+  const { edges } = edgeSourceRules((name) => tokens[name] ?? null);
+  assert.equal(edges["src-craft"].color, "#123456");
+  assert.equal(edges["src-mf"].color, EDGE_SOURCES.mf.color);
+});
+
+test("edge source fallbacks match the tokens in app.css", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const css = await readFile(
+    new URL("../web/css/app.css", import.meta.url),
+    "utf8",
+  );
+  for (const { token, color } of Object.values(EDGE_SOURCES))
+    assert.match(css, new RegExp(`--${token}:\\s*${color};`, "i"));
 });
 
 test("edge legend entries reuse the source: matcher and draw as lines", () => {

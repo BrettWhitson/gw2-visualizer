@@ -96,10 +96,16 @@ export class PriceBook {
   /**
    * Fetch any ids that are unknown or stale, and wait for ids already being fetched.
    * @param {{ force?: boolean }} [options]  force: refetch even fresh quotes (a Refresh)
-   * @returns {Promise<boolean>} true when new prices arrived (so costs should be recomputed)
+   * @returns {Promise<boolean>} true when prices for these ids arrived, from the API or restored from storage by this
+   *   call (so costs should be recomputed)
    */
   async ensure(itemIds, { force = false } = {}) {
+    itemIds = [...itemIds];
+    const knownBefore = itemIds.filter((id) => this.#fetchedAt.has(id));
     await this.ready();
+    const restored =
+      knownBefore.length <
+      itemIds.filter((id) => this.#fetchedAt.has(id)).length;
     const now = this.now(),
       maxAge = this.maxAge(),
       waits = new Set(),
@@ -114,7 +120,7 @@ export class PriceBook {
         missing.push(id);
     }
     if (missing.length) waits.add(this.#fetch(missing));
-    if (!waits.size) return false;
+    if (!waits.size) return restored;
     await Promise.all(waits);
     return true;
   }

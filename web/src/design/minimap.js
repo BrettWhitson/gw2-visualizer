@@ -7,8 +7,13 @@
 const WIDTH = 184;
 const HEIGHT = 120;
 const PAD = 8;
-/** How long to keep redrawing after something moves nodes (a re-layout or physics), in ms. */
-const FOLLOW_MS = 1400;
+/**
+ * After something moves nodes (a re-layout, growing a new tree, physics), keep redrawing until they have been still
+ * for STILL_FRAMES frames, for at least FOLLOW_MS and at most FOLLOW_MAX_MS.
+ */
+const FOLLOW_MS = 400;
+const FOLLOW_MAX_MS = 15000;
+const STILL_FRAMES = 20;
 
 export class Minimap {
   #view;
@@ -18,6 +23,10 @@ export class Minimap {
   #context;
   #visible = false;
   #followUntil = 0;
+  #followLimit = 0;
+  /** A cheap fingerprint of the last drawn positions, and for how many frames it hasn't changed. */
+  #lastFingerprint = 0;
+  #stillFrames = 0;
   #frame = 0;
   /** graph → minimap transform from the last draw: minimap = graph·scale + offset */
   #transform = { scale: 1, offsetX: 0, offsetY: 0 };
@@ -64,13 +73,21 @@ export class Minimap {
     this.#frame = requestAnimationFrame(() => {
       this.#frame = 0;
       this.#draw();
-      if (performance.now() < this.#followUntil) this.redraw();
+      const now = performance.now();
+      if (
+        now < this.#followLimit &&
+        (now < this.#followUntil || this.#stillFrames < STILL_FRAMES)
+      )
+        this.redraw();
     });
   }
 
   /** Nodes are moving: keep redrawing for a while. */
   #follow() {
-    this.#followUntil = performance.now() + FOLLOW_MS;
+    const now = performance.now();
+    this.#followUntil = now + FOLLOW_MS;
+    this.#followLimit = now + FOLLOW_MAX_MS;
+    this.#stillFrames = 0;
     this.redraw();
   }
 
@@ -79,6 +96,12 @@ export class Minimap {
     context.clearRect(0, 0, WIDTH, HEIGHT);
     const positions = [...this.#view.positions()].filter(([, p]) => p);
     if (!positions.length) return;
+    let fingerprint = 0;
+    for (const [, { x, y }] of positions) fingerprint += x * 3 + y * 7;
+    if (Math.abs(fingerprint - this.#lastFingerprint) < 0.5)
+      this.#stillFrames++;
+    else this.#stillFrames = 0;
+    this.#lastFingerprint = fingerprint;
     let minX = Infinity,
       minY = Infinity,
       maxX = -Infinity,

@@ -5,7 +5,7 @@
 
 // ---------------------------------------------------------------- release
 /** Bump on every release: it versions the service-worker cache so users get the new build. */
-export const APP_VERSION = "0.10.0";
+export const APP_VERSION = "0.11.0";
 export const REPOSITORY_URL = "https://github.com/BrettWhitson/gw2-visualizer"; // shown in About; the wiki contact
 
 /** ArenaNet's Content Terms of Use require fan sites to be labelled unofficial, including in the browser title bar. */
@@ -154,24 +154,27 @@ export const SOURCE_LABELS = {
 export const COST_HEAT_COLORS = ["#34405a", "#ffb347", "#ff4d3d"];
 export const COST_LOW_LEGEND_COLOR = "#5a6a8a";
 
-/** Shared UI colours (mirrors the CSS variables; needed where CSS can't reach: the graph canvas). */
+/**
+ * Shared UI colours, for where CSS can't reach (the graph canvas, PNG export). Those marked with a CSS variable mirror
+ * the design tokens in css/app.css; tests/theme-tokens.test.js keeps them in step.
+ */
 export const UI_COLORS = {
-  canvas: "#0d1017",
-  panel: "#151a24",
-  line: "#2a3242",
-  text: "#e3e6ec",
-  muted: "#8a93a6",
-  accent: "#d6a74a",
-  accentLight: "#f0c46a",
+  canvas: "#0e0f12", // --bg
+  panel: "#15171b", // --panel
+  line: "#2a2d34", // --line
+  text: "#e6e8eb", // --text
+  muted: "#8d939e", // --muted
+  accent: "#e2b54f", // --brand
+  accentLight: "#f0c46a", // --brand-light
   highlight: "#ffd166",
   highlightChipFill: "#3a2f12",
-  nodeFill: "#1a2030",
-  labelBackdrop: "#0b0e14",
+  nodeFill: "#1c1f24", // --raised
+  labelBackdrop: "#0b0c0e",
   neutralEdge: "#3b4558",
   lineageUp: "#d6a74a",
   lineageDown: "#62a4da",
   focus: "#62a4da",
-  danger: "#e0645c",
+  danger: "#ef5f5f", // --down
   owned: "#4fc1b0", // covered by the account's own items
   good: "#8fd07a",
 };

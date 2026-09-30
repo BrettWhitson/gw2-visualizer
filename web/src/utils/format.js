@@ -15,14 +15,17 @@ function splitCoins(copper) {
   };
 }
 
-/** "12g 34s 56c" with coloured spans; "—" for unknown. */
+/**
+ * "12g 34s 56c" as spans; "—" for unknown. Each unit letter sits in an <i>, which the stylesheet draws as a coin
+ * dot (the letter stays in the text for copying and screen readers).
+ */
 export function formatCoinsHtml(copper) {
   if (copper == null) return '<span class="muted">—</span>';
   const { gold, silver, copper: cu, negative } = splitCoins(copper);
   const parts = [];
-  if (gold) parts.push(`<span class="g">${formatNumber(gold)}g</span>`);
-  if (gold || silver) parts.push(`<span class="s">${silver}s</span>`);
-  parts.push(`<span class="c">${cu}c</span>`);
+  if (gold) parts.push(`<span class="g">${formatNumber(gold)}<i>g</i></span>`);
+  if (gold || silver) parts.push(`<span class="s">${silver}<i>s</i></span>`);
+  parts.push(`<span class="c">${cu}<i>c</i></span>`);
   return `<span class="coin">${negative ? "−" : ""}${parts.join(" ")}</span>`;
 }
 

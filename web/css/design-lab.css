@@ -21,7 +21,7 @@ body.dl-no-ribbon #ribbonPopout {
 }
 .dl-view-btn[aria-expanded="true"],
 .dl-lab-btn[aria-expanded="true"] {
-  border-color: var(--accent);
+  border-color: var(--brand);
 }
 
 /* ---------- popovers ---------- */
@@ -34,7 +34,7 @@ body.dl-no-ribbon #ribbonPopout {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 10px;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow);
   padding: 10px 12px 12px;
 }
 .dl-pop[hidden] {
@@ -62,7 +62,7 @@ body.dl-no-ribbon #ribbonPopout {
   cursor: pointer;
 }
 .dl-feature:hover {
-  background: var(--panel2);
+  background: var(--raised);
 }
 .dl-feature input {
   margin-top: 3px;
@@ -114,7 +114,7 @@ body.dl-no-ribbon #ribbonPopout {
   font-size: 12px;
 }
 .dl-seg button.on {
-  background: var(--panel2);
+  background: var(--raised);
   color: var(--text);
   box-shadow: 0 0 0 1px var(--line);
 }
@@ -157,7 +157,7 @@ body.dl-no-ribbon #ribbonPopout {
   right: 12px;
   z-index: 3;
   display: flex;
-  background: #0d1017e6;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
   border: 1px solid var(--line);
   border-radius: 8px;
   backdrop-filter: blur(6px);
@@ -186,10 +186,10 @@ body.dl-no-ribbon #ribbonPopout {
   white-space: nowrap;
 }
 .dl-k.up b {
-  color: #3fb68b;
+  color: var(--up);
 }
 .dl-k.down b {
-  color: var(--danger);
+  color: var(--down);
 }
 .dl-chip {
   font-style: normal;
@@ -199,10 +199,10 @@ body.dl-no-ribbon #ribbonPopout {
   vertical-align: 1px;
 }
 .dl-chip.up {
-  background: #3fb68b26;
+  background: color-mix(in srgb, var(--up) 15%, transparent);
 }
 .dl-chip.down {
-  background: #e0645c26;
+  background: color-mix(in srgb, var(--down) 15%, transparent);
 }
 
 /* ---------- minimap ---------- */
@@ -213,7 +213,7 @@ body.dl-no-ribbon #ribbonPopout {
   z-index: 3;
   width: 184px;
   height: 120px;
-  background: #0d1017e6;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
   border: 1px solid var(--line);
   border-radius: 8px;
   cursor: crosshair;
