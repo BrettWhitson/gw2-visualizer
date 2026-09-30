@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   activeBuild,
   buildArmory,
+  describeBags,
   parseRuneBonus,
   referencedIds,
 } from "../public/src/model/character-armory.js";
@@ -475,4 +476,46 @@ test("no build data still names and pictures the profession", () => {
 test("the armory includes the active build", () => {
   const armory = buildArmory(makeCharacter(), CATALOGS);
   assert.equal(armory.character.build.display, "Reaper");
+});
+
+// ---------------------------------------------------------------- bags
+
+test("bags keep the game's layout, with every slot resolved", () => {
+  const character = {
+    bags: [
+      {
+        id: 300,
+        size: 3,
+        inventory: [
+          { id: 200, count: 1, binding: "Account" },
+          null,
+          { id: 999, count: 5 },
+        ],
+      },
+      null, // an empty bag slot
+    ],
+  };
+  const [bag, emptyBag] = describeBags(character, CATALOGS.items);
+  assert.equal(emptyBag, null);
+  assert.equal(bag.name, AMULET.name, "the bag itself is an item");
+  assert.equal(bag.slots.length, 3);
+  assert.deepEqual(
+    [
+      bag.slots[0].name,
+      bag.slots[0].binding,
+      bag.slots[1],
+      bag.slots[2].name,
+      bag.slots[2].count,
+    ],
+    [GREATSWORD.name, "Account", null, "Unknown item #999", 5],
+  );
+  assert.equal(
+    describeBags({}, CATALOGS.items),
+    null,
+    "no inventories permission",
+  );
+  assert.ok(
+    referencedIds(character).items.has(999),
+    "bag contents are looked up",
+  );
 });

@@ -228,6 +228,11 @@ export function referencedIds(character, items = new Map()) {
   for (const tab of character.build_tabs ?? [])
     for (const spec of tab.build?.specializations ?? [])
       if (spec?.id) ids.specializations.add(spec.id);
+  for (const bag of character.bags ?? []) {
+    if (!bag) continue;
+    ids.items.add(bag.id);
+    for (const slot of bag.inventory ?? []) if (slot) ids.items.add(slot.id);
+  }
   return ids;
 }
 
@@ -609,6 +614,40 @@ export function activeBuild(character, specializations) {
   };
 }
 
+// ---------------------------------------------------------------- bags
+
+/**
+ * A character's bags (needs the `inventories` permission; null without it), with every slot resolved: empty bag
+ * slots and empty inventory slots are kept as null so the layout matches the game.
+ */
+export function describeBags(character, items) {
+  if (!character.bags) return null;
+  const describe = (id) => {
+    const item = items.get(id);
+    return {
+      id,
+      name: item?.name ?? `Unknown item #${id}`,
+      icon: item?.icon ?? null,
+      rarity: item?.rarity ?? "Basic",
+    };
+  };
+  return character.bags.map(
+    (bag) =>
+      bag && {
+        ...describe(bag.id),
+        size: bag.size,
+        slots: (bag.inventory ?? []).map(
+          (slot) =>
+            slot && {
+              ...describe(slot.id),
+              count: slot.count ?? 1,
+              binding: slot.binding ?? null,
+            },
+        ),
+      },
+  );
+}
+
 // ---------------------------------------------------------------- entry
 
 /**
@@ -660,6 +699,7 @@ export function buildArmory(character, catalogs, tab = null) {
       WEAPON_SETS.map((set) => [set, totalsFor(slots, set, profession)]),
     ),
     defaultSet: slots.WeaponA1 || slots.WeaponA2 ? "A" : "B",
+    bags: describeBags(character, catalogs.items),
     missingStatIds: [...statIds].filter((id) => !catalogs.itemstats.has(id)),
     // Items the API didn't return: their stats are missing from the totals.
     missingItemIds: Object.values(slots)

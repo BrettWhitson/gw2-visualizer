@@ -450,3 +450,155 @@
     display: none;
   }
 }
+
+/* ---------- Full view: every slot as a detail card ---------- */
+.gear-card {
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--rarity, var(--line));
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.gear-card.empty {
+  background: none;
+  border-style: dashed;
+  border-left-width: 1px;
+}
+.gear-card .tt-head {
+  margin-bottom: 4px;
+}
+.gear-card .tt-icon {
+  width: 34px;
+  height: 34px;
+}
+.gear-card .tt-name {
+  font-size: 13.5px;
+}
+.card-flow,
+.card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 4px;
+}
+.card-foot {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.tt-dot {
+  color: #5f584b;
+}
+.card-upgrade {
+  display: flex;
+  gap: 8px;
+  margin: 3px 0;
+}
+.card-upgrade img,
+.card-upgrade .no-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+.card-upgrade > div {
+  flex: 1;
+  min-width: 0;
+}
+.card-tiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(105px, 1fr));
+  gap: 0 8px;
+  font-size: 11.5px;
+}
+.card-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card-swatches {
+  display: inline-flex;
+  gap: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.paper-doll.view-full {
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 280px) minmax(0, 1fr);
+}
+.extra-row.view-full {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+.tt-link {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+/* ---------- bags ---------- */
+.bags {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 10px;
+}
+.bag {
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.bag-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.bag-name img,
+.bag-name .no-icon {
+  width: 18px;
+  height: 18px;
+}
+.bag-name .muted {
+  margin-left: auto;
+}
+.bag-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 40px);
+  gap: 4px;
+}
+.bag-slot {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--rarity, var(--line));
+  border-radius: 4px;
+  background: var(--panel2);
+  overflow: hidden;
+}
+.bag-slot img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.bag-slot.empty {
+  display: block;
+  border: 1px dashed var(--line);
+  background: none;
+}
+.bag-slot.pinned {
+  outline: 2px solid var(--accent);
+}
+.bag-count {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow:
+    0 0 2px #000,
+    0 0 2px #000;
+}

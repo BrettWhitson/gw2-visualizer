@@ -116,7 +116,89 @@ export function pieceTooltipHtml(piece, runeCounts) {
     piece.charges != null && `${formatNumber(piece.charges)} charges`,
     piece.binding && escapeHtml(piece.binding),
   ].filter(Boolean);
-  return `${html}${SEPARATOR}<div class="tt-foot">${footer.map((line) => `<div>${line}</div>`).join("")}</div>`;
+  return `${html}${SEPARATOR}<div class="tt-foot">${footer.map((line) => `<div>${line}</div>`).join("")}</div>${craftingLink(piece)}`;
+}
+
+/** Opens the item on the crafting page (legendaries, ascended gear, anything with a recipe). */
+const craftingLink = (piece) =>
+  piece.missing
+    ? ""
+    : `<a class="tt-link" href="crafting.html#item=${Number(piece.id)}">Crafting tree →</a>`;
+
+const DOT = '<span class="tt-dot">·</span>';
+
+/**
+ * Dense variant for the Full view: the tooltip's facts in place, with stats on one line, rune tiers in a grid and
+ * the footer on one line.
+ */
+export function pieceCardHtml(piece, runeCounts) {
+  let html = `<div class="tt-head">${icon(piece.icon, "tt-icon")}<div>
+    <div class="tt-name rarity" ${rarityStyle(piece.rarity)}>${escapeHtml(piece.name)}</div>
+    <div class="muted">${escapeHtml(piece.slotLabel)}${piece.count > 1 ? ` · ×${formatNumber(piece.count)}` : ""}</div></div></div>`;
+  const stats = [
+    piece.minPower &&
+      `<b>${formatNumber(piece.minPower)}–${formatNumber(piece.maxPower)}</b> strength`,
+    piece.defense && `<b>${formatNumber(piece.defense)}</b> defense`,
+    ...piece.attributes.map(
+      (a) =>
+        `<span class="tt-attr">+${formatNumber(a.value)} ${escapeHtml(a.label)}</span>`,
+    ),
+  ].filter(Boolean);
+  if (stats.length) html += `<div class="card-flow">${stats.join(DOT)}</div>`;
+
+  const upgrades = [...piece.upgrades, ...piece.infusions].map((upgrade) => {
+    let detail = "";
+    if (upgrade.kind === "Rune" && upgrade.bonuses.length) {
+      const worn = runeCounts[upgrade.id] ?? 0;
+      detail =
+        ` <span class="muted">${Math.min(worn, upgrade.bonuses.length)}/${upgrade.bonuses.length}</span>` +
+        `<div class="card-tiers">${upgrade.bonuses
+          .map(
+            (bonus, index) =>
+              `<span class="tt-bonus${index < worn ? " on" : ""}">(${index + 1}) ${escapeHtml(bonus)}</span>`,
+          )
+          .join("")}</div>`;
+    } else {
+      const parts = upgrade.attributes.map(
+        (a) => `+${formatNumber(a.value)} ${escapeHtml(a.label)}`,
+      );
+      if (upgrade.buff)
+        parts.push(escapeHtml(upgrade.buff).replace(/\n/g, " "));
+      if (parts.length)
+        detail = ` <span class="tt-attr">${parts.join(", ")}</span>`;
+    }
+    return `<div class="card-upgrade">${icon(upgrade.icon)}<div><span class="tt-upgrade-name rarity" ${rarityStyle(upgrade.rarity)}>${escapeHtml(shortUpgradeName(upgrade.name))}</span>${detail}</div></div>`;
+  });
+  const empty = piece.emptyInfusionSlots
+    ? `<div class="tt-empty">${piece.emptyInfusionSlots} unused infusion slot${piece.emptyInfusionSlots > 1 ? "s" : ""}</div>`
+    : "";
+  if (upgrades.length || empty) html += SEPARATOR + upgrades.join("") + empty;
+  // A relic's text is its whole effect, so it's never clipped; other flavour text is.
+  if (piece.description)
+    html += `<div class="tt-desc${piece.type === "Relic" ? "" : " card-clamp"}">${multiline(piece.description)}</div>`;
+
+  const footer = [
+    `<span class="rarity" ${rarityStyle(piece.rarity)}>${escapeHtml(piece.rarity)}</span> ${escapeHtml(piece.typeLine ?? "")}`,
+    piece.twoHanded && "Two-handed",
+    piece.statName && escapeHtml(piece.statName),
+    piece.level && `Lv ${piece.level}`,
+    piece.binding && escapeHtml(piece.binding.replace(/ to .*/, "")),
+  ].filter(Boolean);
+  const dyes = (piece.dyes ?? []).filter(Boolean);
+  const second = [
+    piece.skin && `Skin: ${escapeHtml(piece.skin.name)}`,
+    dyes.length &&
+      `<span class="card-swatches">${piece.dyes
+        .map((dye) =>
+          dye
+            ? `<span class="swatch" title="${escapeHtml(dye.name)}" style="background:rgb(${(dye.rgb ?? [0, 0, 0]).map(Number).join(",")})"></span>`
+            : '<span class="swatch none" title="Default"></span>',
+        )
+        .join("")}</span>`,
+  ].filter(Boolean);
+  html += `<div class="card-foot">${footer.join(DOT)}</div>`;
+  if (second.length) html += `<div class="card-foot">${second.join(DOT)}</div>`;
+  return html + craftingLink(piece);
 }
 
 function breakdownTooltipHtml(attribute) {
@@ -134,7 +216,7 @@ function breakdownTooltipHtml(attribute) {
  * The armory page. Hoverable elements carry `data-tip="<key>"`; `tooltips` maps each key to its HTML so the
  * controller can show it on hover, focus or tap.
  */
-export function armoryHtml(armory, weaponSet) {
+export function armoryHtml(armory, weaponSet, { view = "icons" } = {}) {
   const tooltips = new Map();
   const tip = (html) => {
     const key = String(tooltips.size);
@@ -144,11 +226,15 @@ export function armoryHtml(armory, weaponSet) {
   const { slots, runeCounts, character } = armory;
 
   const emptyTile = (slot, placeholder = "Empty") =>
-    `<div class="gear empty"><span class="gear-icon"></span><span class="gear-text"><span class="gear-slot">${escapeHtml(SLOT_LABELS[slot] ?? slot)}</span><span class="gear-name">${escapeHtml(placeholder)}</span></span></div>`;
+    view === "full"
+      ? `<div class="gear-card empty"><div class="gear-slot">${escapeHtml(SLOT_LABELS[slot] ?? slot)}</div><div class="muted"><i>${escapeHtml(placeholder)}</i></div></div>`
+      : `<div class="gear empty"><span class="gear-icon"></span><span class="gear-text"><span class="gear-slot">${escapeHtml(SLOT_LABELS[slot] ?? slot)}</span><span class="gear-name">${escapeHtml(placeholder)}</span></span></div>`;
   const tile = (slot) => {
     const piece = slots[slot];
     const label = escapeHtml(SLOT_LABELS[slot] ?? slot);
     if (!piece) return emptyTile(slot);
+    if (view === "full")
+      return `<div class="gear-card" ${rarityStyle(piece.rarity)}>${pieceCardHtml(piece, runeCounts)}</div>`;
     const upgrades = [...piece.upgrades, ...piece.infusions];
     const upgradeLine = upgrades.length
       ? `<span class="gear-upgrades">${upgrades
@@ -227,19 +313,46 @@ export function armoryHtml(armory, weaponSet) {
         ${crafting ? `<div class="craft-pills">${crafting}</div>` : ""}
       </div>
       <div class="armory-controls">
+        <div class="control"><span class="control-label">Gear view</span><div class="seg">
+          <button type="button" data-gear-view="icons" aria-pressed="${view !== "full"}" title="Compact tiles; details on hover or tap">Icons</button>
+          <button type="button" data-gear-view="full" aria-pressed="${view === "full"}" title="Every slot's details in place">Full</button>
+        </div></div>
         ${templateButtons ? `<div class="control"><span class="control-label">Equipment template</span><div class="seg">${templateButtons}</div></div>` : ""}
         <div class="control"><span class="control-label">Stats with weapon</span><div class="seg">${setButtons}</div></div>
       </div>
     </div>
     ${armory.missingItemIds.length ? `<p class="notice">${armory.missingItemIds.length} item${armory.missingItemIds.length > 1 ? "s" : ""} couldn't be looked up in the API, so the totals below may be incomplete. Reload to try again.</p>` : ""}
-    <div class="paper-doll">
+    <div class="paper-doll view-${view}">
       <div class="gear-column"><h3>Armor</h3>${SLOT_GROUPS.armor.map((slot) => tile(slot)).join("")}</div>
       <div class="stat-column">${statPanelHtml(armory.totals[weaponSet], tip)}</div>
       <div class="gear-column"><h3>Trinkets</h3>${[...SLOT_GROUPS.trinkets, "Relic"].map((slot) => tile(slot)).join("")}</div>
     </div>
     <section class="armory-section"><h3>Weapons</h3><div class="weapon-row">${weaponSets}</div></section>
-    <section class="armory-section"><h3>Underwater &amp; tools</h3><div class="extra-row">${extras}</div></section>`;
+    <section class="armory-section"><h3>Underwater &amp; tools</h3><div class="extra-row view-${view}">${extras}</div></section>
+    ${bagsHtml(armory.bags, tip)}`;
   return { html, tooltips };
+}
+
+/** The character's bags as an inventory grid; each slot's name and count on hover or tap. */
+function bagsHtml(bags, tip) {
+  if (!bags)
+    return `<section class="armory-section"><h3>Bags</h3><p class="muted small">Your API key lacks the <b>inventories</b> permission, so bags can't be read.</p></section>`;
+  const slotHtml = (slot) =>
+    slot
+      ? `<button type="button" class="bag-slot" ${rarityStyle(slot.rarity)} aria-label="${escapeHtml(slot.name)}${slot.count > 1 ? ` ×${slot.count}` : ""}" ${tip(
+          `<div class="tt-head">${icon(slot.icon, "tt-icon")}<div><div class="tt-name rarity" ${rarityStyle(slot.rarity)}>${escapeHtml(slot.name)}</div><div class="muted">${slot.count > 1 ? `×${formatNumber(slot.count)} · ` : ""}${escapeHtml(slot.rarity)}${slot.binding ? ` · ${slot.binding === "Character" ? "Soulbound" : "Account Bound"}` : ""}</div></div></div><a class="tt-link" href="crafting.html#item=${Number(slot.id)}">Crafting tree →</a>`,
+        )}>${icon(slot.icon)}${slot.count > 1 ? `<span class="bag-count">${formatNumber(slot.count)}</span>` : ""}</button>`
+      : '<span class="bag-slot empty"></span>';
+  const used = bags.flatMap((bag) => bag?.slots ?? []).filter(Boolean).length;
+  const total = bags.reduce((sum, bag) => sum + (bag?.size ?? 0), 0);
+  const html = bags
+    .filter(Boolean)
+    .map(
+      (bag) =>
+        `<div class="bag"><div class="bag-name">${icon(bag.icon)}<span>${escapeHtml(bag.name)}</span><span class="muted">${bag.slots.filter(Boolean).length}/${bag.size}</span></div><div class="bag-grid">${bag.slots.map(slotHtml).join("")}</div></div>`,
+    )
+    .join("");
+  return `<section class="armory-section"><h3>Bags <span class="muted">· ${used} of ${total} slots used</span></h3><div class="bags">${html || '<p class="muted small">No bags.</p>'}</div></section>`;
 }
 
 function statPanelHtml(totals, tip) {

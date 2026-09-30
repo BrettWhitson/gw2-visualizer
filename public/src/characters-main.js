@@ -17,6 +17,8 @@ class CharactersPage {
   tooltips = new Map();
   pinnedTip = null;
   renderToken = 0;
+  /** Icons or Full: a per-viewer preference, remembered in this browser. */
+  gearView = readGearView();
 
   /** @param {AccountSession} account */
   constructor(account) {
@@ -123,7 +125,9 @@ class CharactersPage {
       const choice = this.choices.get(character.name) ?? {};
       const armory = buildArmory(character, this.catalogs, choice.tab ?? null);
       const weaponSet = choice.weaponSet ?? armory.defaultSet;
-      const { html, tooltips } = armoryHtml(armory, weaponSet);
+      const { html, tooltips } = armoryHtml(armory, weaponSet, {
+        view: this.gearView,
+      });
       this.tooltips = tooltips;
       this.setContent(html);
 
@@ -134,6 +138,14 @@ class CharactersPage {
             ...choice,
             tab: Number(button.dataset.tab),
           });
+          this.renderArmory(character);
+        }),
+      );
+      content.querySelectorAll("[data-gear-view]").forEach((button) =>
+        button.addEventListener("click", () => {
+          this.gearView = button.dataset.gearView;
+          saveGearView(this.gearView);
+          this.choices.set(character.name, { ...choice, tab: armory.tab });
           this.renderArmory(character);
         }),
       );
@@ -258,6 +270,24 @@ class CharactersPage {
     );
     tip.style.left = `${x}px`;
     tip.style.top = `${y}px`;
+  }
+}
+
+const GEAR_VIEW_KEY = "gw2ct.gearView";
+
+function readGearView() {
+  try {
+    return localStorage.getItem(GEAR_VIEW_KEY) === "full" ? "full" : "icons";
+  } catch {
+    return "icons"; // storage blocked
+  }
+}
+
+function saveGearView(view) {
+  try {
+    localStorage.setItem(GEAR_VIEW_KEY, view);
+  } catch {
+    /* private mode: kept for this page only */
   }
 }
 
