@@ -10,17 +10,24 @@ export function chunkArray(array, size) {
 }
 
 /**
- * Run async tasks with at most `concurrency` in flight.
+ * Run async tasks with at most `concurrency` in flight. The first task to throw rejects the whole run, and no further
+ * tasks are started (those already running finish on their own).
  * @param {Array<() => Promise<unknown>>} tasks
  * @param {number} concurrency
  * @param {(completed: number, total: number) => void} [onProgress]
  */
 export async function runWithConcurrency(tasks, concurrency, onProgress) {
   let nextIndex = 0,
-    completed = 0;
+    completed = 0,
+    failed = false;
   const worker = async () => {
-    while (nextIndex < tasks.length) {
-      await tasks[nextIndex++]();
+    while (!failed && nextIndex < tasks.length) {
+      try {
+        await tasks[nextIndex++]();
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
       onProgress?.(++completed, tasks.length);
     }
   };
@@ -36,4 +43,20 @@ export function debounce(fn, waitMs) {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), waitMs);
   };
+}
+
+/**
+ * Give the page a turn (input, rendering) between slices of long work. Unlike setTimeout(0), this isn't throttled to
+ * once a second in a background tab: scheduler.yield() where available, otherwise a message-channel round trip.
+ */
+export function yieldToPage() {
+  if (globalThis.scheduler?.yield) return globalThis.scheduler.yield();
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      resolve();
+    };
+    channel.port2.postMessage(null);
+  });
 }

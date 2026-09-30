@@ -11,21 +11,23 @@ const prefersReducedMotion =
 export const DEFAULT_SETTINGS = Object.freeze({
   // what you're looking at (ribbon)
   viewMode: "tree", // 'tree' = one node per occurrence, 'merged' = shared ingredients combined
-  direction: "BT", // crafting flow, raw → result: TB | LR | BT | RL | radial (BT = result on top)
+  // Layout: a directional tree whose crafting flow (raw → result) runs TB | LR | BT | RL (BT = result on top), or
+  // "radial" (result in the centre, one ring per level).
+  direction: "BT",
   settingsRevision: 2, // bumped when saved values need migrating (see migrateLegacySettings)
   maxDepth: UNLIMITED_DEPTH, // levels expanded by default; UNLIMITED_DEPTH = all
   includeForgePromotions: false, // treat Mystic Forge material promotions (T6 mats, lodestones…) as crafts
   wikiSources: true, // look up vendors & containers on the wiki when an item's details are opened
   pathMode: "standard", // standard = craft everything | cheapest = buy or craft, whichever costs less | fewest = buy whatever is tradeable
   priceBasis: "sell", // 'sell' = instant buy from sell listings, 'buy' = buy orders, 'off'
+  useOwned: true, // with a connected account: use owned items first, and only buy or craft the rest
   sidebarOpen: true,
   sidebarWidth: 360, // px, dragged with the side panel's edge
   ribbonCollapsed: false,
-  // layout
-  layoutEngine: "layered", // layered | force
-  dagreRanker: "network-simplex",
-  treeAlignment: "", // '' | UL | UR | DL | DR
-  // forces (force-simulation.js): like Obsidian's graph view
+  // physics (Tether, layout/): "elastic" = the graph holds its layout and a dragged node pulls its links, fading hop
+  // by hop; "floating" = the whole graph is a live force simulation, like Obsidian's graph view
+  physicsMode: "elastic",
+  // forces (layout/physics.js and layout/elastic.js)
   centerForce: 0.2, // pull toward the middle
   repelForce: 8, // push nodes apart (spacing)
   linkForce: 0.5, // pull connected nodes together
@@ -76,7 +78,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
   flowSpeed: 1,
   pinSelectionLineage: true, // keep the selected node's lineage (and flow) highlighted after the pointer leaves
   showTooltips: true,
-  dragPhysics: true, // dragging a node moves the others (live force simulation)
   showBuyCheaperHint: true,
   // filters
   hideRawMaterials: false,
@@ -88,6 +89,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   animationEasing: "smooth",
   growNewTrees: true,
   canvasBackground: "gradient", // gradient | dots | grid | plain
+  // Prism (our own engine, lib/prism/) | classic (Cytoscape). A new key: the preview's "renderer" (stored as
+  // "classic" by anyone who only tried it) is dropped as unknown, so everyone starts on Prism.
+  graphRenderer: "prism",
   showLegend: true,
   smoothZoom: !prefersReducedMotion,
   zoomSpeed: 1,
@@ -99,9 +103,6 @@ export const LEGACY_SETTING_KEYS = {
   dir: "direction",
   spacing: "spacingScale",
   sidebar: "sidebarOpen",
-  engine: "layoutEngine",
-  ranker: "dagreRanker",
-  align: "treeAlignment",
   nodeSepK: "siblingGapScale", // → repelForce (see migrateLegacySettings)
   rankSepK: "levelGapScale", // → linkDistance
   sortBy: "ingredientOrder",
@@ -210,13 +211,24 @@ export function migrateLegacySettings(saved) {
     saved.direction = flipped[saved.direction] ?? saved.direction;
   }
   saved.settingsRevision = 2;
-  // The Breadth-first engine duplicated Layered and was removed.
-  if (saved.layoutEngine === "tree") saved.layoutEngine = "layered";
-  // The "Concentric rings" engine was folded into the radial direction (a spacing-aware radial tree).
-  if (saved.layoutEngine === "concentric") {
-    saved.layoutEngine = "layered";
+  // Layout engines went: the old "Concentric rings" and "Force-directed" engines became the radial layout (the
+  // force web floats, as it did). Ranking, alignment and the drag-physics switch went with them.
+  if (saved.layoutEngine === "concentric" || saved.engine === "concentric")
     saved.direction = "radial";
+  if (saved.layoutEngine === "force" || saved.engine === "force") {
+    saved.direction = "radial";
+    saved.physicsMode ??= "floating";
   }
+  for (const gone of [
+    "layoutEngine",
+    "engine",
+    "dagreRanker",
+    "ranker",
+    "treeAlignment",
+    "align",
+    "dragPhysics",
+  ])
+    delete saved[gone];
   // The depth select offered up to 8 levels plus "All" (99); the slider tops out at UNLIMITED_DEPTH.
   if (typeof saved.maxDepth === "number" && saved.maxDepth > UNLIMITED_DEPTH)
     saved.maxDepth = UNLIMITED_DEPTH;
@@ -250,56 +262,17 @@ export const CUSTOMIZE_GROUPS = [
     title: "Layout",
     options: [
       {
-        key: "layoutEngine",
-        label: "Engine",
-        type: "select",
-        redraw: Redraw.fit,
-        hint: "Layered: levels along the flow direction (or rings when radial). Force-directed: free-floating, no direction.",
-        choices: [
-          ["layered", "Layered"],
-          ["force", "Force-directed"],
-        ],
-      },
-      {
         key: "direction",
-        label: "Direction",
+        label: "Layout",
         type: "select",
         redraw: Redraw.fit,
-        visibleWhen: (s) => s.layoutEngine !== "force",
+        hint: "A directional tree, its crafting flowing from raw materials to the result, or radial: the result in the centre, one ring per level.",
         choices: [
-          ["BT", "Upward (result on top)"],
-          ["TB", "Downward (result at the bottom)"],
-          ["LR", "Left → right (result on the right)"],
-          ["RL", "Right → left (result on the left)"],
+          ["BT", "Tree, upward (result on top)"],
+          ["TB", "Tree, downward (result at the bottom)"],
+          ["LR", "Tree, left → right (result on the right)"],
+          ["RL", "Tree, right → left (result on the left)"],
           ["radial", "Radial (result in the centre)"],
-        ],
-      },
-      {
-        key: "dagreRanker",
-        label: "Ranking",
-        type: "select",
-        redraw: Redraw.fit,
-        visibleWhen: (s) =>
-          s.layoutEngine === "layered" && s.viewMode === "merged",
-        choices: [
-          ["network-simplex", "Balanced"],
-          ["tight-tree", "Tight"],
-          ["longest-path", "Longest path"],
-        ],
-      },
-      {
-        key: "treeAlignment",
-        label: "Alignment",
-        type: "select",
-        redraw: Redraw.fit,
-        visibleWhen: (s) =>
-          s.layoutEngine === "layered" && s.direction !== "radial",
-        choices: [
-          ["", "Centered"],
-          ["UL", "Up-left"],
-          ["UR", "Up-right"],
-          ["DL", "Down-left"],
-          ["DR", "Down-right"],
         ],
       },
       {
@@ -320,8 +293,19 @@ export const CUSTOMIZE_GROUPS = [
   },
   {
     id: "forces",
-    title: "Forces",
+    title: "Physics",
     options: [
+      {
+        key: "physicsMode",
+        label: "Mode",
+        type: "select",
+        redraw: Redraw.fit,
+        hint: "Elastic: the graph holds its shape, and a dragged item pulls the items linked to it, less with every link. Floating: the whole graph is a live simulation that sways and settles around whatever you move.",
+        choices: [
+          ["elastic", "Elastic"],
+          ["floating", "Floating"],
+        ],
+      },
       {
         key: "centerForce",
         label: "Center",
@@ -608,7 +592,7 @@ export const CUSTOMIZE_GROUPS = [
       {
         key: "edgeCurvature",
         label: "Curvature",
-        hint: "How far curved edges bend (0 = straight). Applies to Curved routing, and to all edges in radial and force-directed layouts.",
+        hint: "How far curved edges bend (0 = straight). Applies to Curved routing, and to all edges in radial layouts.",
         type: "range",
         min: 0,
         max: 2,
@@ -616,9 +600,7 @@ export const CUSTOMIZE_GROUPS = [
         redraw: Redraw.restyle,
         unit: "×",
         visibleWhen: (s) =>
-          s.edgeRouting === "bezier" ||
-          s.direction === "radial" ||
-          s.layoutEngine === "force",
+          s.edgeRouting === "bezier" || s.direction === "radial",
       },
       {
         key: "showArrows",
@@ -804,6 +786,17 @@ export const CUSTOMIZE_GROUPS = [
         type: "checkbox",
         redraw: Redraw.none,
       },
+      {
+        key: "graphRenderer",
+        label: "Renderer",
+        type: "select",
+        redraw: Redraw.none,
+        hint: "Prism is the app's own GPU renderer: smooth with thousands of items, with gliding motion and flowing lineages. Classic is the previous one. The page reloads to switch.",
+        choices: [
+          ["prism", "Prism"],
+          ["classic", "Classic"],
+        ],
+      },
     ],
   },
 ];
@@ -824,6 +817,13 @@ export const SETTINGS_GROUPS = [
           ["buy", "Buy orders"],
           ["off", "Off (no prices)"],
         ],
+      },
+      {
+        key: "useOwned",
+        label: "Use what I own",
+        hint: "With a connected account: take ingredients from your bank, material storage, shared slots, bags and Trading Post pickup first, and only buy or craft the rest",
+        type: "checkbox",
+        redraw: Redraw.relayout,
       },
       {
         key: "preferMysticForge",
@@ -870,13 +870,6 @@ export const SETTINGS_GROUPS = [
         hint: "The selected node keeps its highlighted lineage and animated flow after the pointer leaves",
         type: "checkbox",
         redraw: Redraw.restyle,
-      },
-      {
-        key: "dragPhysics",
-        label: "Physics on drag",
-        hint: "Dragging a node pulls its neighbours along and pushes others aside; the graph settles when you let go",
-        type: "checkbox",
-        redraw: Redraw.none,
       },
       {
         key: "showTooltips",
@@ -1035,9 +1028,9 @@ export const PRESET_KINDS = {
     label: "Layout",
     keys: groupKeys("layout", "forces"),
     presets: {
-      Standard: { description: "Layered, top to bottom.", values: {} },
+      Standard: { description: "A tree, the result on top.", values: {} },
       "Left to right": {
-        description: "Layered, flowing left to right.",
+        description: "A tree, flowing left to right.",
         values: { direction: "LR" },
       },
       Compact: {
@@ -1052,9 +1045,10 @@ export const PRESET_KINDS = {
         description: "Root in the middle, one ring per level.",
         values: { direction: "radial" },
       },
-      "Force web": {
-        description: "Physics simulation: related items pull together.",
-        values: { layoutEngine: "force" },
+      Floating: {
+        description:
+          "Radial, and alive: the graph floats and settles around what you drag.",
+        values: { direction: "radial", physicsMode: "floating" },
       },
     },
   },

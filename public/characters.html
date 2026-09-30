@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en" class="page-scroll">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <!-- Keep in sync with index.html and _headers. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://render.guildwars2.com; connect-src 'self' https://api.guildwars2.com https://wiki.guildwars2.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'"
+    />
+    <!-- The API key never appears in this page's URL, but keep referrers minimal anyway. -->
+    <meta name="referrer" content="no-referrer" />
+
+    <title>Characters · GW2 Visualizer (unofficial fansite)</title>
+    <meta
+      name="description"
+      content="Unofficial fansite. See your Guild Wars 2 characters' equipped gear, rune sets and attribute totals, using an API key kept only in your browser."
+    />
+    <meta name="theme-color" content="#151a24" />
+    <meta name="color-scheme" content="dark" />
+
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="preconnect" href="https://api.guildwars2.com" crossorigin />
+    <link rel="preconnect" href="https://render.guildwars2.com" crossorigin />
+
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/pages.css" />
+    <link rel="stylesheet" href="css/characters.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#charactersMain">Skip to content</a>
+    <noscript
+      ><p class="noscript">
+        GW2 Visualizer needs JavaScript enabled.
+      </p></noscript
+    >
+
+    <header id="topbar">
+      <div class="spacer"></div>
+    </header>
+
+    <main id="charactersMain" tabindex="-1">
+      <section id="keyPanel" class="key-panel" hidden>
+        <h2>Connect your Guild Wars 2 account</h2>
+        <p>
+          Paste an API key to see your characters' gear. Create one at
+          <a
+            href="https://account.arena.net/applications"
+            target="_blank"
+            rel="noopener noreferrer"
+            >account.arena.net/applications</a
+          >
+          with the <b>characters</b> and <b>builds</b> permissions (add
+          <b>inventories</b> and <b>wallet</b> to use what you own on the
+          crafting page too).
+        </p>
+        <form id="keyForm" class="key-form" autocomplete="off">
+          <label for="apiKey" class="sr-only">API key</label>
+          <input
+            id="apiKey"
+            type="password"
+            spellcheck="false"
+            placeholder="XXXXXXXX-XXXX-…"
+            autocomplete="off"
+          />
+          <label class="remember"
+            ><input id="rememberKey" type="checkbox" /> Remember in this
+            browser</label
+          >
+          <button type="submit" class="primary">Connect</button>
+        </form>
+        <p id="keyError" class="key-error" role="alert"></p>
+        <p class="muted small">
+          The key stays in this browser and is sent only to the official API at
+          api.guildwars2.com; this site has no server that could store it. API
+          keys are read-only and can be revoked at any time on the same page.
+        </p>
+      </section>
+
+      <!-- Loading and error announcements only: the content itself isn't a live region. -->
+      <p id="characterStatus" class="sr-only" role="status"></p>
+      <div id="characterContent"></div>
+    </main>
+
+    <footer id="status"></footer>
+
+    <script type="module" src="src/characters-main.js"></script>
+  </body>
+</html>

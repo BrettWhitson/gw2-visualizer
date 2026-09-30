@@ -23,7 +23,7 @@ const TAXI_DIRECTIONS = {
 
 /**
  * Cytoscape stylesheet for the current settings. Element state comes from classes set by NodeAppearance
- * (root, hiddenKids, cycle, cheaper, mf) and by GraphView (faded, path, pathdown, lg-hl, lg-dim, hl, ghost, label-focus).
+ * (root, hiddenKids, cycle, cheaper, owned, mf) and by GraphView (faded, path, pathdown, lg-hl, lg-dim, hl, ghost, label-focus).
  * @param {typeof import('../config/settings-schema.js').DEFAULT_SETTINGS} s
  * @param {{ labelOpacity?: number }} [view]  label opacity for the current zoom (see GraphView label fading)
  */
@@ -163,6 +163,17 @@ export function buildStylesheet(s, { labelOpacity = 1 } = {}) {
             ...underlayShape,
           }
         : {},
+    },
+
+    {
+      selector: "node.owned",
+      style: {
+        "border-style": "solid",
+        "underlay-color": UI_COLORS.owned,
+        "underlay-opacity": 0.35,
+        "underlay-padding": 5,
+        ...underlayShape,
+      },
     },
 
     // Mystic Forge results: glow ring and/or ✦ corner badge (second background layer from data(bgs)).

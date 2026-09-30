@@ -1,10 +1,8 @@
 import {
-  APP_VERSION,
   ARENANET_NOTICE,
   CACHE_DB_NAME,
   EntityKind,
   RARITY_COLORS,
-  REPOSITORY_URL,
   SITE_TITLE,
   UI_COLORS,
   UNLIMITED_DEPTH,
@@ -20,14 +18,18 @@ import { RecentItems } from "./core/recent-items.js";
 import { Gw2ApiClient } from "./data/gw2-api-client.js";
 import { IndexedDbStore } from "./data/indexed-db-store.js";
 import { GameData } from "./data/game-data.js";
-import { PriceBook } from "./data/price-book.js";
+import { AccountSession } from "./data/account-session.js";
+import { createPriceBook } from "./data/site-account.js";
 import { WikiSources } from "./data/wiki-sources.js";
 import { ItemSearchIndex } from "./data/item-search-index.js";
 import { TreeState } from "./model/tree-state.js";
 import { CraftTreeBuilder, walkTree } from "./model/craft-tree.js";
 import { buildGraphModel } from "./model/graph-model.js";
 import { NodeAppearance } from "./graph/node-appearance.js";
-import { GraphView } from "./graph/graph-view.js";
+import {
+  chooseGraphView,
+  reloadForRenderer,
+} from "./render/choose-graph-view.js";
 import { composeGraphPng } from "./graph/png-exporter.js";
 import { Tooltip } from "./ui/tooltip.js";
 import { DetailsPanel } from "./ui/details-panel.js";
@@ -68,15 +70,17 @@ export class CraftingTreeApp {
   #startTitle = document.title;
   #lastErrorAt = 0;
 
-  constructor() {
+  /** @param {{ account?: AccountSession }} [options]  the connected GW2 account, shared with the page header */
+  constructor({ account = new AccountSession() } = {}) {
     // services
+    this.account = account;
     this.settings = new SettingsStore();
     this.recentItems = new RecentItems();
     this.api = new Gw2ApiClient();
     const cache = new IndexedDbStore(CACHE_DB_NAME);
     this.gameData = new GameData({ apiClient: this.api, cache });
     this.wikiSources = new WikiSources({ cache });
-    this.priceBook = new PriceBook(this.api);
+    this.priceBook = createPriceBook(this.api); // saved in the browser; refetched per the data-updates preference
     this.searchIndex = new ItemSearchIndex(this.gameData);
     this.treeState = new TreeState();
     this.treeBuilder = new CraftTreeBuilder({
@@ -84,6 +88,7 @@ export class CraftingTreeApp {
       priceBook: this.priceBook,
       settings: this.settings,
       treeState: this.treeState,
+      getAccount: () => (this.account.isReady ? this.account : null),
     });
     this.appearance = new NodeAppearance({
       gameData: this.gameData,
@@ -96,6 +101,7 @@ export class CraftingTreeApp {
       priceBook: this.priceBook,
       settings: this.settings,
       wikiSources: this.wikiSources,
+      account: this.account,
     };
     const panelActions = {
       openItem: (itemId) => this.openItem(itemId),
@@ -184,7 +190,7 @@ export class CraftingTreeApp {
       onPick: (itemId) => this.openItem(itemId),
       getRecentItemIds: () => this.recentItems.itemIds,
     });
-    this.graphView = new GraphView({
+    this.graphView = new (chooseGraphView(this.settings.values))({
       container: $("#cy"),
       canvasWrapper: $("#cyWrap"),
       settings: this.settings,
@@ -206,15 +212,27 @@ export class CraftingTreeApp {
   }
 
   async start() {
-    $("#appVersion").textContent = `v${APP_VERSION}`;
-    if (REPOSITORY_URL) {
-      $("#repositoryLink").href = REPOSITORY_URL;
-      $("#headerRepoLink").href = REPOSITORY_URL;
-    } else {
-      $("#repositoryLink").closest("li")?.remove();
-      $("#headerRepoLink").remove();
-    }
     this.#bindGlobalControls();
+    // Owned items change quantities and costs: redraw when the account connects, refreshes or goes.
+    const syncOwnedToggle = () => {
+      // The ribbon pill, the Recipes popout and Settings each have one.
+      for (const input of $$('[data-setting="useOwned"]'))
+        input.disabled = !this.account.isReady;
+    };
+    syncOwnedToggle();
+    let shownAccount = null;
+    this.account.addEventListener("change", () => {
+      syncOwnedToggle();
+      if (this.account.status === "connecting") return;
+      // A background refresh starting (or failing) changes nothing drawn: redraw only for new data.
+      const { status, accountName, fetchedAt } = this.account;
+      const current = `${status}|${accountName}|${fetchedAt}`;
+      if (current === shownAccount) return;
+      shownAccount = current;
+      this.shoppingListPanel.render(this.tree);
+      if (this.treeState.hasRoot)
+        this.#render({ anchorNodeId: this.#anchorNodeId() });
+    });
     this.optionPanels.forEach((panel) => panel.render());
     this.toolbar.sync();
     // Phones start with the graph uncovered: toolbar and panel collapsed (for this visit only; the handles open them).
@@ -257,6 +275,7 @@ export class CraftingTreeApp {
   clearGraph() {
     if (!this.treeState.hasRoot) return;
     this.#priceRequestGeneration++; // drop price responses for the cleared tree
+    this.statusBar.setBusy(false); // …whose loading indicator would otherwise stay on
     this.treeState.clear();
     this.tooltip.hide();
     this.ribbonPopout.close({ restoreFocus: false });
@@ -362,6 +381,10 @@ export class CraftingTreeApp {
    */
   changeSetting(key, value, redraw) {
     this.settings.set(key, value);
+    if (key === "graphRenderer") {
+      reloadForRenderer(); // the graph view is built once, at start
+      return;
+    }
     if (key === "viewMode") {
       // Node ids and collapse keys differ between views.
       this.treeState.resetExpansion();
@@ -369,6 +392,7 @@ export class CraftingTreeApp {
       this.optionPanels.forEach((panel) => panel.render()); // some options only apply to one view
     }
     if (key === "maxDepth") this.treeState.resetExpansion();
+    this.graphView.syncSettings();
     if (key === "canvasBackground") this.graphView.syncBackground();
     this.toolbar.sync();
     for (const panel of this.optionPanels) {
@@ -387,17 +411,24 @@ export class CraftingTreeApp {
 
   /** @param {'layout' | 'style'} kind */
   applyPreset(kind, name) {
+    const renderer = this.settings.get("graphRenderer");
     this.settings.applyPreset(kind, name);
-    this.#afterBulkSettingsChange();
+    this.#afterBulkSettingsChange(renderer);
   }
 
   /** Restore the given settings to their defaults (Customize: per option, per section, or all). */
   resetSettings(keys) {
+    const renderer = this.settings.get("graphRenderer");
     this.settings.reset(keys);
-    this.#afterBulkSettingsChange();
+    this.#afterBulkSettingsChange(renderer);
   }
 
-  #afterBulkSettingsChange() {
+  /** @param {string} previousRenderer  the Renderer setting before the change (it needs a reload) */
+  #afterBulkSettingsChange(previousRenderer) {
+    if (this.settings.get("graphRenderer") !== previousRenderer) {
+      reloadForRenderer();
+      return;
+    }
     this.optionPanels.forEach((panel) => panel.render());
     this.toolbar.sync();
     this.#applyRibbonState();
@@ -503,10 +534,6 @@ export class CraftingTreeApp {
     });
   }
 
-  showAbout() {
-    $("#aboutDialog").showModal();
-  }
-
   /** The Settings dialog (behaviour, data, shortcuts); `section` scrolls to e.g. the shortcuts list. */
   openSettings(section = null) {
     const dialog = $("#settingsDialog");
@@ -516,9 +543,9 @@ export class CraftingTreeApp {
     if (section) $(`#${section}`)?.scrollIntoView({ block: "start" });
   }
 
+  /** Fetch the tree's prices again; other saved prices are kept (they refresh when a tree needs them). */
   async refreshPrices() {
-    this.priceBook.clear();
-    if (this.treeState.hasRoot) await this.#loadPricesForTree();
+    if (this.treeState.hasRoot) await this.#loadPricesForTree({ force: true });
     this.#renderDataSummary();
   }
 
@@ -533,10 +560,14 @@ export class CraftingTreeApp {
           onClick: async () => {
             try {
               await this.gameData.cache.clear();
-              this.toasts.show("Cached game data cleared.", {
-                tone: "success",
-                durationMs: 4000,
-              });
+              this.priceBook.clear(); // or the next fetch would save them all again
+              this.toasts.show(
+                "Cleared the saved game data, prices and account data.",
+                {
+                  tone: "success",
+                  durationMs: 4000,
+                },
+              );
             } catch (error) {
               this.toasts.show(`Could not clear the cache: ${error.message}`, {
                 tone: "error",
@@ -686,7 +717,7 @@ export class CraftingTreeApp {
   }
 
   /** Fetch trading-post prices for everything in the tree; update in place when they arrive. */
-  async #loadPricesForTree() {
+  async #loadPricesForTree({ force = false } = {}) {
     if (this.settings.values.priceBasis === "off" || !this.tree) return;
     const { pathMode } = this.settings.values;
     // Path planning weighs every recipe option, including branches not drawn yet, so it needs their prices too.
@@ -701,7 +732,7 @@ export class CraftingTreeApp {
     const busyTimer = setTimeout(() => this.statusBar.setBusy(true), 250); // only show for slow fetches
     let receivedNewPrices;
     try {
-      receivedNewPrices = await this.priceBook.ensure(itemIds);
+      receivedNewPrices = await this.priceBook.ensure(itemIds, { force });
     } finally {
       clearTimeout(busyTimer);
       if (generation === this.#priceRequestGeneration)
@@ -789,7 +820,8 @@ export class CraftingTreeApp {
       case " ":
         event.preventDefault();
         this.toggleCollapsed(current.nodeId);
-        this.#announceNode(nodesById.get(current.nodeId) ?? current);
+        // The toggle redrew the graph: announce the node as it is now.
+        this.#announceNode(this.graph.nodesById.get(current.nodeId) ?? current);
         return;
       default:
         return;
@@ -882,9 +914,6 @@ export class CraftingTreeApp {
         break;
       case "center-root":
         this.graphView.centerOnRoot();
-        break;
-      case "about":
-        this.showAbout();
         break;
       case "retry-load":
         this.#retryInitialLoad();

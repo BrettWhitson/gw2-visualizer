@@ -63,13 +63,6 @@ export class Toolbar {
     }
     for (const select of this.presetSelects) this.#syncPreset(select);
 
-    // Force-directed layouts have no direction, so the arrows can't do anything there.
-    const isDirectionless = values.layoutEngine === "force";
-    for (const button of querySelectorAll(
-      '.seg[data-setting="direction"] button',
-      this.root,
-    ))
-      button.disabled = isDirectionless;
     const pathSelect = this.root.querySelector("[data-path-select]");
     if (pathSelect) pathSelect.title = PATH_MODES[values.pathMode]?.hint ?? "";
   }

@@ -83,11 +83,20 @@ export function createFakeGameData({ items = ITEMS, recipes = RECIPES } = {}) {
       recipesByOutputId.set(r.outputItemId, []);
     recipesByOutputId.get(r.outputItemId).push(r);
   }
+  const consumersById = new Map();
+  for (const r of recipes)
+    for (const ingredient of r.ingredients)
+      if (ingredient.type === "Item") {
+        if (!consumersById.has(ingredient.id))
+          consumersById.set(ingredient.id, new Set());
+        consumersById.get(ingredient.id).add(r.outputItemId);
+      }
   return {
     items: itemsById,
     recipesByOutputId,
     getRecipes: (id) => recipesByOutputId.get(id) ?? [],
     hasRecipe: (id) => recipesByOutputId.has(id),
+    getConsumers: (id) => consumersById.get(id) ?? new Set(),
     getEntity: (kind, id) => ({
       name: itemsById.get(id)?.name ?? `${kind} #${id}`,
       icon: null,

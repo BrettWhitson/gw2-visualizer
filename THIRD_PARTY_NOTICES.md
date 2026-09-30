@@ -7,7 +7,8 @@ GW2 Visualizer's own source code is MIT licensed (see `LICENSE`). The components
 | Library | Version | License | Copyright |
 |---|---|---|---|
 | [Cytoscape.js](https://js.cytoscape.org/) | 3.34.3 | MIT | © 2016–2026 The Cytoscape Consortium |
-| [cytoscape-dagre](https://github.com/cytoscape/cytoscape.js-dagre) | 4.0.1 | MIT | © 2016–2026 The Cytoscape Consortium; bundles [@dagrejs/dagre](https://github.com/dagrejs/dagre) (MIT, © 2012–2014 Chris Pettitt and dagrejs contributors) |
+| [Prism](https://github.com/BrettWhitson/prism) | commit in `public/lib/VERSIONS.json` | MIT | © 2026 Brett Whitson |
+| [Tether](https://github.com/BrettWhitson/tether) | commit in `public/lib/VERSIONS.json` | MIT | © 2026 Brett Whitson |
 
 Versions are pinned in `package.json` and copied into `public/lib/` by `npm run vendor` (recorded in
 `public/lib/VERSIONS.json`). Development-only tools (ESLint, Prettier, globals) are not shipped.

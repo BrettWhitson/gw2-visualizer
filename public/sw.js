@@ -24,8 +24,19 @@ const SHELL_URLS = [
   "manifest.webmanifest",
   "icons/icon.svg",
   "lib/cytoscape.min.js",
-  "lib/cytoscape-dagre.min.js",
+  "src/home-main.js",
+  "css/pages.css",
+  "crafting.html",
   "src/main.js",
+  "characters.html",
+  "css/characters.css",
+  "craftable.html",
+  "css/craftable.css",
+  "src/craftable-main.js",
+  "src/characters-main.js",
+  "sandbox.html",
+  "css/sandbox.css",
+  "src/sandbox-main.js",
 ];
 
 self.addEventListener("install", (event) => {
@@ -59,7 +70,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   if (request.mode === "navigate") {
-    event.respondWith(networkFirst(request, "index.html"));
+    event.respondWith(networkFirst(request, navigationCacheKey(url)));
   } else if (url.pathname.includes("/data/snapshot/")) {
     // The game-data snapshot is large and the app keeps it in IndexedDB: don't duplicate it in the SW cache.
     return;
@@ -75,7 +86,20 @@ self.addEventListener("fetch", (event) => {
   // Everything else (GW2 API, wiki links) goes straight to the network.
 });
 
-/** @param {Request} request  @param {string} [cacheKey] store under this key instead (navigations → 'index.html') */
+/**
+ * Each page is cached under its own file name; the site root and unknown paths fall back to index.html. Hosts that
+ * serve pretty URLs (Cloudflare Pages redirects /characters.html to /characters) are matched without the extension.
+ */
+function navigationCacheKey(url) {
+  const name = url.pathname
+    .split("/")
+    .pop()
+    .replace(/\.html$/, "");
+  const page = `${name}.html`;
+  return name && SHELL_URLS.includes(page) ? page : "index.html";
+}
+
+/** @param {Request} request  @param {string} [cacheKey] store under this key instead (navigations → their page) */
 async function networkFirst(request, cacheKey = request) {
   const cache = await caches.open(SHELL_CACHE);
   try {

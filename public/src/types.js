@@ -61,6 +61,11 @@
  * @property {number | null} effectiveCost  Craft cost when expanded, buy cost otherwise.
  * @property {boolean} isBuyCheaper
  * @property {boolean} isPlannedPurchase  bought rather than crafted, per the ribbon's Path mode
+ * @property {number} ownedQuantity  units taken from the account's items ("Use what I own"); the rest is bought or crafted
+ * @property {number | null} ownedValue  what those owned units would cost at the current price basis
+ * @property {boolean} isOwnedEnough  all of it is owned, so it isn't expanded
+ * @property {{ discipline: string, rating: number, have: number }[] | null} missingCraftingLevels  crafted, but no
+ *   character has a listed discipline at the recipe's level
  *
  * @typedef {object} GraphNode  A node as drawn: one per tree occurrence, or one per entity in merged view.
  * @property {string} nodeId

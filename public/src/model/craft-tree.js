@@ -6,31 +6,53 @@ import {
 } from "../config/constants.js";
 import { isCoin } from "../utils/format.js";
 import { PathPlanner } from "./path-planner.js";
+import { craftingRequirement } from "./account-inventory.js";
 
 /**
  * Builds the crafting tree for the current root: one TreeNode per ingredient occurrence, expanded recursively
  * through each item's chosen recipe, with quantities scaled by craft counts and costs rolled up from the leaves.
+ *
+ * With a connected account and "Use what I own" on, owned items are used first, top-down: an ingredient you hold
+ * is taken from stock before its own recipe is considered, so only the rest is bought or crafted, and an ingredient
+ * you hold enough of isn't expanded at all. Stock is shared across the whole tree (first come, first served, in
+ * recipe order), and the root itself is always crafted. Collapsing a branch releases what its hidden ingredients
+ * would have taken, so later branches may use it. Buy-or-craft decisions (Path) are made on prices alone.
  */
 export class CraftTreeBuilder {
   /** @type {PathPlanner} buy-or-craft decisions for the current Path mode (rebuilt on every build) */
   #planner;
+  /** @type {Map<number, number> | null} owned items not yet used by this build */
+  #stock = null;
+  /** @type {Map<string, {rating: number}> | null} the account's crafting levels */
+  #craftingLevels = null;
 
   /**
    * @param {{ gameData: import('../data/game-data.js').GameData, priceBook: import('../data/price-book.js').PriceBook,
-   *           settings: import('../core/settings-store.js').SettingsStore, treeState: import('./tree-state.js').TreeState }} deps
+   *           settings: import('../core/settings-store.js').SettingsStore, treeState: import('./tree-state.js').TreeState,
+   *           getAccount?: () => { ownedItems: Map<number, number>, craftingLevels: Map<string, {rating: number}> } | null }} deps
    */
-  constructor({ gameData, priceBook, settings, treeState }) {
+  constructor({
+    gameData,
+    priceBook,
+    settings,
+    treeState,
+    getAccount = () => null,
+  }) {
     this.gameData = gameData;
     this.priceBook = priceBook;
     this.settings = settings;
     this.treeState = treeState;
+    this.getAccount = getAccount;
   }
 
   /** @returns {import('../types.js').TreeNode} */
   build() {
     const { rootItemId, rootQuantity } = this.treeState;
     const ancestorItemIds = new Set(); // for cycle detection along the current path
-    const { pathMode, priceBasis } = this.settings.values;
+    const { pathMode, priceBasis, useOwned } = this.settings.values;
+    const account = this.getAccount();
+    this.#stock = account && useOwned ? new Map(account.ownedItems) : null;
+    this.#craftingLevels = account?.craftingLevels ?? null;
     this.#planner = new PathPlanner({
       mode: pathMode,
       getRecipes: (itemId) => this.#availableRecipes(itemId),
@@ -59,10 +81,17 @@ export class CraftTreeBuilder {
             this.settings.values.priceBasis,
           )
         : null;
+    const needed = node.quantity - node.ownedQuantity;
     node.buyCost = isCoin(node.kind, node.entityId)
       ? node.quantity
-      : unitPrice != null
-        ? unitPrice * node.quantity
+      : needed === 0
+        ? 0 // all owned: nothing to spend
+        : unitPrice != null
+          ? unitPrice * needed
+          : null;
+    node.ownedValue =
+      node.ownedQuantity && unitPrice != null
+        ? unitPrice * node.ownedQuantity
         : null;
 
     if (node.children.length) {
@@ -109,8 +138,13 @@ export class CraftTreeBuilder {
       effectiveCost: null,
       isBuyCheaper: false,
       isPlannedPurchase: false,
+      ownedQuantity: 0,
+      ownedValue: null,
+      isOwnedEnough: false,
+      missingCraftingLevels: null,
     };
     if (kind !== EntityKind.item) return node;
+    if (depth > 0) this.#takeFromStock(node);
 
     const recipes = this.#availableRecipes(entityId);
     if (!recipes.length) return node;
@@ -132,8 +166,10 @@ export class CraftTreeBuilder {
     );
     node.recipe = recipes[node.recipeIndex];
     node.craftCount = Math.ceil(
-      quantity / Math.max(1, Math.floor(node.recipe.outputCount)),
+      (quantity - node.ownedQuantity) /
+        Math.max(1, Math.floor(node.recipe.outputCount)),
     );
+    if (node.isOwnedEnough) return node; // nothing left to make: its ingredients aren't needed
 
     if (ancestorItemIds.has(entityId)) {
       node.isCycle = true;
@@ -142,6 +178,14 @@ export class CraftTreeBuilder {
     if (this.#shouldCollapse(node, depth)) {
       node.isCollapsed = true;
       return node;
+    }
+
+    if (this.#craftingLevels && !node.isPlannedPurchase) {
+      const { missing } = craftingRequirement(
+        node.recipe,
+        this.#craftingLevels,
+      );
+      if (missing.length) node.missingCraftingLevels = missing;
     }
 
     ancestorItemIds.add(entityId);
@@ -160,6 +204,16 @@ export class CraftTreeBuilder {
     });
     ancestorItemIds.delete(entityId);
     return node;
+  }
+
+  /** Use owned units of this item first (shared stock, first come first served). */
+  #takeFromStock(node) {
+    const have = this.#stock?.get(node.entityId) ?? 0;
+    if (!have) return;
+    const used = Math.min(have, node.quantity);
+    this.#stock.set(node.entityId, have - used);
+    node.ownedQuantity = used;
+    node.isOwnedEnough = used > 0 && used === node.quantity;
   }
 
   /**
@@ -229,7 +283,8 @@ export function walkTree(node, visit) {
 
 /**
  * The shopping list: every leaf of the visible tree (raw materials + collapsed items to buy), aggregated.
- * Sorted by total cost (unpriced last), then quantity.
+ * `quantity` is what's still needed after owned items (`owned`) are used. Sorted by total cost (unpriced last), then
+ * quantity; entries covered entirely by owned items come last.
  */
 export function collectShoppingList(root) {
   const byEntity = new Map();
@@ -240,18 +295,44 @@ export function collectShoppingList(root) {
       kind: node.kind,
       entityId: node.entityId,
       quantity: 0,
+      owned: 0,
       totalCost: 0,
       isFullyPriced: true,
       isCraftable: !!node.recipe,
     };
-    entry.quantity += node.quantity;
+    entry.quantity += node.quantity - (node.ownedQuantity ?? 0);
+    entry.owned += node.ownedQuantity ?? 0;
     if (node.buyCost == null) entry.isFullyPriced = false;
     else entry.totalCost += node.buyCost;
     byEntity.set(key, entry);
   });
   return [...byEntity.values()].sort(
     (a, b) =>
+      (a.quantity === 0) - (b.quantity === 0) ||
       (b.isFullyPriced ? b.totalCost : -1) -
-        (a.isFullyPriced ? a.totalCost : -1) || b.quantity - a.quantity,
+        (a.isFullyPriced ? a.totalCost : -1) ||
+      b.quantity - a.quantity,
   );
+}
+
+/**
+ * Crafting levels the tree needs but no character has, grouped by requirement: `[{ options, itemIds }]`, where
+ * `options` are the disciplines that could each make those items (any one will do).
+ */
+export function collectMissingCraftingLevels(root) {
+  const byRequirement = new Map();
+  walkTree(root, (node) => {
+    if (!node.missingCraftingLevels) return;
+    const key = node.missingCraftingLevels
+      .map(({ discipline, rating }) => `${discipline}:${rating}`)
+      .sort()
+      .join("|");
+    const entry = byRequirement.get(key) ?? {
+      options: node.missingCraftingLevels,
+      itemIds: new Set(),
+    };
+    entry.itemIds.add(node.entityId);
+    byRequirement.set(key, entry);
+  });
+  return [...byRequirement.values()];
 }

@@ -4,11 +4,13 @@ import assert from "node:assert/strict";
 import {
   CraftTreeBuilder,
   collectShoppingList,
+  collectMissingCraftingLevels,
   walkTree,
   getCollapseKey,
 } from "../public/src/model/craft-tree.js";
 import { TreeState } from "../public/src/model/tree-state.js";
 import {
+  RECIPES,
   createFakeGameData,
   createFakePriceBook,
   createSettings,
@@ -20,16 +22,19 @@ function buildTree({
   settings = {},
   prices = {},
   configureState,
+  account = null,
+  recipes,
 } = {}) {
   const treeState = new TreeState();
   treeState.rootItemId = rootItemId;
   treeState.rootQuantity = rootQuantity;
   configureState?.(treeState);
   const builder = new CraftTreeBuilder({
-    gameData: createFakeGameData(),
+    gameData: createFakeGameData(recipes ? { recipes } : {}),
     priceBook: createFakePriceBook(prices),
-    settings: createSettings(settings),
+    settings: createSettings({ useOwned: true, ...settings }),
     treeState,
+    getAccount: () => account,
   });
   return builder.build();
 }
@@ -181,4 +186,96 @@ test("collapse keys are per path in tree view and per entity in merged view", ()
   const node = { path: "r/1/0", kind: "item", entityId: 6 };
   assert.equal(getCollapseKey(node, "tree"), "r/1/0");
   assert.equal(getCollapseKey(node, "merged"), "item:6");
+});
+
+// ---------------------------------------------------------------- owned items
+
+/** Account stand-in: item id → owned count. */
+const ownedAccount = (owned, craftingLevels = new Map()) => ({
+  ownedItems: new Map(Object.entries(owned).map(([id, n]) => [Number(id), n])),
+  craftingLevels,
+});
+
+test("owned items are used first, top-down, and what you hold enough of isn't expanded", () => {
+  // Sword ← 2 Blade ← 3 Ingot each ← Ore. Own 1 Blade and 4 Ingots.
+  const root = buildTree({ account: ownedAccount({ 2: 1, 4: 4, 5: 100 }) });
+  const [blade] = findByEntity(root, 2);
+  assert.equal(blade.ownedQuantity, 1);
+  assert.equal(blade.craftCount, 1, "only the missing blade is crafted");
+  const [ingot] = findByEntity(root, 4);
+  assert.equal(
+    ingot.quantity,
+    3,
+    "ingredients scale with what's left to craft",
+  );
+  assert.equal(ingot.isOwnedEnough, true);
+  assert.equal(ingot.children.length, 0, "owned ingots need no ore");
+  assert.deepEqual(findByEntity(root, 5), []);
+
+  const list = collectShoppingList(root);
+  const ingotEntry = list.find((entry) => entry.entityId === 4);
+  assert.deepEqual([ingotEntry.quantity, ingotEntry.owned], [0, 3]);
+  assert.equal(list.at(-1), ingotEntry, "entries you already have come last");
+});
+
+test("partly owned: only the rest is bought or crafted, and costs count only that", () => {
+  const root = buildTree({
+    account: ownedAccount({ 4: 4 }),
+    prices: { 4: 10, 5: 3 },
+  });
+  const [ingot] = findByEntity(root, 4); // 6 needed, 4 owned
+  assert.equal(ingot.ownedQuantity, 4);
+  assert.equal(ingot.craftCount, 1, "2 more ingots = one craft of 2");
+  assert.equal(findByEntity(root, 5)[0].quantity, 2);
+  assert.equal(ingot.buyCost, 2 * 10);
+  assert.equal(ingot.craftCost, 2 * 3);
+  assert.equal(ingot.ownedValue, 4 * 10, "what the owned ingots are worth");
+});
+
+test("owned stock is shared across the tree, and the root is always crafted", () => {
+  const root = buildTree({
+    rootQuantity: 2,
+    account: ownedAccount({ 1: 5, 6: 1 }),
+  });
+  assert.equal(
+    root.ownedQuantity,
+    0,
+    "owning the result doesn't skip making it",
+  );
+  const planks = findByEntity(root, 6); // one Hilt per sword → 2 planks in one occurrence
+  assert.equal(
+    planks.reduce((sum, node) => sum + node.ownedQuantity, 0),
+    1,
+  );
+});
+
+test("owned items are ignored when the setting is off or no account is connected", () => {
+  for (const options of [
+    { account: ownedAccount({ 2: 5 }), settings: { useOwned: false } },
+    { account: null },
+  ]) {
+    const [blade] = findByEntity(buildTree(options), 2);
+    assert.equal(blade.ownedQuantity, 0);
+    assert.equal(blade.children.length, 1);
+  }
+});
+
+test("crafted steps no character has the level for are flagged", () => {
+  const recipes = RECIPES.map((recipe) =>
+    recipe.id === 102 ? { ...recipe, minRating: 400 } : recipe,
+  );
+  const levels = new Map([["Weaponsmith", { rating: 300, character: "Alt" }]]);
+  const root = buildTree({ recipes, account: ownedAccount({}, levels) });
+  assert.deepEqual(findByEntity(root, 2)[0].missingCraftingLevels, [
+    { discipline: "Weaponsmith", rating: 400, have: 300 },
+  ]);
+  assert.equal(root.missingCraftingLevels, null, "rating 0 recipes are fine");
+  const [missing] = collectMissingCraftingLevels(
+    buildTree({ rootQuantity: 2, recipes, account: ownedAccount({}, levels) }),
+  );
+  assert.deepEqual(
+    [...missing.itemIds],
+    [2],
+    "grouped per requirement, each item once",
+  );
 });

@@ -45,6 +45,8 @@ export class GraphView {
   #physicsFrame = 0;
   /** @type {import('./graph-transition.js').GraphTransition | null} */
   #transition = null;
+  /** A page's own class rules, as Cytoscape style rules (see setClassStyles). */
+  #classRules = [];
 
   /**
    * @param {{ container: HTMLElement, canvasWrapper: HTMLElement, settings: import('../core/settings-store.js').SettingsStore,
@@ -209,6 +211,9 @@ export class GraphView {
     });
   }
 
+  /** Settings are read live here; Prism's view needs to be told (see WebGLGraphView.syncSettings). */
+  syncSettings() {}
+
   /** Re-apply the stylesheet after a style-only setting change. */
   applyStylesheet() {
     updateCurvedEdges(this.cy, this.#values);
@@ -217,11 +222,51 @@ export class GraphView {
     this.#showPinnedLineage({ force: true }); // flow / pinning settings may have changed
   }
 
+  /**
+   * Looks for a page's own classes, in the renderer-neutral terms both views share (see lib/prism/style.js):
+   * { nodes: { className: { pattern, border, borderWidth, fillAlpha, aura } }, edges: { className: { color, width } } }
+   */
+  setClassStyles(rules) {
+    const nodeRule = (rule) => ({
+      ...(rule.pattern && {
+        "border-style": rule.pattern === "stack" ? "double" : rule.pattern,
+      }),
+      ...(rule.border && { "border-color": rule.border }),
+      ...(rule.borderWidth != null && { "border-width": rule.borderWidth }),
+      ...(rule.fillAlpha != null && { "background-opacity": rule.fillAlpha }),
+      ...(rule.aura && {
+        "underlay-color": rule.aura,
+        "underlay-opacity": 0.35,
+        "underlay-padding": 6,
+      }),
+    });
+    const edgeRule = (rule) => ({
+      ...(rule.color && {
+        "line-color": rule.color,
+        "source-arrow-color": rule.color,
+        "target-arrow-color": rule.color,
+      }),
+      ...(rule.width != null && { width: rule.width }),
+    });
+    this.#classRules = [
+      ...Object.entries(rules?.nodes ?? {}).map(([name, rule]) => ({
+        selector: `node.${name}`,
+        style: nodeRule(rule),
+      })),
+      ...Object.entries(rules?.edges ?? {}).map(([name, rule]) => ({
+        selector: `edge.${name}`,
+        style: edgeRule(rule),
+      })),
+    ];
+    this.#applyStyle();
+  }
+
   /** Install the stylesheet for the current settings, skipping the (whole-graph) restyle when nothing changed. */
   #applyStyle() {
-    const sheet = buildStylesheet(this.#values, {
-      labelOpacity: this.#labelOpacity,
-    });
+    const sheet = [
+      ...buildStylesheet(this.#values, { labelOpacity: this.#labelOpacity }),
+      ...this.#classRules,
+    ];
     const key = JSON.stringify(sheet);
     if (key === this.#appliedStyleKey) return;
     this.#appliedStyleKey = key;
@@ -471,12 +516,15 @@ export class GraphView {
     this.#flowEdges = edges;
     const frameIntervalMs =
       edges.length > PERFORMANCE_LIMITS.fullRateFlowEdges ? 50 : 0;
+    // A growing dash offset moves the dashes toward an edge's source. Crafting edges run product → ingredient, so
+    // that reads as materials flowing into what they make; graphs whose edges run the other way set flowToward.
+    const sign = this.#values.flowToward === "target" ? -1 : 1;
     let offset = 0,
       lastTime = performance.now();
     const tick = (time) => {
       this.#flowFrame = requestAnimationFrame(tick);
       if (time - lastTime < frameIntervalMs) return;
-      offset += (time - lastTime) * 0.03 * this.#values.flowSpeed;
+      offset += sign * (time - lastTime) * 0.03 * this.#values.flowSpeed;
       lastTime = time;
       this.#flowEdges?.style("line-dash-offset", offset);
     };
@@ -827,12 +875,8 @@ export class GraphView {
     let draggedId = null;
     cy.on("grab", "node", (event) => {
       const simulation = this.#simulation;
-      if (
-        !this.#values.dragPhysics ||
-        !simulation ||
-        event.target.hasClass("ghost")
-      )
-        return;
+      // Classic always floats (Prism has the elastic mode too).
+      if (!simulation || event.target.hasClass("ghost")) return;
       this.#finishAnimations();
       simulation.syncFromGraph(); // pick up any manual moves since the last layout
       draggedId = event.target.id();

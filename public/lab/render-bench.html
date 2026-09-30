@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://render.guildwars2.com; connect-src 'self' https://api.guildwars2.com; object-src 'none'; base-uri 'self'"
+    />
+    <title>Graph rendering benchmark (lab)</title>
+    <link rel="stylesheet" href="../css/app.css" />
+    <style>
+      html,
+      body {
+        height: auto;
+        overflow: auto;
+      }
+      main.bench {
+        display: block; /* app.css makes <main> a flex row for the crafting page */
+        padding: 16px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      .bench-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin: 10px 0;
+      }
+      #stage {
+        position: relative;
+        width: 100%;
+        height: 520px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--bg);
+        overflow: hidden;
+      }
+      #stage > div {
+        position: absolute;
+        inset: 0;
+      }
+      table {
+        border-collapse: collapse;
+        margin-top: 12px;
+        width: 100%;
+      }
+      th,
+      td {
+        padding: 5px 8px;
+        border-bottom: 1px solid var(--line);
+        text-align: right;
+      }
+      th:first-child,
+      td:first-child,
+      th:nth-child(2),
+      td:nth-child(2) {
+        text-align: left;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="bench">
+      <h1>Graph rendering benchmark</h1>
+      <p class="muted">
+        Synthetic crafting-style trees with real item icons, drawn at fixed
+        positions (no layout is timed). Each run: first frame, then a scripted
+        120-frame zoom and pan. Frame times are the gaps between animation
+        frames, so they include each renderer's own drawing.
+      </p>
+      <div class="bench-controls">
+        <label
+          >Nodes
+          <select id="size">
+            <option>250</option>
+            <option selected>1000</option>
+            <option>3000</option>
+            <option>10000</option>
+          </select></label
+        >
+        <label
+          >Renderer
+          <select id="renderer">
+            <option value="webgl-graph">Ours (WebGL2 + label layer)</option>
+            <option value="cy-app">Cytoscape, as the app runs it</option>
+            <option value="cy-full">Cytoscape, full quality</option>
+            <option value="cy-webgl">Cytoscape WebGL mode</option>
+          </select></label
+        >
+        <button type="button" id="show">Show</button>
+        <button type="button" id="run">Benchmark this</button>
+        <button type="button" id="runAll">Benchmark all</button>
+        <button type="button" id="flow">Toggle flow (ours)</button>
+        <span id="status" class="muted"></span>
+      </div>
+      <div id="stage"></div>
+      <table id="results">
+        <thead>
+          <tr>
+            <th>Renderer</th>
+            <th>Nodes</th>
+            <th>First frame (ms)</th>
+            <th>Avg frame (ms)</th>
+            <th>p95 frame (ms)</th>
+            <th>Worst (ms)</th>
+            <th>Draw CPU (ms)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </main>
+    <script src="../lib/cytoscape.min.js"></script>
+    <script type="module" src="../src/lab/render-bench.js"></script>
+  </body>
+</html>

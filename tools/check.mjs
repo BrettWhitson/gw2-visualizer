@@ -10,9 +10,13 @@ const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
-const sourceRoots = ["public/src", "tools", "tests"].map((dir) =>
-  path.join(projectRoot, dir),
-);
+const sourceRoots = [
+  "public/src",
+  "public/lib/prism",
+  "public/lib/tether",
+  "tools",
+  "tests",
+].map((dir) => path.join(projectRoot, dir));
 
 function listJavaScriptFiles(dir) {
   return readdirSync(dir).flatMap((name) => {

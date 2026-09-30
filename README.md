@@ -2,9 +2,14 @@
 
 *Unofficial fansite — not affiliated with ArenaNet or NCSOFT.*
 
-Search any Guild Wars 2 item and explore its full crafting tree as an interactive graph: Mystic Forge recipes,
-trading post costs, the cheapest buy-or-craft path, where every ingredient comes from, and a shopping list. Runs
-entirely in the browser and installs as a PWA.
+Guild Wars 2 tools that run entirely in the browser and install as a PWA:
+
+- **Crafting:** search any item and explore its full crafting tree as an interactive graph: Mystic Forge recipes,
+  trading post costs, the cheapest buy-or-craft path, where every ingredient comes from, and a shopping list.
+- **Characters:** connect an API key to see each character's equipped gear, rune sets and gear-only attribute
+  totals. The key never leaves the browser except to the official API.
+- **Your account in the crafting explorer:** with a key connected, what you already own is used first, so costs and
+  the shopping list show only what's left to buy, and missing crafting levels are flagged.
 
 **Live: [gw2visualizer.com](https://gw2visualizer.com)** · Current version: **0.9.0** · [Changelog](CHANGELOG.md) · [Next steps](#next-steps) · [Roadmap](#roadmap) · [Considerations](#considerations)
 
@@ -18,7 +23,7 @@ npm run snapshot   # optional: build the game-data snapshot locally (~25 s); wit
 npm start          # http://localhost:8642
 ```
 
-The app is plain ES modules, which browsers only load over http, so opening `public/index.html` from disk won't work.
+The app is plain ES modules, which browsers only load over http, so opening the HTML files in `public/` from disk won't work.
 
 ## Using it
 
@@ -45,16 +50,18 @@ their own edges; drag the side panel's edge to resize it.
 that section's full options (for example every force, or all node, edge and canvas styling), and ↺ resets the
 section. The **Customize** panel has everything in one place.
 
-**Direction** describes the crafting flow, raw materials → result: *left → right* puts the raw materials on the left
-and the finished item on the right; *upward* (the default) puts the result on top; *radial* puts it in the centre
-with each level on a ring around it.
+**Layout**: a directional tree, or radial. For a tree, the direction is the crafting flow, raw materials → result:
+*left → right* puts the raw materials on the left and the finished item on the right; *upward* (the default) puts
+the result on top. *Radial* puts the result in the centre with each level on a ring around it.
 
-**Forces** work like Obsidian's graph view, in every direction: *center* pulls everything toward the middle,
-*repel* pushes nodes apart, *link strength* is how strongly links pull toward the *link distance* (the length they
-settle at). Every layout runs the same simulation with one extra pull: toward each node's level (layered) or ring
-(radial); *center* also sets how firmly nodes keep to it, from loose and organic (0) to crisp (1). Force-directed
-has no structure at all. Nodes and labels never overlap, results are deterministic, and **dragging a node** pulls
-its neighbours along and pushes others aside until the graph settles (turn off in Settings → Interaction).
+**Physics** has two modes. *Elastic* (the default): the graph holds its layout, and dragging an item pulls the items
+linked to it, they pull theirs, fading with every link; let go and it keeps the shape you pulled it into. *Floating*:
+the whole graph is a live simulation, like Obsidian's graph view: it floats into place, and sways and settles around
+an item you drag. The **forces** work like Obsidian's too, in every direction: *center* pulls everything toward the
+middle, *repel* pushes nodes apart, *link strength* is how strongly links pull toward the *link distance* (the length
+they settle at), plus a pull toward each node's level (tree) or ring (radial); *center* also sets how firmly nodes
+keep to it, from loose and organic (0) to crisp (1). When dragging, link strength sets how far a pull carries and
+center how firmly items hold their place. Results are deterministic.
 
 **Path.** *Craft all* crafts every ingredient with its default recipe. *Cheapest* picks, for every item, the lowest
 cost of buying it or crafting it with any of its recipes, all the way down, using trading post prices (ingredients
@@ -132,8 +139,8 @@ Ideas, roughly in order; none of this is promised.
 
 - **Image export with preview:** choose what's included (legend, title, notice), background, scale and crop, and see
   the result before saving; SVG export.
-- **GW2 account (API key):** optional, stored only in the browser. Subtract what you already own (bank, material
-  storage, shared inventory, wallet) from the shopping list and costs, and mark ingredients you have enough of.
+- **GW2 account (API key), next:** "expected stock" (items you'll have soon, such as Wizard's Vault picks) counted
+  as owned; let owned intermediates steer the Cheapest path; wallet currencies against currency ingredients.
 - **More visualizers** built on the same graph and data layer:
   - characters: equipment, builds and crafting disciplines;
   - achievements and collections: progress trees, what's left and what it costs;
@@ -157,22 +164,24 @@ Larger architectural changes that have been weighed but not made. Each is worth 
 - *When:* the Roadmap's extra visualizers (characters, achievements, account) start; several views sharing
   components is where a framework pays for itself.
 
-**Writing our own graph rendering engine** (Canvas 2D or WebGL, e.g. with PixiJS)
-- *For:* layout and the force simulation are already ours, so Cytoscape is mainly the renderer, interaction and
-  style system. A purpose-built WebGL renderer would handle merged views of several thousand nodes smoothly and
-  give full control over edge drawing, flow animation and export.
-- *Against:* hit-testing, text rendering and label fading, pan / zoom, touch gestures, keyboard access, PNG export
-  and the stylesheet all have to be rebuilt and tested; Cytoscape does these well today.
-- *Alternatives:* a WebGL graph library such as sigma.js, or keeping Cytoscape and drawing only the heavy parts
-  (edges, flow animation) on a separate canvas layer.
-- *When:* profiling shows rendering, not layout, is what limits large trees.
-
-**Layout engine choices**
-- The force simulation is custom so it's deterministic and can keep levels and rings. d3-force would bring a
-  well-tested core but still need the structure and collision forces added.
-- ELK's layered algorithm places nodes with fewer edge crossings than dagre, at the cost of a much larger library
-  (or a Web Worker build).
-- Moving the simulation to a Web Worker (or WebAssembly) keeps the page responsive on very large trees; see Next steps.
+**Our own graph engines: Prism and Tether** (replacing Cytoscape)
+- Both are their own open-source projects, free of anything GW2:
+  [Prism](https://github.com/BrettWhitson/prism) and [Tether](https://github.com/BrettWhitson/tether). The app pins
+  a commit of each and vendors their source into `public/lib/` (`npm run vendor`); `src/render/prism-settings.js`
+  maps the app's settings and item states (owned, Mystic Forge, cheaper…) onto Prism's options and class rules.
+- **Prism** (`lib/prism/`) draws, animates and handles input: WebGL2 instanced drawing of nodes, edges and
+  arrowheads, a label layer, springs for every motion, partial GPU uploads (a frame costs what moves), hit-testing,
+  pan / zoom / pinch, tiled PNG export. Prism is the default; Classic (Cytoscape) stays selectable under
+  Customize → Canvas → Renderer for now, and goes, with Cytoscape, once nobody needs it.
+- **Tether** (`lib/tether/`) decides where things go: tidy and radial tree seeds, a layered layout for the merged
+  view (ranks, crossing minimisation by barycentre sweeps and transposition, exact per-rank placement; it replaced
+  dagre), the physics (a deterministic force simulation with a Barnes-Hut quadtree and a hashed collision grid,
+  allocation-free per tick), an elastic net for dragging (`elastic.js`: a pull fades hop by hop and only
+  disturbed nodes are simulated), and `LivePhysics`, which runs drags and shakes in either physics mode. Both
+  renderers use it. d3-force would bring a well-tested core but still need the
+  structure and collision forces; ELK's layered algorithm is the heavyweight alternative if crossings need to go
+  lower.
+- Moving the physics to a Web Worker (or WebAssembly) keeps the page responsive on very large trees; see Next steps.
 
 **A small backend**
 - The site is fully static: the daily snapshot covers recipes and items, and visitors fetch prices directly from
@@ -191,13 +200,13 @@ The app has no runtime dependencies and no build step: everything the browser lo
 `public/src/`, vendored libraries in `public/lib/`). All tooling is Node.
 
 ```bash
-npm install            # dev tooling: ESLint, Prettier, and the pinned Cytoscape builds for vendoring and tests
+npm install            # dev tooling: ESLint, Prettier, and the pinned Cytoscape, Prism and Tether for vendoring
 npm start              # dev server on :8642 + open browser   (npm run serve: without opening)
 npm run verify         # syntax/import + vendored-version check, ESLint, Prettier check, unit tests
 npm run format         # format JS and CSS with Prettier (default options)
 npm run build          # assemble the deployable site into _site/
 npm run snapshot       # build public/data/snapshot/ (what visitors download; ~150 API requests)
-npm run vendor         # copy the pinned Cytoscape / cytoscape-dagre builds into public/lib/
+npm run vendor         # copy the pinned Cytoscape, Prism and Tether into public/lib/
 npm run update-forge   # re-read Mystic Forge recipes from the wiki (needs WIKI_CONTACT or REPOSITORY_URL)
 npm run icons          # regenerate public/icons/ from tools/generate-icons.mjs
 ```
@@ -228,29 +237,37 @@ tools/
   generate-icons.mjs       public/icons/ (SVG + PNGs, no dependencies)
 tests/                     node:test suites + helpers/fixtures.js
 public/                    the web app, served as-is
-  index.html               markup (+ inline SVG icon sprite); controls declare data-setting / data-command
+  index.html               home page
+  sandbox.html             engine sandbox: Prism and Tether on generated graphs (src/sandbox/, src/sandbox-main.js)
+  crafting.html            crafting explorer markup (+ inline SVG icon sprite); controls declare data-setting /
+                           data-command. Old /#item= links on the home page redirect here.
+  characters.html          Characters page (API key, character list, armory)
   manifest.webmanifest, sw.js, _headers, robots.txt
-  css/app.css              styles (CSS variables mirror UI_COLORS in constants.js)
+  css/app.css              base + crafting styles (CSS variables mirror UI_COLORS in constants.js)
+  css/pages.css, characters.css  the scrolling pages (home, characters)
   icons/                   app icons (generated)
-  lib/                     vendored Cytoscape.js and cytoscape-dagre (UMD globals)
+  lib/                     vendored: Cytoscape.js (UMD global; the classic renderer), prism/ and tether/ (ES modules)
   data/
     mystic-forge-recipes.js  generated by `npm run update-forge`; don't edit (GFDL 1.3, not MIT)
     LICENSE-GFDL-1.3.txt     licence text for the wiki-derived data
     custom-recipes.json      your own recipes
     snapshot/                generated by `npm run snapshot` (git-ignored)
   src/
-    main.js, pwa.js        entry point; service worker registration
+    main.js, pwa.js        crafting entry point; service worker registration
+    home-main.js, characters-main.js  the other pages' entry points
     app.js                 CraftingTreeApp: wires services and components, owns user actions
     types.js               JSDoc typedefs
     config/                constants.js (version, endpoints, palettes, limits, legal notice);
                            settings-schema.js (defaults, Customize / Settings options, presets, migrations)
-    core/                  SettingsStore, RecentItems
+    core/                  SettingsStore, RecentItems, ApiKeyStore
     data/                  Gw2ApiClient, IndexedDbStore, GameData (+ core-data-sources: snapshot / API),
-                           PriceBook, WikiSources, ItemSearchIndex
-    model/                 TreeState, CraftTreeBuilder, PathPlanner, buildGraphModel
-    graph/                 GraphView, GraphTransition, SmoothWheelZoom, layouts (seeds) + force-simulation,
-                           stylesheet, NodeAppearance, PNG export
-    ui/                    Toolbar (+ ribbon-sections, RibbonPopout), OptionsPanel (Customize, Settings,
+                           PriceBook, WikiSources, ItemSearchIndex, AccountClient + CharacterCatalogs
+    model/                 TreeState, CraftTreeBuilder, PathPlanner, buildGraphModel, character armory
+    graph/                 the classic (Cytoscape) renderer: GraphView, GraphTransition, SmoothWheelZoom, stylesheet,
+                           layouts (adapter onto lib/tether/); NodeAppearance, PNG export (shared)
+    render/                WebGLGraphView (Prism behind the pages' interface), prism-settings (settings and
+                           item states → Prism's options, theme and class rules), choose-graph-view
+    ui/                    site chrome (shared header, footer, About), character view, Toolbar (+ ribbon-sections, RibbonPopout), OptionsPanel (Customize, Settings,
                            popouts), range steppers, Legend, SearchBox,
                            Tooltip, DetailsPanel, ShoppingListPanel, toasts, status bar / overlay / side panel
     utils/                 dom, async, format helpers
@@ -263,8 +280,8 @@ TreeState + GameData + PriceBook
    → CraftTreeBuilder.build()        TreeNode tree (one node per ingredient occurrence; PathPlanner decides
                                      buy vs craft and which recipe; costs rolled up)
    → buildGraphModel()               GraphModel (tree or merged view, filters, ordering)
-   → NodeAppearance                  Cytoscape element data (colour, label, classes)
-   → GraphView.render()              layout + one batched transition from the previous graph
+   → NodeAppearance                  element data (colour, label, classes)
+   → graph view .render()            Tether lays it out; Prism (or Classic) morphs from the previous graph
    → Legend / DetailsPanel / ShoppingListPanel refresh
 ```
 
@@ -299,7 +316,7 @@ Workflow permissions). Before going public, set `REPOSITORY_URL` in `constants.j
 the contact the wiki updater identifies itself with.
 
 **In place:** a strict Content-Security-Policy (no inline scripts; only `api.guildwars2.com`, `render.guildwars2.com`
-and `wiki.guildwars2.com` as third parties; keep the `<meta>` in `index.html` and `_headers` in sync), HTML-escaped
+and `wiki.guildwars2.com` as third parties; keep the `<meta>` in every page and `_headers` in sync), HTML-escaped
 API and wiki text, an installable PWA with an offline shell, request timeouts with retry and back-off, graceful
 fallbacks when storage, the snapshot or the wiki is unavailable, and a pinned GW2 API schema version.
 

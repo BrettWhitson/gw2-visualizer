@@ -44,6 +44,11 @@ export const PRICE_MAX_AGE_MS = 5 * 60 * 1000;
 /** The API accepts up to 200 ids per request. */
 export const API_BATCH_SIZE = 200;
 export const API_CONCURRENCY = 8;
+/**
+ * Price batches in flight at once. Prices are small, cacheable responses; 16 roughly halved a 31-request fetch
+ * (2.0–2.7 s → 0.9–1.3 s) and stays well inside the API's burst allowance of 300 requests per IP.
+ */
+export const PRICE_CONCURRENCY = 16;
 /** Abort a single API request after this long (the retry logic then kicks in). */
 export const API_REQUEST_TIMEOUT_MS = 20000;
 
@@ -167,6 +172,7 @@ export const UI_COLORS = {
   lineageDown: "#62a4da",
   focus: "#62a4da",
   danger: "#e0645c",
+  owned: "#4fc1b0", // covered by the account's own items
   good: "#8fd07a",
 };
 

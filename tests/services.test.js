@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PriceBook } from "../public/src/data/price-book.js";
 import { RecentItems } from "../public/src/core/recent-items.js";
+import { ApiKeyStore } from "../public/src/core/api-key-store.js";
 import {
   CUSTOMIZE_GROUPS,
   SETTINGS_GROUPS,
@@ -137,4 +138,45 @@ test("every ribbon control belongs to a section, so its section reset covers it"
       RIBBON_SECTIONS[section]?.groups.length,
       `${section} has a popout`,
     );
+});
+
+test("the API key is remembered only when asked, and forgotten completely", () => {
+  const memoryStorage = () => {
+    const store = new Map();
+    return {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => store.set(key, value),
+      removeItem: (key) => store.delete(key),
+    };
+  };
+  const local = memoryStorage();
+  let tab = memoryStorage();
+  const keys = new ApiKeyStore(local, tab);
+
+  keys.set("tab-only", { remember: false });
+  assert.equal(
+    new ApiKeyStore(local, tab).get(),
+    "tab-only",
+    "other pages in the tab see it",
+  );
+  assert.equal(keys.isRemembered(), false);
+  tab = memoryStorage(); // the tab closes
+  assert.equal(
+    new ApiKeyStore(local, tab).get(),
+    null,
+    "not kept across visits",
+  );
+
+  const keys2 = new ApiKeyStore(local, tab);
+  keys2.set("kept", { remember: true });
+  assert.equal(new ApiKeyStore(local, memoryStorage()).get(), "kept");
+  assert.equal(keys2.isRemembered(), true);
+  keys2.set("now-tab-only", { remember: false });
+  assert.equal(
+    new ApiKeyStore(local, memoryStorage()).get(),
+    null,
+    "un-remembering removes the saved copy",
+  );
+  keys2.clear();
+  assert.equal(keys2.get(), null);
 });

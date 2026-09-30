@@ -5,6 +5,8 @@ import {
   decodeItemChatLink,
 } from "../public/src/data/item-search-index.js";
 import {
+  Gw2ApiClient,
+  MAX_RETRY_AFTER_MS,
   normalizeRecipe,
   normalizeItem,
   withSchemaVersion,
@@ -245,4 +247,95 @@ test("the published snapshot is preferred; returning visitors never call the GW2
   assert.equal(metaChecks, 1, "the update check reads the snapshot's metadata");
   assert.equal(buildChecks, 0, "not the GW2 API");
   assert.deepEqual(updates, [], "same build: nothing to offer");
+});
+
+test("price batches run 16 at a time; other lookups 8", async (t) => {
+  let inFlight = 0,
+    peak = 0;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    inFlight++;
+    peak = Math.max(peak, inFlight);
+    await new Promise((resolve) => setImmediate(resolve));
+    inFlight--;
+    const ids = new URL(url).searchParams.get("ids").split(",").map(Number);
+    return new Response(
+      JSON.stringify(
+        ids.map((id) => ({
+          id,
+          buys: { unit_price: 1 },
+          sells: { unit_price: 2 },
+        })),
+      ),
+      { status: 200 },
+    );
+  });
+  const api = new Gw2ApiClient("https://api.example/v2");
+  const ids = Array.from({ length: 40 * 200 }, (_, i) => i + 1);
+  const prices = await api.getPrices(ids);
+  assert.equal(prices.length, ids.length);
+  assert.equal(peak, 16);
+  peak = 0;
+  await api.fetchByIds("/items", ids);
+  assert.equal(peak, 8);
+});
+
+test("ids in a batch that failed are reported, apart from ids the API doesn't know", async (t) => {
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const ids = new URL(url).searchParams.get("ids").split(",").map(Number);
+    if (ids.includes(250)) return new Response("{}", { status: 400 });
+    return new Response(
+      JSON.stringify(
+        ids
+          .filter((id) => id !== 3) // untradeable: left out of a good answer
+          .map((id) =>
+            url.includes("listings")
+              ? { id, buys: [{ unit_price: 1, quantity: 1 }] }
+              : { id, buys: { unit_price: 1 }, sells: {} },
+          ),
+      ),
+      { status: 200 },
+    );
+  });
+  const api = new Gw2ApiClient("https://api.example/v2");
+  const ids = Array.from({ length: 400 }, (_, i) => i + 1);
+  const failedIds = new Set();
+  const prices = await api.getPrices(ids, { failedIds });
+  assert.equal(prices.length, 199, "the first batch, less the untradeable id");
+  assert.deepEqual([...failedIds], ids.slice(200), "the whole second batch");
+
+  const orderFailures = new Set();
+  const orders = await api.getBuyOrders(ids, { failedIds: orderFailures });
+  assert.equal(orders.has(3), false);
+  assert.equal(orderFailures.has(3), false);
+  assert.equal(orderFailures.size, 200);
+  assert.equal(
+    (await api.getPrices(ids)).length,
+    199,
+    "same answer without asking",
+  );
+});
+
+test("a long Retry-After is capped", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () =>
+    ++calls === 1
+      ? new Response("", { status: 429, headers: { "Retry-After": "3600" } })
+      : new Response("[1]", { status: 200 }),
+  );
+  const api = new Gw2ApiClient("https://api.example/v2");
+  let result = null;
+  const request = api.fetchJson("/x").then((value) => (result = value));
+  const turns = async () => {
+    for (let i = 0; i < 20; i++)
+      await new Promise((resolve) => setImmediate(resolve));
+  };
+  await turns();
+  t.mock.timers.tick(MAX_RETRY_AFTER_MS - 1);
+  await turns();
+  assert.equal(calls, 1, "still waiting");
+  t.mock.timers.tick(1);
+  await turns();
+  await request;
+  assert.deepEqual(result, [1], "retried after the cap, not an hour");
 });

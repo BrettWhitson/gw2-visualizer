@@ -1,19 +1,15 @@
-// Layout regressions, run against real (headless) Cytoscape: direction semantics, the force controls, radial
-// rings, and transitions finishing cleanly.
+// Layout regressions on plain data (no renderer): direction semantics, the force controls, radial rings, spacing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import cytoscape from "cytoscape";
-import cytoscapeDagre from "cytoscape-dagre";
-import { runLayout } from "../public/src/graph/layouts.js";
-import { GraphTransition } from "../public/src/graph/graph-transition.js";
+import { LayoutGraph } from "../public/lib/tether/layout-graph.js";
+import { runLayout as layOut } from "../public/lib/tether/run-layout.js";
+import { layoutSettings } from "../public/src/render/prism-settings.js";
 import { DEFAULT_SETTINGS } from "../public/src/config/settings-schema.js";
 import { stepRange } from "../public/src/ui/range-stepper.js";
 
-cytoscape.use(cytoscapeDagre);
-// GraphTransition schedules frames with the browser's animation-frame API.
-globalThis.requestAnimationFrame ??= (callback) =>
-  setTimeout(() => callback(performance.now()), 16);
-globalThis.cancelAnimationFrame ??= clearTimeout;
+/** Tether's runLayout with the app's settings, the way the pages call it. */
+const runLayout = (graph, settings, context) =>
+  layOut(graph, layoutSettings(settings), context);
 
 // result ← a ← (a1, a2); result ← b ← b1. Edges run product → ingredient, as in the app.
 const ELEMENTS = [
@@ -31,26 +27,32 @@ const ELEMENTS = [
 ];
 const RAW = ["a1", "a2", "b1"];
 
+/** The layout graph for elements in the app's shape (nodes `size` × `size`, or `w` × `h`). */
+function graphOf(elements, { w = 40, h = 40 } = {}) {
+  return new LayoutGraph(
+    elements
+      .filter((e) => !e.data.source)
+      .map((e) => ({
+        id: e.data.id,
+        w,
+        h,
+        root: String(e.classes ?? "").includes("root"),
+      })),
+    elements
+      .filter((e) => e.data.source)
+      .map((e) => ({ source: e.data.source, target: e.data.target })),
+  );
+}
+
 /** Lay a tree (the sample one by default) out with these settings; returns positions by id. */
 function layout(overrides, elements = ELEMENTS) {
-  const cy = cytoscape({
-    headless: true,
-    styleEnabled: true,
-    elements: structuredClone(elements),
-    style: [{ selector: "node", style: { width: 40, height: 40 } }],
-  });
-  try {
-    runLayout(
-      cy,
-      { ...DEFAULT_SETTINGS, ...overrides },
-      { hasPreviousPositions: false },
-    );
-    return Object.fromEntries(
-      cy.nodes().map((node) => [node.id(), { ...node.position() }]),
-    );
-  } finally {
-    cy.destroy();
-  }
+  const graph = graphOf(elements);
+  runLayout(
+    graph,
+    { ...DEFAULT_SETTINGS, ...overrides },
+    { hasPreviousPositions: false },
+  );
+  return Object.fromEntries(graph.positions());
 }
 
 const width = (positions) => {
@@ -120,7 +122,7 @@ test("layered: levels sit about one link distance apart", () => {
 
 test("link strength pulls links toward the link distance (stronger = closer)", () => {
   const edgeError = (linkForce) => {
-    const p = layout({ layoutEngine: "force", linkDistance: 150, linkForce });
+    const p = layout({ direction: "radial", linkDistance: 150, linkForce });
     const lengths = ELEMENTS.filter((e) => e.data.source).map((e) =>
       Math.hypot(
         p[e.data.source].x - p[e.data.target].x,
@@ -139,39 +141,35 @@ test("link strength pulls links toward the link distance (stronger = closer)", (
 });
 
 test("dragging a node pulls its neighbours along (live physics)", () => {
-  const cy = cytoscape({
-    headless: true,
-    styleEnabled: true,
-    elements: structuredClone(ELEMENTS),
-    style: [{ selector: "node", style: { width: 40, height: 40 } }],
+  const graph = graphOf(ELEMENTS);
+  // Floating on a tree: levels hold the vertical, so a sideways drag shows the pull clearly.
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    direction: "TB",
+    physicsMode: "floating",
+  };
+  const simulation = runLayout(graph, settings, {
+    hasPreviousPositions: false,
   });
-  try {
-    const settings = { ...DEFAULT_SETTINGS, layoutEngine: "force" };
-    const simulation = runLayout(cy, settings, { hasPreviousPositions: false });
-    const before = Object.fromEntries(
-      cy.nodes().map((n) => [n.id(), { ...n.position() }]),
-    );
-    const target = { x: before.a1.x + 600, y: before.a1.y };
-    simulation.fix("a1", target); // grab a1 and drag it far to the right
-    simulation.reheat(0.3);
-    for (let i = 0; i < 80; i++) simulation.tick();
-    simulation.apply("a1");
-    const moved = (id) => cy.getElementById(id).position().x - before[id].x;
-    assert.ok(
-      moved("a") > 100,
-      `a1's product follows (${Math.round(moved("a"))}px)`,
-    );
-    assert.ok(
-      moved("a") > moved("b1"),
-      "direct neighbours move more than distant nodes",
-    );
-    simulation.release("a1");
-    simulation.reheat(0);
-    for (let i = 0; i < 400 && simulation.isActive; i++) simulation.tick();
-    assert.ok(!simulation.isActive, "it settles after release");
-  } finally {
-    cy.destroy();
-  }
+  const before = Object.fromEntries(graph.positions());
+  const target = { x: before.a1.x + 600, y: before.a1.y };
+  simulation.fix("a1", target); // grab a1 and drag it far to the right
+  simulation.reheat(0.3);
+  for (let i = 0; i < 80; i++) simulation.tick();
+  const moved = (id) =>
+    simulation.x[simulation.indexById.get(id)] - before[id].x;
+  assert.ok(
+    moved("a") > 100,
+    `a1's product follows (${Math.round(moved("a"))}px)`,
+  );
+  assert.ok(
+    moved("a") > moved("b1"),
+    "direct neighbours move more than distant nodes",
+  );
+  simulation.release("a1");
+  simulation.reheat(0);
+  for (let i = 0; i < 400 && simulation.isActive; i++) simulation.tick();
+  assert.ok(!simulation.isActive, "it settles after release");
 });
 
 test("siblings never overlap, even with no repel", () => {
@@ -221,46 +219,14 @@ test("radial rings are evenly spaced by link distance, even when outer rings are
     );
 });
 
-test("force layout: deterministic, and a stronger center force gathers it tighter", () => {
-  const loose = layout({ layoutEngine: "force", centerForce: 0 });
-  assert.deepEqual(
-    layout({ layoutEngine: "force", centerForce: 0 }),
-    loose,
-    "same input, same layout",
-  );
-  const tight = layout({ layoutEngine: "force", centerForce: 1 });
-  assert.ok(width(tight) < width(loose));
-});
-
-test("an interrupted transition leaves every node at its final position, fully visible", () => {
-  const cy = cytoscape({
-    headless: true,
-    styleEnabled: true,
-    elements: structuredClone(ELEMENTS),
-  });
-  try {
-    const transition = new GraphTransition(cy, {
-      duration: 400,
-      easing: "smooth",
-    });
-    cy.nodes().forEach((node, i) =>
-      transition.moveNode(
-        node,
-        { x: 0, y: 0 },
-        { x: i * 50, y: i * 10 },
-        { fadeIn: true },
-      ),
-    );
-    cy.edges().forEach((edge) => transition.revealEdge(edge, 100));
-    transition.finish(); // e.g. a new render arrives mid-animation
-    cy.nodes().forEach((node, i) => {
-      assert.deepEqual(node.position(), { x: i * 50, y: i * 10 });
-      assert.equal(node.style("opacity"), "1", `${node.id()} not left faded`);
-    });
-    cy.edges().forEach((edge) => assert.equal(edge.style("opacity"), "1"));
-  } finally {
-    cy.destroy();
-  }
+test("both layouts, both physics modes: the same input always gives the same layout", () => {
+  for (const direction of ["TB", "radial"])
+    for (const physicsMode of ["elastic", "floating"])
+      assert.deepEqual(
+        layout({ direction, physicsMode }),
+        layout({ direction, physicsMode }),
+        `${direction}, ${physicsMode}`,
+      );
 });
 
 test("−/+ steps land exactly on the slider's grid and stop at its ends", () => {
@@ -270,4 +236,157 @@ test("−/+ steps land exactly on the slider's grid and stop at its ends", () =>
   input.value = "6";
   assert.equal(stepRange(input, 1), false, "already at the maximum");
   assert.equal(input.value, "6");
+});
+
+test("left-right layouts with wide nodes: levels make room, and nothing overlaps", () => {
+  // A root with 3 products, each with 30: wider nodes (standing in for labels beside them) than the level gap.
+  const ids = ["r"];
+  const edges = [];
+  for (let a = 0; a < 3; a++) {
+    ids.push(`a${a}`);
+    edges.push(["r", `a${a}`]);
+    for (let b = 0; b < 30; b++) {
+      ids.push(`a${a}b${b}`);
+      edges.push([`a${a}`, `a${a}b${b}`]);
+    }
+  }
+  const elements = [
+    ...ids.map((id) => ({ data: { id }, classes: id === "r" ? "root" : "" })),
+    ...edges.map(([source, target]) => ({
+      data: { id: `${source}->${target}`, source, target },
+    })),
+  ];
+  const graph = graphOf(elements, { w: 200, h: 40 });
+  runLayout(
+    graph,
+    {
+      ...DEFAULT_SETTINGS,
+      viewMode: "tree",
+      direction: "RL",
+      linkDistance: 120,
+    },
+    { hasPreviousPositions: false },
+  );
+  const boxes = graph.ids.map((id, i) => ({
+    id,
+    x1: graph.x[i] - 100,
+    x2: graph.x[i] + 100,
+    y1: graph.y[i] - 20,
+    y2: graph.y[i] + 20,
+  }));
+  for (let i = 0; i < boxes.length; i++)
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i],
+        b = boxes[j];
+      const overlaps =
+        Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1) > 1 &&
+        Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1) > 1;
+      assert.ok(!overlaps, `${a.id} overlaps ${b.id}`);
+    }
+  const x = (id) => graph.positionOf(id).x;
+  assert.ok(
+    x("a0b0") - x("a0") >= 200,
+    "levels are at least a node's width apart, not the 120 px link distance",
+  );
+});
+
+test("waking the physics (a drag, a tap) doesn't slide the graph", () => {
+  // Layouts don't centre on the origin; when the physics wakes up it must not care where the graph sits. (It used
+  // to pull toward (0, 0), so a tap slid a graph lying far from it across the screen.)
+  const drift = (overrides, offset) => {
+    const graph = graphOf(ELEMENTS);
+    const simulation = runLayout(
+      graph,
+      { ...DEFAULT_SETTINGS, ...overrides },
+      { hasPreviousPositions: false },
+    );
+    simulation.setPositions((id) => {
+      const p = graph.positionOf(id);
+      return { x: p.x + offset, y: p.y + offset / 2 };
+    });
+    const middle = () =>
+      simulation.x.reduce((sum, x) => sum + x, 0) / simulation.count;
+    const before = middle();
+    simulation.reheat(0.3);
+    for (let i = 0; i < 120; i++) simulation.tick();
+    return middle() - before;
+  };
+  for (const overrides of [
+    { direction: "TB" },
+    { viewMode: "merged", direction: "LR" },
+    { direction: "radial", physicsMode: "floating" },
+  ]) {
+    const near = drift(overrides, 0),
+      far = drift(overrides, 3000);
+    assert.ok(
+      Math.abs(far - near) < 1,
+      `${JSON.stringify(overrides)}: ${far.toFixed(1)} far away vs ${near.toFixed(1)} at the origin`,
+    );
+    // Nor does it slide on its own (uneven link pulls and the approximate repulsion used to push it along). Radial
+    // pins the result in the middle, and its rings pull on the rest from there: a little more give.
+    const allowed = overrides.direction === "radial" ? 5 : 2;
+    assert.ok(Math.abs(far) < allowed, `${JSON.stringify(overrides)}: ${far}`);
+  }
+});
+
+test("floating: grabbing a node moves nothing by itself, and a small nudge stays near it", () => {
+  // result → 3 products → 6 ingredients each.
+  const elements = [{ data: { id: "r" }, classes: "root" }];
+  for (let a = 0; a < 3; a++) {
+    elements.push(
+      { data: { id: `a${a}` } },
+      { data: { id: `r>a${a}`, source: "r", target: `a${a}` } },
+    );
+    for (let b = 0; b < 6; b++)
+      elements.push(
+        { data: { id: `a${a}b${b}` } },
+        { data: { id: `a${a}>b${b}`, source: `a${a}`, target: `a${a}b${b}` } },
+      );
+  }
+  const grab = (direction, nudge) => {
+    const graph = graphOf(elements, { w: 60, h: 40 });
+    const simulation = runLayout(graph, {
+      ...DEFAULT_SETTINGS,
+      direction,
+      physicsMode: "floating",
+    });
+    const before = new Map(graph.positions());
+    // What the view does on a floating drag: start from what's on screen, heat up, hold that as rest, fix the node.
+    simulation.setPositions((id) => graph.positionOf(id));
+    simulation.reheat(simulation.tuning.dragHeat);
+    simulation.holdRest();
+    const leaf = simulation.indexById.get("a0b0");
+    simulation.fix("a0b0", {
+      x: simulation.x[leaf] + nudge,
+      y: simulation.y[leaf],
+    });
+    for (let i = 0; i < 90; i++) simulation.tick();
+    return new Map(
+      simulation.ids.map((id, i) => [
+        id,
+        Math.hypot(
+          simulation.x[i] - before.get(id).x,
+          simulation.y[i] - before.get(id).y,
+        ),
+      ]),
+    );
+  };
+  for (const direction of ["TB", "radial"]) {
+    const held = grab(direction, 0);
+    assert.ok(
+      Math.max(...held.values()) < 1e-6,
+      `${direction}: grabbing alone moved something ${Math.max(...held.values())}`,
+    );
+    const nudged = grab(direction, 8);
+    const elsewhere = [...nudged].filter(([id]) => !id.startsWith("a0"));
+    const most = Math.max(...elsewhere.map(([, d]) => d));
+    assert.ok(
+      most < 8,
+      `${direction}: other branches moved up to ${most.toFixed(1)}`,
+    );
+    assert.ok(
+      nudged.get("a0") > 0.1,
+      `${direction}: the leaf's product responds`,
+    );
+  }
 });
