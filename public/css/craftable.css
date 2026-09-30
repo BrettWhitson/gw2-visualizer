@@ -135,13 +135,41 @@
   align-items: flex-end;
   font-size: 11.5px;
 }
-.craft-row-total {
-  opacity: 0.75;
-  font-size: 10.5px;
+.craft-row-profit {
+  font-size: 11px;
+  font-weight: 600;
 }
-.craft-row-total::before {
-  content: "total ";
-  color: var(--muted);
+.craft-route {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #b9a36b;
+  font-size: 11px;
+}
+.craft-profit,
+.craft-best {
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: var(--panel2);
+  border-radius: 6px;
+}
+.craft-best ol {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.craft-best li {
+  margin-bottom: 4px;
+}
+.craft-best .craft-route {
+  white-space: normal;
+}
+.craft-route-link {
+  font-size: 12.5px;
+  text-align: left;
+}
+.craft-profit details {
+  margin-top: 4px;
 }
 .craft-more {
   display: block;

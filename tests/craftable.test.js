@@ -7,6 +7,11 @@ import {
   chooseLayout,
   RADIAL_LEVEL_SIZE,
   filterAndSort,
+  profitOf,
+  sellIntoBuyOrders,
+  routeFrom,
+  analyseProfits,
+  TRADING_POST_NET,
   usefulMaterials,
 } from "../public/src/model/craftable.js";
 import { RECIPES, createFakeGameData } from "./helpers/fixtures.js";
@@ -193,6 +198,17 @@ test("the lists: materials that lead somewhere, filtered and sorted", async () =
     "ties by name",
   );
   assert.deepEqual(
+    ids(
+      filterAndSort(entries, {
+        ...options,
+        sort: "profit",
+        profitOf: (entry) => ({ 1: 50, 2: 300 })[entry.itemId] ?? null,
+      }),
+    ),
+    [2, 1, 3, 4],
+    "most profit first; unknown profit last, by name",
+  );
+  assert.deepEqual(
     ids(filterAndSort(entries, { ...options, sort: "name", query: "bl" })),
     [2],
   );
@@ -260,4 +276,164 @@ test("a deep enough chain is beyond the plan depth", () => {
   const p = planner({ owned: { 1000: 5 }, recipes });
   assert.equal(p.canMake(1003), true, "a few steps is fine");
   assert.equal(p.canMake(1020), false, "twenty isn't");
+});
+
+// ---------------------------------------------------------------- profit
+
+test("a plan explains its crafts, what it uses up and what it spends", () => {
+  const p = planner({ owned: { 5: 12, 6: 1 }, wallet: { [COIN]: 100 } });
+  const plan = p.explain(1, 1);
+  // 1 sword ← 2 blades ← 6 ingots (3 crafts of 2) ← 6 ore; 1 hilt ← 1 plank + 50 coin.
+  assert.deepEqual(
+    [...plan.steps]
+      .map(([id, step]) => [id, step.crafts])
+      .sort((a, b) => a[0] - b[0]),
+    [
+      [1, 1],
+      [2, 2],
+      [3, 1],
+      [4, 3],
+    ],
+  );
+  assert.deepEqual(Object.fromEntries(plan.consumed), { 5: 6, 6: 1 });
+  assert.deepEqual(Object.fromEntries(plan.spent), { [COIN]: 50 });
+  assert.equal(p.explain(1, 5), null, "more than can be made");
+});
+
+test("profit is the sale minus what the used-up materials would sell for, after the Trading Post's cut", () => {
+  const p = planner({ owned: { 5: 12, 6: 1 }, wallet: { [COIN]: 100 } });
+  const prices = { 1: 500, 5: 5, 6: 3 };
+  const result = profitOf(p, 1, 1, (id) => prices[id] ?? null);
+  assert.equal(result.revenue, Math.floor(500 * TRADING_POST_NET));
+  assert.equal(
+    result.cost,
+    Math.round((6 * 5 + 1 * 3) * TRADING_POST_NET) + 50,
+    "coin at face value",
+  );
+  assert.equal(result.profit, result.revenue - result.cost);
+
+  const unsellable = profitOf(p, 1, 1, (id) =>
+    id === 1 ? 500 : id === 5 ? 5 : null,
+  );
+  assert.deepEqual(
+    unsellable.unvaluedInputs,
+    [6],
+    "the plank has no buyers: counted as free, and reported",
+  );
+  assert.equal(
+    profitOf(p, 1, 1, () => null).profit,
+    null,
+    "an output nobody buys has no profit",
+  );
+});
+
+test("routes lead from a material through each craft to the product", () => {
+  const p = planner({ owned: { 5: 12, 6: 1 }, wallet: { [COIN]: 100 } });
+  const plan = p.explain(1, 1);
+  assert.deepEqual(
+    routeFrom(plan, 1, 5),
+    [5, 4, 2, 1],
+    "ore → ingot → blade → sword",
+  );
+  assert.deepEqual(routeFrom(plan, 1, 6), [6, 3, 1], "plank → hilt → sword");
+  assert.equal(routeFrom(plan, 1, 999), null);
+});
+
+test("each material's most profitable uses, and the best profit through each item", async () => {
+  const p = planner({ owned: { 5: 12, 6: 1 }, wallet: { [COIN]: 100 } });
+  const entries = await p.findCraftable();
+  const prices = { 1: 500, 2: 40, 4: 6, 5: 5, 6: 3 };
+  const { byItem, bestByMaterial, bestThrough } = await analyseProfits(
+    p,
+    entries,
+    (id) => prices[id] ?? null,
+  );
+  assert.equal(byItem.has(3), false, "hilts have no buyers: no profit to rank");
+  const oreBest = bestByMaterial.get(5);
+  assert.deepEqual(
+    oreBest.map((b) => b.itemId),
+    [1, 2, 4].sort((a, b) => byItem.get(b).profit - byItem.get(a).profit),
+    "ore's uses, best first",
+  );
+  assert.equal(
+    bestThrough.get(4),
+    Math.max(...oreBest.map((b) => b.profit)),
+    "ingots lead to the best of them",
+  );
+});
+
+test("routes to point out are always shown and flagged", async () => {
+  const p = planner({ owned: { 5: 12, 6: 1 }, wallet: { [COIN]: 100 } });
+  const craftable = new Map(
+    (await p.findCraftable()).map(({ itemId, count }) => [itemId, count]),
+  );
+  const graph = buildForwardGraph(5, {
+    planner: p,
+    craftable,
+    expanded: new Set(["r/4", "r/4/2"]),
+    showAll: new Set(),
+    highlight: new Set(["r/4", "r/4/2", "r/4/2/1"]),
+    childLimit: 0,
+  });
+  assert.deepEqual(
+    graph.nodes.filter((n) => n.isBestRoute).map((n) => n.nodeId),
+    ["r/4", "r/4/2", "r/4/2/1"],
+    "ore → ingot → blade → sword, despite a limit of none",
+  );
+});
+
+test("big stacks are priced at what the buy orders can take", () => {
+  const orders = [
+    { unitPrice: 1000, quantity: 1 },
+    { unitPrice: 10, quantity: 5 },
+  ];
+  assert.deepEqual(sellIntoBuyOrders(orders, 3), {
+    gross: 1000 + 2 * 10,
+    sold: 3,
+  });
+  assert.deepEqual(
+    sellIntoBuyOrders(orders, 50),
+    { gross: 1050, sold: 6 },
+    "only 6 buyers",
+  );
+  assert.deepEqual(sellIntoBuyOrders([], 5), { gross: 0, sold: 0 });
+
+  const p = planner({ owned: { 5: 12, 6: 1 }, wallet: { [COIN]: 100 } });
+  const valueOf = (id) => ({ 1: 1000, 5: 5, 6: 3 })[id] ?? null;
+  const naive = profitOf(p, 1, 1, valueOf);
+  const real = profitOf(p, 1, 1, valueOf, {
+    buyOrders: [{ unitPrice: 400, quantity: 9 }],
+  });
+  assert.equal(
+    real.revenue,
+    Math.floor(400 * TRADING_POST_NET),
+    "the order book, not the headline price",
+  );
+  assert.ok(real.profit < naive.profit);
+  const noBuyers = profitOf(p, 1, 1, valueOf, { buyOrders: [] });
+  assert.equal(noBuyers.profit, null);
+  assert.equal(noBuyers.sold, 0);
+});
+
+test("steps opened only to follow a route show just the route", async () => {
+  const p = planner({ owned: { 5: 12, 6: 1, 4: 3 }, wallet: { [COIN]: 100 } });
+  const craftable = new Map(
+    (await p.findCraftable()).map(({ itemId, count }) => [itemId, count]),
+  );
+  // From ingots (4): blades (2) → swords (1). Focusing r/2 on the sword route hides nothing else here, so check the
+  // fold: with no highlighted children, a focused node shows only "+N more".
+  const graph = buildForwardGraph(4, {
+    planner: p,
+    craftable,
+    expanded: new Set(),
+    showAll: new Set(),
+    focus: new Set(["r/2"]),
+    highlight: new Set(["r/2"]),
+  });
+  assert.equal(graph.nodesById.get("r/2/1"), undefined, "the sword isn't on the route");
+  assert.equal(
+    graph.nodesById.get("r/2/more")?.quantity,
+    1,
+    "the sword folded away",
+  );
 });

@@ -7,10 +7,13 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 
 - **What you can craft** (new page, linked from the header): with an account connected (`inventories` permission), a
   ranked list of everything you can craft right now from what you own, counting intermediate crafts and currencies
-  from your wallet, filterable by name and discipline and sortable by **most profitable** (sell price × how many you
-  can make; each row shows that total), Trading Post value, how many you can make, rarity or name; recipes no character has the level for are left out unless you ask. Pick an item, or one of your
-  materials, to see a graph of what it can become, one step at a time: double-click to go further, big fan-outs fold
-  into "+N more", and the layout switches to rings when a step gets crowded (or pick Columns / Radial).
+  from your wallet, filterable by name and discipline and sortable by **most profitable**, highest price, how many you
+  can make, rarity or name. Profit is what the crafted items sell for into buy orders minus what the materials they use
+  up would, both after the Trading Post's 15%; the top results are priced against the real order book, so a lone high
+  buy order can't inflate a big stack. Each result shows its **route** ("Mithril Ore → Mithril Ingot → … → Catapult"),
+  each material its best use, and an item's details its profit, the crafts on the way and the best routes onward; recipes no character has the level for are left out unless you ask. Pick an item, or one of your
+  materials, to see a graph of what it can become: the three most profitable routes open and are highlighted in gold,
+  branches leading to the best profit come first, double-click to go further, big fan-outs fold into "+N more", and the layout switches to rings when a step gets crowded (or pick Columns / Radial).
 - Fixed: in left-right layouts, wide labels made neighbouring levels collide, so big trees stacked into a tall
   column with overlapping nodes. Levels now make room for their labels, and nodes on a level never overlap.
 - About and a new header button link to the source code on GitHub.

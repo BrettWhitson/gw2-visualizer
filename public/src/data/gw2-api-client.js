@@ -105,6 +105,23 @@ export class Gw2ApiClient {
     ).map(({ id, name, icon }) => ({ id, name, icon }));
   }
 
+  /** Buy orders (highest first) per item, from the order book; items with no market are absent. */
+  async getBuyOrders(ids) {
+    const raw = await this.fetchByIds("/commerce/listings", ids, {
+      retries: 2,
+      ignoreErrors: true,
+    });
+    return new Map(
+      raw.map((listing) => [
+        listing.id,
+        (listing.buys ?? []).map(({ unit_price, quantity }) => ({
+          unitPrice: unit_price,
+          quantity,
+        })),
+      ]),
+    );
+  }
+
   /** Trading post prices; untradeable ids are simply absent from the result. */
   async getPrices(ids) {
     const raw = await this.fetchByIds("/commerce/prices", ids, {

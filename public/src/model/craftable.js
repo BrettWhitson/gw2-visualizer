@@ -180,6 +180,52 @@ export class CraftPlanner {
   }
 
   #work = 0;
+  /** Crafts made by the plan being explained (null when not explaining). */
+  #trace = null;
+
+  /**
+   * The plan behind making `quantity` of an item: every craft step, the owned items it uses up and the currencies
+   * it spends. Null when it can't be made.
+   * @returns {{ steps: Map<number, { recipe: import('../types.js').Recipe, crafts: number }>,
+   *             consumed: Map<number, number>, spent: Map<number, number> } | null}
+   */
+  explain(itemId, quantity) {
+    const ledger = new Ledger(this.owned);
+    const wallet = new Ledger(this.wallet);
+    this.#work = WORK_BUDGET;
+    this.#trace = [];
+    try {
+      const recipe = this.#make(
+        itemId,
+        quantity,
+        ledger,
+        wallet,
+        new Set([itemId]),
+        0,
+      );
+      if (recipe === undefined) return null;
+      const steps = new Map();
+      for (const step of this.#trace) {
+        const entry = steps.get(step.itemId);
+        if (entry) entry.crafts += step.crafts;
+        else
+          steps.set(step.itemId, { recipe: step.recipe, crafts: step.crafts });
+      }
+      const consumed = new Map();
+      for (const [id, value] of ledger.changes) {
+        const used = (this.owned.get(id) ?? 0) - value;
+        if (used > 0) consumed.set(id, used);
+      }
+      const spent = new Map();
+      for (const [id, value] of wallet.changes) {
+        const used = (this.wallet.get(id) ?? 0) - value;
+        if (used > 0) spent.set(id, used);
+      }
+      return { steps, consumed, spent };
+    } finally {
+      this.#trace = null;
+    }
+  }
 
   /**
    * Provide `quantity` of an item: from stock first, then crafting the rest. Returns the recipe used for the
@@ -208,7 +254,8 @@ export class CraftPlanner {
     for (const recipe of this.recipesOf(itemId)) {
       if (--this.#work < 0) return undefined; // over budget: treat as not makeable
       const mark = ledger.mark(),
-        walletMark = wallet.mark();
+        walletMark = wallet.mark(),
+        traceMark = this.#trace?.length;
       const crafts = Math.ceil(quantity / recipe.outputCount);
       let ok = true;
       for (const ingredient of recipe.ingredients) {
@@ -232,10 +279,12 @@ export class CraftPlanner {
       if (ok) {
         const surplus = crafts * recipe.outputCount - quantity;
         if (surplus) ledger.add(itemId, surplus);
+        this.#trace?.push({ itemId, recipe, crafts });
         return recipe;
       }
       ledger.rollback(mark);
       wallet.rollback(walletMark);
+      if (this.#trace) this.#trace.length = traceMark;
     }
     return undefined;
   }
@@ -254,10 +303,13 @@ export const CHILD_LIMIT = 12;
  *
  * @param {number} rootItemId
  * @param {{ planner: CraftPlanner, craftable: Map<number, number>, rank?: (itemId: number) => number,
- *           expanded: Set<string>, collapsed?: Set<string>, showAll: Set<string>, initialDepth?: number,
+ *           expanded: Set<string>, collapsed?: Set<string>, showAll: Set<string>, highlight?: Set<string>,
+ *           initialDepth?: number,
  *           childLimit?: number }} options
  *   craftable: item id → how many can be made; expanded: node paths the user opened (beyond initialDepth);
  *   collapsed: node paths the user closed (within initialDepth); showAll: node paths whose "+N more" was opened;
+ *   highlight: node paths on the routes to point out (always shown, flagged isBestRoute);
+ *   focus: node paths opened only to follow a route: they show just their highlighted children, the rest folded;
  *   rank: higher first (default: how many can be made)
  */
 export function buildForwardGraph(
@@ -269,6 +321,8 @@ export function buildForwardGraph(
     expanded,
     collapsed = new Set(),
     showAll,
+    highlight = new Set(),
+    focus = new Set(),
     initialDepth = 1,
     childLimit = CHILD_LIMIT,
   },
@@ -282,8 +336,10 @@ export function buildForwardGraph(
 
   const addNode = (itemId, path, depth, ancestors) => {
     const products = productsOf(itemId).filter((id) => !ancestors.has(id));
+    const isFocused = focus.has(path) && !expanded.has(path);
     const isOpen =
-      !collapsed.has(path) && (depth < initialDepth || expanded.has(path));
+      !collapsed.has(path) &&
+      (depth < initialDepth || expanded.has(path) || isFocused);
     const node = {
       nodeId: path,
       kind: EntityKind.item,
@@ -310,11 +366,20 @@ export function buildForwardGraph(
       collapseKey: path,
       occurrenceCount: 1,
       isRoot: depth === 0,
+      isBestRoute: highlight.has(path),
     };
     nodesById.set(path, node);
     if (!isOpen) return;
 
-    const shown = showAll.has(path) ? products : products.slice(0, childLimit);
+    // Children on a highlighted route are always shown, even past the limit.
+    const onRoute = (productId) => highlight.has(`${path}/${productId}`);
+    const routeCount = products.filter(onRoute).length;
+    const shown = showAll.has(path)
+      ? products
+      : [
+          ...products.filter(onRoute),
+          ...products.filter((id) => !onRoute(id)),
+        ].slice(0, isFocused ? routeCount : Math.max(childLimit, routeCount));
     const nextAncestors = new Set(ancestors).add(itemId);
     // Paths use item ids, not positions: ranking changes (prices arriving) mustn't move what's expanded.
     shown.forEach((productId) => {
@@ -405,11 +470,11 @@ export const recipeDisciplines = (recipe) =>
 /**
  * Filter and sort list entries (`{ itemId, … }`).
  * @param {object[]} entries
- * `profit` ranks by what the whole lot sells for: unit sell price × `quantityOf` (how many you can make, or own).
+ * `profit` ranks by `profitOf` (unprofitable and unknown last).
  * @param {{ query?: string, discipline?: string, sort: "profit" | "value" | "count" | "rarity" | "name",
  *           nameOf: (id: number) => string, priceOf: (id: number) => number | null,
  *           rarityRankOf: (id: number) => number, countOf: (entry: object) => number,
- *           quantityOf?: (entry: object) => number, disciplinesOf?: (entry: object) => string[],
+ *           profitOf?: (entry: object) => number | null, disciplinesOf?: (entry: object) => string[],
  *           isAllowed?: (entry: object) => boolean }} options
  */
 export function filterAndSort(
@@ -422,7 +487,7 @@ export function filterAndSort(
     priceOf,
     rarityRankOf,
     countOf,
-    quantityOf = countOf,
+    profitOf = () => null,
     disciplinesOf = () => [],
     isAllowed = () => true,
   },
@@ -435,12 +500,9 @@ export function filterAndSort(
       (!discipline || disciplinesOf(entry).includes(discipline)),
   );
   const byName = (a, b) => nameOf(a.itemId).localeCompare(nameOf(b.itemId));
-  const total = (entry) => {
-    const price = priceOf(entry.itemId);
-    return price == null ? -1 : price * quantityOf(entry);
-  };
+  const profit = (entry) => profitOf(entry) ?? -Infinity;
   const compare = {
-    profit: (a, b) => total(b) - total(a),
+    profit: (a, b) => profit(b) - profit(a) || 0, // -Infinity - -Infinity is NaN: treat as a tie
     // Unpriced (untradeable) items after priced ones.
     value: (a, b) => (priceOf(b.itemId) ?? -1) - (priceOf(a.itemId) ?? -1),
     count: (a, b) => countOf(b) - countOf(a),
@@ -462,4 +524,139 @@ export function chooseLayout(graph, preference = "auto") {
   return Math.max(0, ...perDepth.values()) > RADIAL_LEVEL_SIZE
     ? "radial"
     : "columns";
+}
+
+// ---------------------------------------------------------------- profit
+
+/** What a Trading Post sale leaves you: the listing and exchange fees take 15%, instant sales included. */
+export const TRADING_POST_NET = 0.85;
+const COIN_ID = 1;
+
+/**
+ * Profit from crafting `count` of an item instead of selling what it uses up. Values come from `valueOf` (the
+ * caller's choice: the highest buy order, what an instant sale gets). Both sides are after the Trading Post's cut;
+ * coin spent counts at face value. Inputs with no value (account-bound, no buyers) count as free and are reported.
+ * @param {(itemId: number) => number | null} valueOf  copper per unit, null when it can't be sold
+ * @param {{ buyOrders?: { unitPrice: number, quantity: number }[] }} [options]  the output's order book: when given,
+ *   the sale is priced at what the buy orders can actually take (see sellIntoBuyOrders) instead of count × valueOf
+ * @returns {{ itemId: number, count: number, revenue: number | null, cost: number, profit: number | null,
+ *             sold: number, plan: ReturnType<CraftPlanner["explain"]>, unvaluedInputs: number[],
+ *             otherCurrencies: [number, number][] } | null}
+ */
+export function profitOf(planner, itemId, count, valueOf, { buyOrders } = {}) {
+  const plan = planner.explain(itemId, count);
+  if (!plan) return null;
+  const unit = valueOf(itemId);
+  let revenue = null,
+    sold = count;
+  if (buyOrders) {
+    const sale = sellIntoBuyOrders(buyOrders, count);
+    sold = sale.sold;
+    revenue = sale.sold ? Math.floor(sale.gross * TRADING_POST_NET) : null;
+  } else if (unit != null)
+    revenue = Math.floor(unit * count * TRADING_POST_NET);
+  let cost = plan.spent.get(COIN_ID) ?? 0;
+  const unvaluedInputs = [];
+  for (const [id, used] of plan.consumed) {
+    const value = valueOf(id);
+    if (value == null) unvaluedInputs.push(id);
+    else cost += value * used * TRADING_POST_NET;
+  }
+  cost = Math.round(cost);
+  return {
+    itemId,
+    count,
+    revenue,
+    cost,
+    profit: revenue == null ? null : revenue - cost,
+    sold,
+    plan,
+    unvaluedInputs,
+    otherCurrencies: [...plan.spent].filter(([id]) => id !== COIN_ID),
+  };
+}
+
+/**
+ * Selling `count` into the buy orders, highest first: the gross copper and how many they absorb (big stacks run
+ * out of buyers at the top price, so a lone high order doesn't price the whole lot).
+ * @param {{ unitPrice: number, quantity: number }[]} buyOrders  highest first
+ */
+export function sellIntoBuyOrders(buyOrders, count) {
+  let gross = 0,
+    sold = 0;
+  for (const { unitPrice, quantity } of buyOrders) {
+    if (sold >= count) break;
+    const take = Math.min(quantity, count - sold);
+    gross += take * unitPrice;
+    sold += take;
+  }
+  return { gross, sold };
+}
+
+/**
+ * The chain of crafts in a plan leading from `materialId` to `productId`: [material, …intermediates, product], or
+ * null when the plan doesn't use the material.
+ */
+export function routeFrom(plan, productId, materialId) {
+  const walk = (itemId, seen) => {
+    if (itemId === materialId) return [itemId];
+    const step = plan.steps.get(itemId);
+    if (!step || seen.has(itemId)) return null;
+    seen.add(itemId);
+    for (const ingredient of step.recipe.ingredients) {
+      if (ingredient.type !== "Item") continue;
+      const route = walk(ingredient.id, seen);
+      if (route) return [...route, itemId];
+    }
+    return null;
+  };
+  return walk(productId, new Set());
+}
+
+/** Best products kept per material. */
+export const TOP_ROUTES = 3;
+
+/**
+ * Profit for every craftable item that can be sold, then, for each owned material, the most profitable things to make
+ * with it; and for every item on some plan's way, the best profit reachable through it (ranks the forward graph).
+ * @param {{ itemId: number, count: number }[]} entries  craftable items and how many can be made
+ * @param {{ shouldYield?: () => boolean, yieldToPage?: () => Promise<void> }} [options]
+ */
+export async function analyseProfits(
+  planner,
+  entries,
+  valueOf,
+  { shouldYield = () => false, yieldToPage: pause = yieldToPage } = {},
+) {
+  const byItem = new Map();
+  for (const { itemId, count } of entries) {
+    if (shouldYield()) await pause();
+    if (valueOf(itemId) == null) continue;
+    const result = profitOf(planner, itemId, count, valueOf);
+    if (result) byItem.set(itemId, result);
+  }
+  return rebuildBests(byItem);
+}
+
+/** From per-item profits: each material's best uses, and the best profit reachable through each item. */
+export function rebuildBests(byItem) {
+  const bestByMaterial = new Map();
+  const bestThrough = new Map();
+  const raise = (itemId, profit) => {
+    if (profit > (bestThrough.get(itemId) ?? -Infinity))
+      bestThrough.set(itemId, profit);
+  };
+  for (const [itemId, result] of byItem) {
+    if (result.profit == null) continue;
+    raise(itemId, result.profit);
+    for (const stepId of result.plan.steps.keys()) raise(stepId, result.profit);
+    for (const materialId of result.plan.consumed.keys()) {
+      raise(materialId, result.profit);
+      const best = bestByMaterial.get(materialId) ?? [];
+      best.push({ itemId, profit: result.profit });
+      best.sort((a, b) => b.profit - a.profit || a.itemId - b.itemId);
+      bestByMaterial.set(materialId, best.slice(0, TOP_ROUTES));
+    }
+  }
+  return { byItem, bestByMaterial, bestThrough };
 }

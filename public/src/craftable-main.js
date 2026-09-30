@@ -14,8 +14,13 @@ import { craftingRequirement } from "./model/account-inventory.js";
 import {
   CraftPlanner,
   MAX_COUNT,
+  TRADING_POST_NET,
+  analyseProfits,
   buildForwardGraph,
+  profitOf,
+  rebuildBests,
   chooseLayout,
+  routeFrom,
   filterAndSort,
   recipeDisciplines,
   usefulMaterials,
@@ -25,13 +30,20 @@ import { NodeAppearance } from "./graph/node-appearance.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
 import { registerServiceWorker } from "./pwa.js";
 import { escapeHtml, querySelector as $ } from "./utils/dom.js";
-import { formatCoinsHtml, formatNumber } from "./utils/format.js";
+import {
+  formatCoinsHtml,
+  formatCoinsText,
+  formatNumber,
+} from "./utils/format.js";
 
 const LAYOUT_KEY = "gw2ct.craftableLayout";
 const LAYOUT_SETTINGS = {
   columns: { direction: "RL", layoutEngine: "layered" },
   radial: { direction: "radial", layoutEngine: "layered" },
 };
+
+/** How many of the most profitable results are re-priced against their order books (1–2 API requests). */
+const ORDER_BOOK_CHECKS = 300;
 
 /** Rows rendered at once; "Show more" adds this many again. */
 const PAGE_SIZE = 150;
@@ -54,14 +66,29 @@ const countLabel = (count) =>
 
 /** Labels for this graph: "can make N" on products, "you have N" on the root, "+N more" on folds. */
 class CraftableAppearance extends NodeAppearance {
+  /** @type {(itemId: number) => number | null} profit from making all you can, set by the page */
+  profitOf = () => null;
+
   label(node) {
     const name = this.gameData.getEntity(node.kind, node.entityId).name;
     if (node.isOverflow) return `+${formatNumber(node.quantity)} more  ▸`;
     const more = node.isCollapsed ? "  ▸" : "";
-    return node.isRoot
-      ? `${name}\n(you have ${formatNumber(node.quantity)})`
-      : `${countLabel(node.quantity)} × ${name}${more}`;
+    if (node.isRoot)
+      return `${name}\n(you have ${formatNumber(node.quantity)})`;
+    const profit = this.profitOf(node.entityId);
+    return `${countLabel(node.quantity)} × ${name}${more}${
+      profit
+        ? `\n${profit > 0 ? `+${formatCoinsText(profit)} profit` : `${formatCoinsText(-profit)} loss`}`
+        : ""
+    }`;
   }
+}
+
+/** "Mithril Ore → Mithril Ingot → …": long routes keep their ends. */
+function routeText(names) {
+  const shown =
+    names.length > 5 ? [...names.slice(0, 2), "…", ...names.slice(-2)] : names;
+  return shown.join(" → ");
 }
 
 class CraftablePage {
@@ -79,6 +106,8 @@ class CraftablePage {
   /** @type {{ itemId: number, count: number, recipe: object }[]} */
   craftableEntries = [];
   materials = [];
+  /** @type {Awaited<ReturnType<typeof analyseProfits>> | null} profit per item and the best uses of each material */
+  profits = null;
   list = "craftable";
   shown = PAGE_SIZE;
   rootItemId = null;
@@ -110,6 +139,8 @@ class CraftablePage {
       gameData: this.gameData,
       settings: graphSettings,
     });
+    this.appearance.profitOf = (itemId) =>
+      this.profits?.byItem.get(itemId)?.profit ?? null;
   }
 
   start() {
@@ -159,6 +190,7 @@ class CraftablePage {
     this.craftable = new Map();
     this.craftableEntries = [];
     this.materials = [];
+    this.profits = null;
     this.rootItemId = null;
     this.graph = null;
     this.expanded = new Set();
@@ -236,18 +268,122 @@ class CraftablePage {
         this.planner.owned.get(previous.itemId) > 0)
     )
       this.#openRoot(previous.itemId);
-    // Prices rank "Most valuable"; the list redraws when they arrive.
-    this.priceBook
-      .ensure([
+    // Prices, then profits: what each item sells for, minus what its materials would.
+    try {
+      this.#status("Fetching Trading Post prices…");
+      await this.priceBook.ensure([
         ...this.craftable.keys(),
-        ...this.materials.map((m) => m.itemId),
-      ])
-      .then((arrived) => {
-        if (arrived && token === this.#computeToken) this.#renderList();
-      })
-      .catch(() => {
-        /* no prices: "Most valuable" falls back to name order */
-      });
+        ...this.planner.owned.keys(),
+      ]);
+    } catch {
+      /* no prices: no profits; the list still works */
+    }
+    if (token !== this.#computeToken) return;
+    this.#status("Working out profits…");
+    sliceStart = performance.now();
+    const profits = await analyseProfits(
+      this.planner,
+      entries,
+      (id) => this.#valueOf(id),
+      {
+        shouldYield: () => {
+          if (performance.now() - sliceStart < 12) return false;
+          sliceStart = performance.now();
+          return true;
+        },
+      },
+    );
+    if (token !== this.#computeToken) return;
+    this.profits = profits;
+    this.#status("Checking buy-order depth…");
+    await this.#priceAgainstOrderBooks(token);
+    if (token !== this.#computeToken) return;
+    this.#status("");
+    this.#renderList();
+    if (this.rootItemId != null) this.#openRoot(this.rootItemId);
+  }
+
+  /**
+   * The top buy order says little about selling hundreds: the most profitable results are re-priced at what the
+   * buy orders can actually take, then the per-material bests are rebuilt from the corrected numbers.
+   */
+  async #priceAgainstOrderBooks(token) {
+    const { byItem } = this.profits;
+    const top = [...byItem.values()]
+      .filter((result) => result.profit > 0)
+      .sort((a, b) => b.profit - a.profit)
+      .slice(0, ORDER_BOOK_CHECKS);
+    let books;
+    try {
+      books = await this.api.getBuyOrders(top.map((result) => result.itemId));
+    } catch {
+      return; // keep the headline-price estimate
+    }
+    if (token !== this.#computeToken) return;
+    for (const result of top) {
+      const corrected = profitOf(
+        this.planner,
+        result.itemId,
+        result.count,
+        (id) => this.#valueOf(id),
+        { buyOrders: books.get(result.itemId) ?? [] },
+      );
+      if (corrected) byItem.set(result.itemId, corrected);
+    }
+    this.profits = rebuildBests(byItem);
+  }
+
+  /**
+   * What an item is worth: the highest buy order (an instant sale), before the Trading Post's cut. Null with no
+   * buyers: a lone high sell listing says nothing about what it would fetch.
+   */
+  #valueOf(itemId) {
+    const buy = this.priceBook.getQuote(itemId)?.buy;
+    return buy > 0 ? buy : null;
+  }
+
+  /** The best uses of an item (a material, or a step on the way): [{ itemId, profit, route }], best first. */
+  #bestRoutesFrom(itemId, limit = 3) {
+    if (!this.profits) return [];
+    const { byItem, bestByMaterial } = this.profits;
+    const candidates =
+      bestByMaterial.get(itemId) ??
+      [...byItem.values()]
+        .filter(
+          (result) => result.plan.steps.has(itemId) && result.itemId !== itemId,
+        )
+        .map((result) => ({ itemId: result.itemId, profit: result.profit }))
+        .sort((a, b) => b.profit - a.profit)
+        .slice(0, limit);
+    return candidates
+      .filter((candidate) => candidate.profit > 0)
+      .slice(0, limit)
+      .map((candidate) => ({
+        ...candidate,
+        route: routeFrom(
+          byItem.get(candidate.itemId).plan,
+          candidate.itemId,
+          itemId,
+        ),
+      }))
+      .filter((candidate) => candidate.route);
+  }
+
+  /** For a craftable item: the chain from its main material (the one worth the most) to it. */
+  #routeTo(itemId) {
+    const result = this.profits?.byItem.get(itemId);
+    if (!result) return null;
+    let main = null,
+      mainValue = -1;
+    for (const [id, used] of result.plan.consumed) {
+      const value = (this.#valueOf(id) ?? 0) * used;
+      if (value > mainValue) [main, mainValue] = [id, value];
+    }
+    return main == null ? null : routeFrom(result.plan, itemId, main);
+  }
+
+  #nameOf(itemId) {
+    return this.gameData.getEntity(EntityKind.item, itemId).name;
   }
 
   // ---------------------------------------------------------------- list
@@ -291,6 +427,9 @@ class CraftablePage {
     $("#craftDetails").addEventListener("click", (event) => {
       const start = event.target.closest("[data-start]");
       if (start) this.#openRoot(Number(start.dataset.start));
+      const route = event.target.closest("[data-route]");
+      if (route)
+        this.#revealRoute(route.dataset.routeFrom, Number(route.dataset.route));
       if (event.target.closest("[data-close-details]")) this.#select(null);
     });
     window.addEventListener("resize", () => this.graphView.resize());
@@ -353,7 +492,11 @@ class CraftablePage {
     }
     const isMaterials = this.list === "materials";
     const nameOf = (id) => this.gameData.getEntity(EntityKind.item, id).name;
-    const priceOf = (id) => this.priceBook.getUnitPrice(id, "sell");
+    const priceOf = (id) => this.#valueOf(id);
+    const profitOf = (entry) =>
+      isMaterials
+        ? (this.profits?.bestByMaterial.get(entry.itemId)?.[0]?.profit ?? null)
+        : (this.profits?.byItem.get(entry.itemId)?.profit ?? null);
     const sorted = filterAndSort(
       isMaterials ? this.materials : this.craftableEntries,
       {
@@ -367,7 +510,7 @@ class CraftablePage {
             this.gameData.getEntity(EntityKind.item, id).rarity,
           ),
         countOf: (entry) => (isMaterials ? entry.productCount : entry.count),
-        quantityOf: (entry) => (isMaterials ? entry.owned : entry.count),
+        profitOf,
         disciplinesOf: (entry) => recipeDisciplines(entry.recipe),
         isAllowed: (entry) => isMaterials || this.#levelAllows(entry.recipe),
       },
@@ -376,17 +519,31 @@ class CraftablePage {
       const entity = this.gameData.getEntity(EntityKind.item, entry.itemId);
       const color = this.gameData.getEntityColor(EntityKind.item, entry.itemId);
       const price = priceOf(entry.itemId);
-      const quantity = isMaterials ? entry.owned : entry.count;
-      const detail = isMaterials
-        ? `you have ${formatNumber(entry.owned)} · makes ${formatNumber(entry.productCount)} thing${entry.productCount === 1 ? "" : "s"}`
-        : `can make ${countLabel(entry.count)} · ${escapeHtml(recipeDisciplines(entry.recipe).join(", ") || "Recipe")}`;
+      const profit = profitOf(entry);
+      let detail, route;
+      if (isMaterials) {
+        const best = this.#bestRoutesFrom(entry.itemId, 1)[0];
+        detail = `you have ${formatNumber(entry.owned)}${
+          best
+            ? ` · best: ${countLabel(this.craftable.get(best.itemId))} × ${escapeHtml(this.#nameOf(best.itemId))}`
+            : ` · makes ${formatNumber(entry.productCount)} thing${entry.productCount === 1 ? "" : "s"}`
+        }`;
+        route = best?.route;
+      } else {
+        detail = `can make ${countLabel(entry.count)} · ${escapeHtml(recipeDisciplines(entry.recipe).join(", ") || "Recipe")}`;
+        route = this.#routeTo(entry.itemId);
+      }
+      const routeHtml =
+        route && route.length > 2
+          ? `<span class="craft-route" title="${escapeHtml(route.map((id) => this.#nameOf(id)).join(" → "))}">${escapeHtml(routeText(route.map((id) => this.#nameOf(id))))}</span>`
+          : "";
       return `<button type="button" class="craft-row${entry.itemId === this.rootItemId ? " current" : ""}" data-item-id="${entry.itemId}">
         ${entity.icon ? `<img src="${escapeHtml(entity.icon)}" alt="" loading="lazy" decoding="async" style="border-color:${color}">` : '<span class="no-icon"></span>'}
         <span class="craft-row-text"><span class="craft-row-name" style="color:${color}">${escapeHtml(entity.name)}</span>
-        <span class="muted small">${detail}</span></span>
-        <span class="craft-row-price">${
-          price != null
-            ? `${formatCoinsHtml(price)}${quantity > 1 ? `<span class="craft-row-total" title="Sell price × ${isMaterials ? "how many you have" : "how many you can make"}">${formatCoinsHtml(price * quantity)}${quantity >= MAX_COUNT && !isMaterials ? "+" : ""}</span>` : ""}`
+        <span class="muted small">${detail}</span>${routeHtml}</span>
+        <span class="craft-row-price">${price != null ? `<span title="Highest buy order, each">${formatCoinsHtml(price)}</span>` : '<span class="muted" title="No buy orders">no buyers</span>'}${
+          profit != null
+            ? `<span class="craft-row-profit ${profit > 0 ? "good" : "bad"}" title="${isMaterials ? "Best use of it: profit" : "Profit from making all you can"}: what it sells for minus what the materials would, after the Trading Post's 15%">${profit > 0 ? "+" : "−"}${formatCoinsHtml(Math.abs(profit))}</span>`
             : ""
         }</span>
       </button>`;
@@ -425,6 +582,19 @@ class CraftablePage {
     this.expanded = new Set();
     this.collapsed = new Set();
     this.showAll = new Set();
+    // Open the best routes from here and point them out.
+    // Steps opened for a route show only the route; double-click one for everything it makes.
+    this.bestRoutes = this.#bestRoutesFrom(itemId);
+    this.highlight = new Set();
+    this.focus = new Set();
+    for (const { route } of this.bestRoutes) {
+      let path = "r";
+      for (const stepId of route.slice(1)) {
+        if (path !== "r") this.focus.add(path);
+        path += `/${stepId}`;
+        this.highlight.add(path);
+      }
+    }
     this.selectedNodeId = null;
     $("#graphEmpty").hidden = true;
     this.#renderGraph({ fit: true });
@@ -438,10 +608,14 @@ class CraftablePage {
     this.graph = buildForwardGraph(this.rootItemId, {
       planner: this.planner,
       craftable: this.craftable,
-      rank: (id) => this.priceBook.getUnitPrice(id, "sell") ?? -1,
+      // Branches leading to the most profitable crafts first; then by price.
+      rank: (id) =>
+        this.profits?.bestThrough.get(id) ?? (this.#valueOf(id) ?? -1) - 1e12,
       expanded: this.expanded,
       collapsed: this.collapsed,
       showAll: this.showAll,
+      highlight: this.highlight ?? new Set(),
+      focus: this.focus ?? new Set(),
     });
     Object.assign(
       this.graphSettings.values,
@@ -454,6 +628,7 @@ class CraftablePage {
       const classes = [
         this.appearance.classes(node),
         node.isOverflow && "overflow",
+        node.isBestRoute && "best-route",
       ]
         .filter(Boolean)
         .join(" ");
@@ -462,7 +637,9 @@ class CraftablePage {
     // Edges run ingredient → product here (the crafting page's run product → ingredient), so they're built directly.
     const edgeElements = this.graph.edges.map((edge) => ({
       group: "edges",
-      classes: "",
+      classes: this.graph.nodesById.get(edge.targetId)?.isBestRoute
+        ? "best-route"
+        : "",
       data: {
         id: edge.edgeId,
         source: edge.sourceId,
@@ -482,10 +659,23 @@ class CraftablePage {
       anchorNodeId,
     });
     // "+N more" folds look like placeholders, not items (the shared stylesheet has no rule for them).
+    // Placeholders and the best routes (the shared stylesheet has no rules for either).
     this.graphView.cy
       .style()
       .selector("node.overflow")
       .style({ "border-style": "dashed", "background-opacity": 0.4 })
+      .selector("node.best-route")
+      .style({
+        "underlay-color": "#e5b83b",
+        "underlay-opacity": 0.35,
+        "underlay-padding": 6,
+      })
+      .selector("edge.best-route")
+      .style({
+        "line-color": "#e5b83b",
+        "target-arrow-color": "#e5b83b",
+        width: 3,
+      })
       .update();
     $("#craftTooltip").hidden = true; // its node may have moved or gone
     if (this.selectedNodeId && !this.graph.nodesById.has(this.selectedNodeId))
@@ -501,9 +691,15 @@ class CraftablePage {
     const node = this.graph?.nodesById.get(nodeId);
     if (!node) return;
     if (node.isOverflow) {
-      this.showAll.add(nodeId.replace(/\/more$/, ""));
+      const parent = nodeId.replace(/\/more$/, "");
+      this.showAll.add(parent);
+      this.focus?.delete(parent);
     } else if (!node.productCount) {
       return;
+    } else if (this.focus?.has(nodeId)) {
+      // Showing just a route: show everything it makes.
+      this.focus.delete(nodeId);
+      this.expanded.add(nodeId);
     } else if (node.hasChildren) {
       this.expanded.delete(nodeId);
       this.collapsed.add(nodeId);
@@ -538,7 +734,7 @@ class CraftablePage {
     const { gameData, planner } = this;
     const entity = gameData.getEntity(EntityKind.item, node.entityId);
     const color = gameData.getEntityColor(EntityKind.item, node.entityId);
-    const price = this.priceBook.getUnitPrice(node.entityId, "sell");
+    const price = this.#valueOf(node.entityId);
     const owned = planner.owned.get(node.entityId) ?? 0;
     const recipe = node.isRoot ? planner.recipeFor(node.entityId) : node.recipe;
     const lines = [
@@ -546,8 +742,12 @@ class CraftablePage {
       this.craftable.has(node.entityId)
         ? `You can make <b>${countLabel(this.craftable.get(node.entityId))}</b>`
         : "",
-      price != null ? `Trading Post: ${formatCoinsHtml(price)} each` : "",
+      price != null
+        ? `Buy orders: ${formatCoinsHtml(price)} each`
+        : "No buy orders",
     ].filter(Boolean);
+    const profitHtml = this.#profitHtml(node.entityId);
+    const routesHtml = this.#bestRoutesHtml(node);
     let recipeHtml = "";
     if (recipe) {
       const requirement = this.account.has("characters")
@@ -577,11 +777,81 @@ class CraftablePage {
         <div><b style="color:${color}">${escapeHtml(entity.name)}</b><div class="muted small">${escapeHtml([entity.rarity, entity.type].filter(Boolean).join(" · "))}</div></div>
         <button type="button" class="craft-details-close" data-close-details aria-label="Close details">×</button></div>
       ${lines.length ? `<p>${lines.join(" · ")}</p>` : ""}
+      ${profitHtml}
+      ${routesHtml}
       ${recipeHtml}
       <div class="btnrow">
         ${node.isRoot ? "" : `<button type="button" data-start="${node.entityId}">Start from here</button>`}
         <a href="crafting.html#item=${Number(node.entityId)}">Crafting tree →</a>
       </div>`;
+  }
+
+  /** Making all you can of this item: what it sells for, what the materials would, and the crafts on the way. */
+  #profitHtml(itemId) {
+    const result = this.profits?.byItem.get(itemId);
+    if (!result) return "";
+    const steps = [...result.plan.steps]
+      .filter(([id]) => id !== itemId)
+      .map(
+        ([id, step]) =>
+          `<li>${formatNumber(step.crafts * step.recipe.outputCount)} × ${escapeHtml(this.#nameOf(id))}</li>`,
+      )
+      .join("");
+    const notes = [
+      result.unvaluedInputs.length
+        ? `${result.unvaluedInputs.length} material${result.unvaluedInputs.length > 1 ? "s" : ""} with no buyers counted as free`
+        : "",
+      ...result.otherCurrencies.map(
+        ([id, amount]) =>
+          `also spends ${formatNumber(amount)} ${escapeHtml(this.gameData.getEntity(EntityKind.currency, id).name)}`,
+      ),
+    ].filter(Boolean);
+    return `<div class="craft-profit">
+      <div><span class="muted">Make all ${countLabel(result.count)}:</span> sells for ${formatCoinsHtml(result.revenue)}, materials worth ${formatCoinsHtml(result.cost)}</div>
+      ${result.sold < result.count ? `<div class="bad small">Buy orders take only ${formatNumber(result.sold)} of ${formatNumber(result.count)}; the rest would need listing and waiting.</div>` : ""}
+      <div class="${result.profit > 0 ? "good" : "bad"}"><b>${result.profit > 0 ? "Profit" : "Loss"} ${formatCoinsHtml(Math.abs(result.profit))}</b> <span class="muted small">(after the Trading Post's ${Math.round((1 - TRADING_POST_NET) * 100)}%)</span></div>
+      ${notes.length ? `<div class="muted small">${escapeHtml(notes.join(" · "))}</div>` : ""}
+      ${steps ? `<details><summary class="small">Crafts on the way</summary><ul class="craft-ingredients">${steps}</ul></details>` : ""}
+    </div>`;
+  }
+
+  /** The most profitable things to make from this item, each with its route; click one to show it in the graph. */
+  #bestRoutesHtml(node) {
+    const routes = node.isRoot
+      ? (this.bestRoutes ?? [])
+      : this.#bestRoutesFrom(node.entityId);
+    if (!routes.length) return "";
+    const items = routes
+      .map(
+        ({ itemId, profit, route }, index) =>
+          `<li><button type="button" class="linklike craft-route-link" data-route="${index}" data-route-from="${escapeHtml(node.nodeId)}">${countLabel(this.craftable.get(itemId))} × ${escapeHtml(this.#nameOf(itemId))}</button> <span class="good">+${formatCoinsHtml(profit)}</span>
+          <div class="craft-route">${escapeHtml(route.map((id) => this.#nameOf(id)).join(" → "))}</div></li>`,
+      )
+      .join("");
+    return `<div class="craft-best"><div class="muted small">Most profitable from here</div><ol>${items}</ol></div>`;
+  }
+
+  /** Show a best route from a node: open each step and select its end. */
+  #revealRoute(fromNodeId, index) {
+    const node = this.graph?.nodesById.get(fromNodeId);
+    if (!node) return;
+    const routes = node.isRoot
+      ? (this.bestRoutes ?? [])
+      : this.#bestRoutesFrom(node.entityId);
+    const route = routes[index]?.route;
+    if (!route) return;
+    let path = fromNodeId;
+    for (const stepId of route.slice(1)) {
+      this.collapsed.delete(path);
+      if (!this.graph.nodesById.get(path)?.hasChildren) this.focus?.add(path);
+      path += `/${stepId}`;
+      this.highlight?.add(path);
+    }
+    this.#renderGraph({ anchorNodeId: fromNodeId });
+    if (this.graph.nodesById.has(path)) {
+      this.#select(path);
+      this.graphView.revealNode(path);
+    }
   }
 
   // ---------------------------------------------------------------- tooltip
@@ -602,6 +872,11 @@ class CraftablePage {
           ? `${formatNumber(node.productCount)} thing${node.productCount === 1 ? "" : "s"} craftable from it`
           : "",
       ].filter(Boolean);
+      const profit = this.profits?.byItem.get(node.entityId)?.profit;
+      if (profit != null)
+        facts.push(
+          `${profit > 0 ? "profit" : "loss"} ${formatCoinsText(Math.abs(profit))}`,
+        );
       tooltip.innerHTML = `<b style="color:${this.gameData.getEntityColor(EntityKind.item, node.entityId)}">${escapeHtml(entity.name)}</b><div class="muted">${facts.join(" · ")}</div>${
         node.productCount
           ? `<div class="muted small">${node.hasChildren ? "Double-click to hide what it makes" : "Double-click to see what it makes"}</div>`
