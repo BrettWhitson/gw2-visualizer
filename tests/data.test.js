@@ -5,6 +5,7 @@ import {
   decodeItemChatLink,
 } from "../public/src/data/item-search-index.js";
 import {
+  Gw2ApiClient,
   normalizeRecipe,
   normalizeItem,
   withSchemaVersion,
@@ -245,4 +246,34 @@ test("the published snapshot is preferred; returning visitors never call the GW2
   assert.equal(metaChecks, 1, "the update check reads the snapshot's metadata");
   assert.equal(buildChecks, 0, "not the GW2 API");
   assert.deepEqual(updates, [], "same build: nothing to offer");
+});
+
+test("price batches run 16 at a time; other lookups 8", async (t) => {
+  let inFlight = 0,
+    peak = 0;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    inFlight++;
+    peak = Math.max(peak, inFlight);
+    await new Promise((resolve) => setImmediate(resolve));
+    inFlight--;
+    const ids = new URL(url).searchParams.get("ids").split(",").map(Number);
+    return new Response(
+      JSON.stringify(
+        ids.map((id) => ({
+          id,
+          buys: { unit_price: 1 },
+          sells: { unit_price: 2 },
+        })),
+      ),
+      { status: 200 },
+    );
+  });
+  const api = new Gw2ApiClient("https://api.example/v2");
+  const ids = Array.from({ length: 40 * 200 }, (_, i) => i + 1);
+  const prices = await api.getPrices(ids);
+  assert.equal(prices.length, ids.length);
+  assert.equal(peak, 16);
+  peak = 0;
+  await api.fetchByIds("/items", ids);
+  assert.equal(peak, 8);
 });

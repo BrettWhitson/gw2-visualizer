@@ -3,6 +3,7 @@ import {
   GW2_API_SCHEMA_VERSION,
   API_BATCH_SIZE,
   API_CONCURRENCY,
+  PRICE_CONCURRENCY,
   API_REQUEST_TIMEOUT_MS,
 } from "../config/constants.js";
 import { chunkArray, runWithConcurrency, sleep } from "../utils/async.js";
@@ -51,7 +52,12 @@ export class Gw2ApiClient {
   async fetchByIds(
     path,
     ids,
-    { onProgress, retries, ignoreErrors = false } = {},
+    {
+      onProgress,
+      retries,
+      ignoreErrors = false,
+      concurrency = API_CONCURRENCY,
+    } = {},
   ) {
     const results = [];
     const separator = path.includes("?") ? "&" : "?";
@@ -69,7 +75,7 @@ export class Gw2ApiClient {
         }
       },
     );
-    await runWithConcurrency(tasks, API_CONCURRENCY, onProgress);
+    await runWithConcurrency(tasks, concurrency, onProgress);
     return results;
   }
 
@@ -127,6 +133,7 @@ export class Gw2ApiClient {
     const raw = await this.fetchByIds("/commerce/prices", ids, {
       retries: 2,
       ignoreErrors: true,
+      concurrency: PRICE_CONCURRENCY,
     });
     return raw.map((price) => ({
       id: price.id,

@@ -48,8 +48,11 @@ const LAYOUT_SETTINGS = {
   radial: { direction: "radial", layoutEngine: "layered" },
 };
 
-/** How many of the most profitable results are re-priced against their order books (1–2 API requests). */
-const ORDER_BOOK_CHECKS = 300;
+/**
+ * How many of the most profitable results are re-priced against their order books: one API request, and as many as
+ * the list shows at once (thin markets further down were rare, and order books are heavy responses).
+ */
+const ORDER_BOOK_CHECKS = 150;
 
 /** Rows rendered at once; "Show more" adds this many again. */
 const PAGE_SIZE = 150;
@@ -301,32 +304,51 @@ class CraftablePage {
         this.planner.owned.get(previous.itemId) > 0)
     )
       this.#openRoot(previous.itemId);
-    // Prices, then profits: what each item sells for, minus what its materials would.
-    try {
-      this.#status("Fetching Trading Post prices…");
-      await this.priceBook.ensure(
-        [...this.craftable.keys(), ...this.planner.owned.keys()],
-        { force },
+    // Prices, then profits: what each item sells for, minus what its materials would. Only what can matter is
+    // priced: craftable items that can be traded, and owned items that feed something craftable.
+    const tradeable = (id) =>
+      !(this.gameData.items.get(id)?.flags ?? []).some(
+        (flag) => flag === "AccountBound" || flag === "SoulbindOnAcquire",
       );
-    } catch {
-      /* no prices: no profits; the list still works */
-    }
+    const shouldYield = () => {
+      if (performance.now() - sliceStart < 12) return false;
+      sliceStart = performance.now();
+      return true;
+    };
+    const fetchPrices = async (ids) => {
+      try {
+        await this.priceBook.ensure(ids.filter(tradeable), { force });
+      } catch {
+        /* no prices: no profits; the list still works */
+      }
+    };
+    this.#status("Fetching Trading Post prices…");
+    await fetchPrices([
+      ...this.craftable.keys(),
+      ...this.materials.map((material) => material.itemId),
+    ]);
     if (token !== this.#computeToken) return;
     this.#status("Working out profits…");
     sliceStart = performance.now();
-    const profits = await analyseProfits(
-      this.planner,
-      entries,
-      (id) => this.#valueOf(id),
-      {
-        shouldYield: () => {
-          if (performance.now() - sliceStart < 12) return false;
-          sliceStart = performance.now();
-          return true;
-        },
-      },
-    );
+    const valueOf = (id) => this.#valueOf(id);
+    let profits = await analyseProfits(this.planner, entries, valueOf, {
+      shouldYield,
+    });
     if (token !== this.#computeToken) return;
+    // A plan can use an owned item the first pass didn't price (deep chains): price those and work it out again.
+    const unpriced = new Set();
+    for (const result of profits.byItem.values())
+      for (const id of result.plan.consumed.keys())
+        if (!this.priceBook.has(id)) unpriced.add(id);
+    const toFetch = [...unpriced].filter(tradeable);
+    if (toFetch.length) {
+      await fetchPrices(toFetch);
+      if (token !== this.#computeToken) return;
+      profits = await analyseProfits(this.planner, entries, valueOf, {
+        shouldYield,
+      });
+      if (token !== this.#computeToken) return;
+    }
     this.profits = profits;
     this.#renderDataBar();
     // Show the ranking now; the order-book check refines the top of it afterwards.
