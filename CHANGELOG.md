@@ -16,7 +16,8 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 - **A KPI strip over the graph** for the item you're crafting: craft cost, what buying it on the Trading Post costs,
   what selling it brings after the 15% fee, and the profit or loss with its margin.
 - **A minimap** in the graph's bottom-right corner (not on phones): the whole tree at a glance, with the visible area
-  framed; click or drag it to move the view.
+  framed; click or drag it to move the view. The KPI strip, the minimap and the legend each have a switch under
+  Customize → Canvas and in the View popover.
 - **Fixed: on phones, the toolbar and side panel stayed collapsed on later visits.** They start collapsed on a small
   screen for that visit only, but the next change to any setting used to save that too.
 - **Items as cards** (Customize → Nodes → Items as): wide cards with the item's name, quantity and where it comes from,
