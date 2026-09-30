@@ -5,7 +5,7 @@
 import { CACHE_DB_NAME } from "./config/constants.js";
 import { CharacterCatalogs } from "./data/account-client.js";
 import { IndexedDbStore } from "./data/indexed-db-store.js";
-import { AccountSession } from "./data/account-session.js";
+import { createAccountSession } from "./data/site-account.js";
 import { activeBuild, buildArmory } from "./model/character-armory.js";
 import { armoryHtml, characterListHtml } from "./ui/character-view.js";
 import { openShareDialog } from "./ui/share-image.js";
@@ -48,8 +48,14 @@ class CharactersPage {
     this.#onAccountChange();
   }
 
+  #shownAccount = null;
+
   #onAccountChange() {
-    const { status, error } = this.account;
+    const { status, error, accountName, fetchedAt } = this.account;
+    // A background refresh starting (or failing) changes nothing drawn: redraw only for new data.
+    const current = `${status}|${accountName}|${fetchedAt}|${error}`;
+    if (current === this.#shownAccount) return;
+    this.#shownAccount = current;
     if (status === "ready") {
       $("#keyPanel").hidden = true;
       if (!this.characters) {
@@ -305,7 +311,7 @@ function saveGearView(view) {
   }
 }
 
-const account = new AccountSession();
+const account = createAccountSession();
 mountSiteChrome({ page: "characters", account });
 const page = new CharactersPage(account);
 if (["localhost", "127.0.0.1"].includes(location.hostname))

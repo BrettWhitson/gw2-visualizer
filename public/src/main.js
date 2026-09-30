@@ -5,9 +5,9 @@
 import { CraftingTreeApp } from "./app.js";
 import { registerServiceWorker } from "./pwa.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
-import { AccountSession } from "./data/account-session.js";
+import { createAccountSession } from "./data/site-account.js";
 
-const account = new AccountSession();
+const account = createAccountSession();
 mountSiteChrome({ page: "crafting", account });
 
 function showFatalError(message) {

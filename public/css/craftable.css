@@ -81,6 +81,19 @@
   color: var(--muted);
   font-size: 12px;
 }
+.craft-data {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.craft-data[hidden] {
+  display: none;
+}
 .craft-results {
   flex: 1;
   min-height: 0;

@@ -29,6 +29,16 @@ export class IndexedDbStore {
     });
   }
 
+  async delete(key) {
+    const db = await this.#open();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(this.storeName, "readwrite");
+      transaction.objectStore(this.storeName).delete(key);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
   /** Delete every entry (Settings → Clear cached data). */
   async clear() {
     const db = await this.#open();

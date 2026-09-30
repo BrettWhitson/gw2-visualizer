@@ -1,4 +1,10 @@
 import { escapeHtml } from "../utils/dom.js";
+import { formatAge } from "../utils/format.js";
+import {
+  DataUpdates,
+  getDataUpdates,
+  setDataUpdates,
+} from "../core/data-preferences.js";
 
 /** Permissions worth granting, with what each unlocks here. `account` is always included by ArenaNet. */
 const PERMISSIONS = [
@@ -39,15 +45,26 @@ export class AccountMenu {
   }
 
   render() {
-    const { status, accountName } = this.session;
+    const { status, accountName, fetchedAt, refreshing } = this.session;
+    const wasOpen = this.slot.querySelector(".account-pop")?.hidden === false;
     if (status === "ready") {
+      const mode = getDataUpdates();
+      const age =
+        fetchedAt != null
+          ? ` · data from ${formatAge(Date.now() - fetchedAt)}`
+          : "";
       this.slot.innerHTML = `<div class="account-menu">
-        <button type="button" class="account-btn" data-account="toggle" aria-haspopup="menu" aria-expanded="false"
-          title="Connected GW2 account">${escapeHtml(accountName)} ▾</button>
-        <div class="account-pop" role="menu" hidden>
-          <div class="muted small">Connected${this.session.keys.isRemembered() ? " · key saved in this browser" : " · key kept for this tab"}</div>
+        <button type="button" class="account-btn" data-account="toggle" aria-haspopup="menu" aria-expanded="${wasOpen}"
+          title="Connected GW2 account">${escapeHtml(accountName)}${refreshing ? " ⟳" : ""} ▾</button>
+        <div class="account-pop" role="menu"${wasOpen ? "" : " hidden"}>
+          <div class="muted small">Connected${this.session.keys.isRemembered() ? " · key saved in this browser" : " · key kept for this tab"}${escapeHtml(age)}</div>
           <a role="menuitem" href="characters.html">Characters</a>
-          <button type="button" role="menuitem" data-account="refresh">Refresh account data</button>
+          <button type="button" role="menuitem" data-account="refresh"${refreshing ? " disabled" : ""}>${refreshing ? "Refreshing…" : "Refresh account data"}</button>
+          <fieldset class="account-updates">
+            <legend class="muted small">Update account data and prices</legend>
+            <label title="Pages open instantly on what was saved"><input type="radio" name="dataUpdates" value="${DataUpdates.manual}"${mode === DataUpdates.manual ? " checked" : ""}> When I refresh</label>
+            <label title="Saved data shows at once; anything older than a few minutes is refreshed in the background"><input type="radio" name="dataUpdates" value="${DataUpdates.auto}"${mode === DataUpdates.auto ? " checked" : ""}> Automatically</label>
+          </fieldset>
           <button type="button" role="menuitem" data-account="connect">Use a different key…</button>
           <button type="button" role="menuitem" data-account="forget">Forget key</button>
         </div></div>`;
@@ -91,6 +108,10 @@ export class AccountMenu {
         pop.hidden = true;
         this.slot.querySelector('[data-account="toggle"]')?.focus();
       }
+    });
+    this.slot.addEventListener("change", (event) => {
+      if (event.target.name === "dataUpdates")
+        setDataUpdates(event.target.value);
     });
     this.dialog
       .querySelector("form")

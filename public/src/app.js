@@ -19,7 +19,7 @@ import { Gw2ApiClient } from "./data/gw2-api-client.js";
 import { IndexedDbStore } from "./data/indexed-db-store.js";
 import { GameData } from "./data/game-data.js";
 import { AccountSession } from "./data/account-session.js";
-import { PriceBook } from "./data/price-book.js";
+import { createPriceBook } from "./data/site-account.js";
 import { WikiSources } from "./data/wiki-sources.js";
 import { ItemSearchIndex } from "./data/item-search-index.js";
 import { TreeState } from "./model/tree-state.js";
@@ -77,7 +77,7 @@ export class CraftingTreeApp {
     const cache = new IndexedDbStore(CACHE_DB_NAME);
     this.gameData = new GameData({ apiClient: this.api, cache });
     this.wikiSources = new WikiSources({ cache });
-    this.priceBook = new PriceBook(this.api);
+    this.priceBook = createPriceBook(this.api); // saved in the browser; refetched per the data-updates preference
     this.searchIndex = new ItemSearchIndex(this.gameData);
     this.treeState = new TreeState();
     this.treeBuilder = new CraftTreeBuilder({
@@ -216,9 +216,15 @@ export class CraftingTreeApp {
       if (input) input.disabled = !this.account.isReady;
     };
     syncOwnedToggle();
+    let shownAccount = null;
     this.account.addEventListener("change", () => {
       syncOwnedToggle();
       if (this.account.status === "connecting") return;
+      // A background refresh starting (or failing) changes nothing drawn: redraw only for new data.
+      const { status, accountName, fetchedAt } = this.account;
+      const current = `${status}|${accountName}|${fetchedAt}`;
+      if (current === shownAccount) return;
+      shownAccount = current;
       this.shoppingListPanel.render(this.tree);
       if (this.treeState.hasRoot)
         this.#render({ anchorNodeId: this.#anchorNodeId() });

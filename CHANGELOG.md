@@ -5,6 +5,14 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 
 ## Unreleased
 
+- **Faster pages, saved data.** Account data, Trading Post prices and order books are kept in the browser, so pages
+  open on what was saved instead of downloading it again: What you can craft now shows its ranked list in under a
+  second on a revisit, with no API requests. **Account menu → Update account data and prices:** *When I refresh* (the
+  default: nothing is refetched until you press Refresh) or *Automatically* (saved data shows at once and anything
+  older than five minutes refreshes in the background). Account data is saved only where the key is (in the browser if
+  remembered, otherwise for the tab) and is deleted when you forget the key; the key itself is never saved with it.
+- What you can craft shows its ranking as soon as profits are known and refines it with order-book depth afterwards,
+  and says how old its data is, with a Refresh button.
 - **What you can craft** (new page, linked from the header): with an account connected (`inventories` permission), a
   ranked list of everything you can craft right now from what you own, counting intermediate crafts and currencies
   from your wallet, filterable by name and discipline and sortable by **most profitable**, highest price, how many you

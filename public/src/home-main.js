@@ -1,5 +1,5 @@
 /** Entry point for the home page. */
-import { AccountSession } from "./data/account-session.js";
+import { createAccountSession } from "./data/site-account.js";
 import { registerServiceWorker } from "./pwa.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
 
@@ -7,7 +7,7 @@ import { mountSiteChrome } from "./ui/site-chrome.js";
 if (/[#&]item=\d+/.test(location.hash))
   location.replace(`crafting.html${location.hash}`);
 else {
-  const account = new AccountSession();
+  const account = createAccountSession();
   mountSiteChrome({ page: "home", account });
   account.addEventListener("change", () => {
     document.getElementById("charactersGo").textContent = account.isReady

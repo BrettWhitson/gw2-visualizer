@@ -5,11 +5,16 @@
  */
 import { CACHE_DB_NAME, EntityKind, RARITY_ORDER } from "./config/constants.js";
 import { SettingsStore } from "./core/settings-store.js";
-import { AccountSession } from "./data/account-session.js";
+import {
+  createAccountSession,
+  createPriceBook,
+  pricesMaxAge,
+} from "./data/site-account.js";
+import { OrderBooks } from "./data/order-books.js";
+import { DataUpdates, getDataUpdates } from "./core/data-preferences.js";
 import { GameData } from "./data/game-data.js";
 import { Gw2ApiClient } from "./data/gw2-api-client.js";
 import { IndexedDbStore } from "./data/indexed-db-store.js";
-import { PriceBook } from "./data/price-book.js";
 import { craftingRequirement } from "./model/account-inventory.js";
 import {
   CraftPlanner,
@@ -31,6 +36,7 @@ import { mountSiteChrome } from "./ui/site-chrome.js";
 import { registerServiceWorker } from "./pwa.js";
 import { escapeHtml, querySelector as $ } from "./utils/dom.js";
 import {
+  formatAge,
   formatCoinsHtml,
   formatCoinsText,
   formatNumber,
@@ -94,7 +100,15 @@ function routeText(names) {
 class CraftablePage {
   settings = new SettingsStore();
   api = new Gw2ApiClient();
-  priceBook = new PriceBook(this.api);
+  priceBook = createPriceBook(this.api);
+  orderBooks = new OrderBooks(this.api, {
+    store: new IndexedDbStore(CACHE_DB_NAME),
+    maxAge: pricesMaxAge,
+  });
+  /** The account data the results were computed for: a refresh that changes nothing else doesn't redo them. */
+  #computedFor = null;
+  /** The next computation refetches prices and order books (the Refresh button). */
+  #forceFetch = false;
   gameData = new GameData({
     apiClient: this.api,
     cache: new IndexedDbStore(CACHE_DB_NAME),
@@ -171,7 +185,10 @@ class CraftablePage {
       .load({
         onProgress: (message) => this.#status(message),
       })
-      .then(() => this.#status(""))
+      .then(() => {
+        performance.mark("craftable:game-data");
+        this.#status("");
+      })
       .catch((error) =>
         this.#status(`Couldn't load game data: ${error.message}`),
       );
@@ -203,8 +220,17 @@ class CraftablePage {
   }
 
   async #onAccountChange() {
+    const { status, fetchedAt } = this.account;
+    this.#renderDataBar();
+    // A background refresh starting or failing changes nothing on screen; only new data redoes the results.
+    if (
+      status === "ready" &&
+      this.planner &&
+      this.#computedFor?.accountName === this.account.accountName &&
+      this.#computedFor?.fetchedAt === fetchedAt
+    )
+      return;
     const token = ++this.#computeToken;
-    const { status } = this.account;
     this.#resetResults();
     if (status !== "ready") {
       this.#showGraphMessage(
@@ -230,6 +256,9 @@ class CraftablePage {
       return;
     }
 
+    this.#computedFor = { accountName: this.account.accountName, fetchedAt };
+    const force = this.#forceFetch;
+    this.#forceFetch = false;
     this.planner = new CraftPlanner({
       getRecipes: (id) => this.gameData.getRecipes(id),
       getConsumers: (id) => this.gameData.getConsumers(id),
@@ -247,6 +276,7 @@ class CraftablePage {
         this.#status(`Checking recipes… ${Math.round((100 * done) / total)}%`),
     });
     if (token !== this.#computeToken) return;
+    performance.mark("craftable:planned"); // milestones for profiling (DevTools → Performance, or getEntriesByType)
     this.#status("");
     this.craftableEntries = entries;
     this.craftable = new Map(
@@ -271,10 +301,10 @@ class CraftablePage {
     // Prices, then profits: what each item sells for, minus what its materials would.
     try {
       this.#status("Fetching Trading Post prices…");
-      await this.priceBook.ensure([
-        ...this.craftable.keys(),
-        ...this.planner.owned.keys(),
-      ]);
+      await this.priceBook.ensure(
+        [...this.craftable.keys(), ...this.planner.owned.keys()],
+        { force },
+      );
     } catch {
       /* no prices: no profits; the list still works */
     }
@@ -295,19 +325,69 @@ class CraftablePage {
     );
     if (token !== this.#computeToken) return;
     this.profits = profits;
+    this.#renderDataBar();
+    // Show the ranking now; the order-book check refines the top of it afterwards.
+    this.#renderList();
+    performance.mark("craftable:ranked");
+    if (this.rootItemId != null) this.#openRoot(this.rootItemId);
     this.#status("Checking buy-order depth…");
-    await this.#priceAgainstOrderBooks(token);
+    const changed = await this.#priceAgainstOrderBooks(token, force);
     if (token !== this.#computeToken) return;
     this.#status("");
-    this.#renderList();
-    if (this.rootItemId != null) this.#openRoot(this.rootItemId);
+    performance.mark("craftable:refined");
+    if (changed) {
+      this.#renderList();
+      if (this.rootItemId != null) this.#openRoot(this.rootItemId);
+    }
+  }
+
+  /** "Account data 3 h ago · prices 3 h ago · Refresh", and whether updates are manual. */
+  #renderDataBar() {
+    const bar = $("#craftData");
+    if (!this.account.isReady) {
+      bar.hidden = true;
+      return;
+    }
+    const now = Date.now();
+    const pricesAt = this.priceBook.oldestFetchedAt(this.craftable.keys());
+    const parts = [
+      this.account.fetchedAt != null
+        ? `Account data ${formatAge(now - this.account.fetchedAt)}`
+        : "",
+      pricesAt != null ? `prices ${formatAge(now - pricesAt)}` : "",
+    ].filter(Boolean);
+    const busy = this.account.refreshing || this.#refreshing;
+    bar.hidden = false;
+    bar.innerHTML = `<span>${escapeHtml(parts.join(" · "))}${
+      getDataUpdates() === DataUpdates.manual
+        ? ' <span class="muted" title="Change this in the account menu (top right)">· updates when you refresh</span>'
+        : ""
+    }</span>
+      <button type="button" class="linklike" data-refresh-data${busy ? " disabled" : ""}>${busy ? "Refreshing…" : "Refresh"}</button>`;
+  }
+
+  #refreshing = false;
+
+  /** Refresh: the account from the API, then prices and order books fetched again for the new results. */
+  async #refreshAll() {
+    this.#refreshing = true;
+    this.#forceFetch = true;
+    this.#renderDataBar();
+    const loaded = await this.account.refresh();
+    if (!loaded && this.planner) {
+      // The account didn't change (or couldn't be reached): still refresh the prices.
+      this.#computedFor = null;
+      await this.#onAccountChange();
+    }
+    this.#refreshing = false;
+    this.#renderDataBar();
   }
 
   /**
    * The top buy order says little about selling hundreds: the most profitable results are re-priced at what the
    * buy orders can actually take, then the per-material bests are rebuilt from the corrected numbers.
    */
-  async #priceAgainstOrderBooks(token) {
+  async #priceAgainstOrderBooks(token, force = false) {
     const { byItem } = this.profits;
     const top = [...byItem.values()]
       .filter((result) => result.profit > 0)
@@ -315,11 +395,14 @@ class CraftablePage {
       .slice(0, ORDER_BOOK_CHECKS);
     let books;
     try {
-      books = await this.api.getBuyOrders(top.map((result) => result.itemId));
+      books = await this.orderBooks.get(
+        top.map((result) => result.itemId),
+        { force },
+      );
     } catch {
-      return; // keep the headline-price estimate
+      return false; // keep the headline-price estimate
     }
-    if (token !== this.#computeToken) return;
+    if (token !== this.#computeToken) return false;
     for (const result of top) {
       const corrected = profitOf(
         this.planner,
@@ -331,6 +414,7 @@ class CraftablePage {
       if (corrected) byItem.set(result.itemId, corrected);
     }
     this.profits = rebuildBests(byItem);
+    return true;
   }
 
   /**
@@ -389,6 +473,9 @@ class CraftablePage {
   // ---------------------------------------------------------------- list
 
   #bindControls() {
+    $("#craftData").addEventListener("click", (event) => {
+      if (event.target.closest("[data-refresh-data]")) this.#refreshAll();
+    });
     for (const tab of document.querySelectorAll("[data-list]"))
       tab.addEventListener("click", () => {
         this.list = tab.dataset.list;
@@ -921,7 +1008,7 @@ function showFatalError(message) {
   $("#graphEmpty").innerHTML = `<p>${escapeHtml(message)}</p>`;
 }
 
-const account = new AccountSession();
+const account = createAccountSession();
 mountSiteChrome({ page: "craftable", account });
 if (!globalThis.cytoscape) {
   showFatalError(
