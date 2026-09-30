@@ -14,6 +14,12 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
   dragged, and the rest of the graph follows. Owned items and better buys glow, collapsed items show a card stack, and
   Mystic Forge results get a ring and badge. PNG export, legend highlights, keyboard navigation, touch (tap,
   double-tap, long-press, pinch), high-density screens and every style setting work in it too.
+- **Engine sandbox** (new page, linked from the home page): play with Prism and Tether on made-up crafting graphs of
+  1 to 10,000 items (crafting trees with shared materials, even trees, wide, deep or tangled), with every layout,
+  force, node, label, edge, highlight and animation option from the crafting page, and buttons to grow, collapse,
+  scatter, shake, recolour, pulse and flash. Live numbers show what the engine is doing: frames drawn, CPU per frame,
+  what the last GPU upload rewrote and whether the physics is running. Its options are kept apart from the crafting
+  page's.
 - **Tether, the app's own layout and physics.** Both renderers now lay graphs out with the app's own engine. The
   Merged view's layered layout replaces dagre, and Prism no longer needs Cytoscape at all (it's still loaded for
   Classic).

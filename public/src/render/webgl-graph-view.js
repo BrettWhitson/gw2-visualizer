@@ -701,13 +701,43 @@ export class WebGLGraphView {
    * follow and others make room; after release it cools down and settles.
    */
   #dragStart(id) {
+    if (!this.#values.dragPhysics) return;
+    this.#runPhysics((simulation) => {
+      simulation.fix(id, this.graph.livePositionOf(id));
+      simulation.reheat(0.3);
+    });
+  }
+
+  /**
+   * Shake the physics and watch it settle: optionally scatter every node by up to `scatter` world units (the same way
+   * each time), heat the simulation to `heat` (0..1) and let it cool, animated. Returns false when the layout has no
+   * simulation (fewer than two nodes).
+   */
+  settle({ heat = 0.6, scatter = 0 } = {}) {
+    return this.#runPhysics((simulation) => {
+      if (scatter)
+        for (let i = 0; i < simulation.count; i++) {
+          simulation.x[i] += (unitNoise(i * 2) * 2 - 1) * scatter;
+          simulation.y[i] += (unitNoise(i * 2 + 1) * 2 - 1) * scatter;
+        }
+      simulation.alphaTarget = 0;
+      simulation.alpha = Math.max(simulation.alpha, heat);
+    });
+  }
+
+  /** Is the physics running live (a drag, or settle())? */
+  get physicsRunning() {
+    return !!this.#stopPhysics;
+  }
+
+  /** Run the simulation live from what's on screen, after `prepare(simulation)`, until it cools. */
+  #runPhysics(prepare) {
     const simulation = this.#simulation;
-    if (!this.#values.dragPhysics || !simulation) return;
+    if (!simulation) return false;
     this.#stopPhysics?.();
     // Start from what's on screen (a transition may still be settling).
     simulation.setPositions((nodeId) => this.graph.livePositionOf(nodeId));
-    simulation.fix(id, this.graph.livePositionOf(id));
-    simulation.reheat(0.3);
+    prepare(simulation);
     const ids = simulation.ids;
     const entries = ids.map((nodeId) => [nodeId, 0, 0]);
     const stop = this.graph.addTicker(() => {
@@ -725,6 +755,7 @@ export class WebGLGraphView {
       stop();
       this.#stopPhysics = null;
     };
+    return true;
   }
 
   #dragEnd(id) {
@@ -755,6 +786,12 @@ export class WebGLGraphView {
     clearTimeout(this.#hoverTimer);
     clearTimeout(this.#flashTimer);
   }
+}
+
+/** A repeatable pseudo-random number in [0, 1) for an integer. */
+function unitNoise(n) {
+  const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
 }
 
 function classSet(classes) {

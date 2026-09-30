@@ -34,6 +34,9 @@ const SHELL_URLS = [
   "css/craftable.css",
   "src/craftable-main.js",
   "src/characters-main.js",
+  "sandbox.html",
+  "css/sandbox.css",
+  "src/sandbox-main.js",
 ];
 
 self.addEventListener("install", (event) => {

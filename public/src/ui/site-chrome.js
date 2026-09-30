@@ -84,7 +84,7 @@ function aboutHtml() {
 
 /**
  * Fill in the shared header and footer, and add the About dialog and the account control.
- * @param {{ page: "home" | "crafting" | "craftable" | "characters", account: import('../data/account-session.js').AccountSession }} options
+ * @param {{ page: "home" | "crafting" | "craftable" | "characters" | "sandbox", account: import('../data/account-session.js').AccountSession }} options
  * @returns {{ showAbout(): void, accountMenu: AccountMenu }}
  */
 export function mountSiteChrome({ page, account }) {

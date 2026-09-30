@@ -71,6 +71,8 @@ export class WebGLGraph {
     drawMs: 0,
     uploadMs: 0,
     partialUpload: false,
+    /** Frames drawn so far (the engine only draws when something changes). */
+    frames: 0,
     labels: 0,
     visibleNodes: 0,
     animating: 0,
@@ -1103,6 +1105,7 @@ export class WebGLGraph {
 
     this.#draw();
     this.stats.drawMs = performance.now() - started;
+    this.stats.frames++;
     if (active || flowing) this.requestRender();
     else this.#lastFrameTime = 0;
   }

@@ -230,6 +230,7 @@ tools/
 tests/                     node:test suites + helpers/fixtures.js
 public/                    the web app, served as-is
   index.html               home page
+  sandbox.html             engine sandbox: Prism and Tether on generated graphs (src/sandbox/, src/sandbox-main.js)
   crafting.html            crafting explorer markup (+ inline SVG icon sprite); controls declare data-setting /
                            data-command. Old /#item= links on the home page redirect here.
   characters.html          Characters page (API key, character list, armory)
