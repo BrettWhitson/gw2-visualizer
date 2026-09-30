@@ -222,3 +222,42 @@ test("auto layout turns radial when a level gets crowded", () => {
     "a chosen layout is kept",
   );
 });
+
+test("the forward graph honours collapsing, and stops at recipe loops", async () => {
+  const p = planner({ owned: { 5: 12, 6: 1 }, wallet: { [COIN]: 100 } });
+  const craftable = new Map(
+    (await p.findCraftable()).map(({ itemId, count }) => [itemId, count]),
+  );
+  const graph = buildForwardGraph(5, {
+    planner: p,
+    craftable,
+    expanded: new Set(),
+    collapsed: new Set(["r"]),
+    showAll: new Set(),
+  });
+  assert.deepEqual(
+    graph.nodes.map((n) => n.nodeId),
+    ["r"],
+    "the root closed by the user",
+  );
+  assert.equal(graph.nodes[0].isCollapsed, true);
+});
+
+test("a deep enough chain is beyond the plan depth", () => {
+  // item n+1 ← item n, 20 steps: too deep to plan from the first.
+  const recipes = Array.from({ length: 20 }, (_, n) => ({
+    id: 5000 + n,
+    source: "api",
+    type: "Refinement",
+    outputItemId: 1001 + n,
+    outputCount: 1,
+    disciplines: [],
+    minRating: 0,
+    craftTimeMs: 0,
+    flags: [],
+    ingredients: [{ type: "Item", id: 1000 + n, count: 1 }],
+  }));
+  const p = planner({ owned: { 1000: 5 }, recipes });
+  assert.equal(p.canMake(1003), true, "a few steps is fine");
+  assert.equal(p.canMake(1020), false, "twenty isn't");
+});

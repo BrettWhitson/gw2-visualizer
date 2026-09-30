@@ -1,12 +1,15 @@
 import { EntityKind } from "../config/constants.js";
+import { yieldToPage } from "../utils/async.js";
 
 /**
  * "What can I craft with what I have": which items the account can make right now from what it owns, how many, and
  * a forward graph from any item to what it can become.
  *
- * "Can make" is exact for the plan it finds: owned units are used first, the rest is crafted, recursively, with
- * surplus from a craft kept for later steps (a recipe that makes 5 when 2 are needed leaves 3). Alternative recipes
- * are tried in order, backtracking when one falls short. Currency ingredients (coin, karma, spirit shards…) come
+ * "Can make" means a plan was found: owned units are used first, the rest is crafted, recursively, with surplus
+ * from a craft kept for later steps (a recipe that makes 5 when 2 are needed leaves 3). Alternative recipes are tried
+ * in order, backtracking when one falls short. The search is greedy per ingredient (the first plan that works for an
+ * ingredient is kept), so it never claims too much but can miss a plan that needs owned units shared differently;
+ * each check also has a work budget, so a pathological recipe web counts as "can't" rather than stalling the page. Currency ingredients (coin, karma, spirit shards…) come
  * from the wallet. Guild and generic ("any charm") ingredients can't be planned, so recipes that need them are
  * skipped, as are random-yield Mystic Forge recipes and, unless included, material promotions.
  */
@@ -17,6 +20,8 @@ const MAX_PLAN_DEPTH = 6;
 const MAX_FORWARD_STEPS = 4;
 /** `maxMakeable` stops counting here; the UI shows "N+". */
 export const MAX_COUNT = 1000;
+/** Recipe attempts one check may make before giving up. */
+const WORK_BUDGET = 20000;
 
 /** Owned amounts with an undo log, so a failed branch of the search can be rolled back cheaply. */
 class Ledger {
@@ -109,6 +114,9 @@ export class CraftPlanner {
         else high = middle;
       }
       count = Math.min(low, MAX_COUNT);
+      // The search assumes "can make n" implies "can make fewer"; recipe choices can make that not quite true,
+      // so step down until the reported count really is makeable.
+      while (count > 0 && !this.canMake(itemId, count)) count--;
     }
     this.#counts.set(itemId, count);
     return count;
@@ -136,7 +144,7 @@ export class CraftPlanner {
         results.push({ itemId, count, recipe: this.recipeFor(itemId) });
       if (shouldYield()) {
         onProgress?.(done, candidates.size);
-        await new Promise((resolve) => setTimeout(resolve, 0));
+        await yieldToPage();
       }
     }
     onProgress?.(candidates.size, candidates.size);
@@ -167,8 +175,11 @@ export class CraftPlanner {
   #craftOnly(itemId, quantity) {
     const ledger = new Ledger(this.owned);
     const wallet = new Ledger(this.wallet);
+    this.#work = WORK_BUDGET;
     return this.#make(itemId, quantity, ledger, wallet, new Set([itemId]), 0);
   }
+
+  #work = 0;
 
   /**
    * Provide `quantity` of an item: from stock first, then crafting the rest. Returns the recipe used for the
@@ -195,6 +206,7 @@ export class CraftPlanner {
   /** Craft `quantity` with the first recipe that works; surplus output goes into stock. */
   #make(itemId, quantity, ledger, wallet, visiting, depth) {
     for (const recipe of this.recipesOf(itemId)) {
+      if (--this.#work < 0) return undefined; // over budget: treat as not makeable
       const mark = ledger.mark(),
         walletMark = wallet.mark();
       const crafts = Math.ceil(quantity / recipe.outputCount);
@@ -242,9 +254,11 @@ export const CHILD_LIMIT = 12;
  *
  * @param {number} rootItemId
  * @param {{ planner: CraftPlanner, craftable: Map<number, number>, rank?: (itemId: number) => number,
- *           expanded: Set<string>, showAll: Set<string>, initialDepth?: number, childLimit?: number }} options
+ *           expanded: Set<string>, collapsed?: Set<string>, showAll: Set<string>, initialDepth?: number,
+ *           childLimit?: number }} options
  *   craftable: item id → how many can be made; expanded: node paths the user opened (beyond initialDepth);
- *   showAll: node paths whose "+N more" was opened; rank: higher first (default: how many can be made)
+ *   collapsed: node paths the user closed (within initialDepth); showAll: node paths whose "+N more" was opened;
+ *   rank: higher first (default: how many can be made)
  */
 export function buildForwardGraph(
   rootItemId,

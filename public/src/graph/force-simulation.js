@@ -323,11 +323,12 @@ export class ForceSimulation {
 
   /**
    * Keep node boxes (with labels) apart: overlapping pairs are pushed apart along the axis where they overlap least.
-   * Layered layouts push only across the flow: along it, the level pull would undo the push next tick, and dense
-   * stacks of siblings never separated. A uniform grid finds the neighbours in O(n). Returns whether any overlapped.
+   * In layered layouts, nodes on the same level are pushed only across the flow: along it, the level pull would undo
+   * the push next tick, and dense stacks of siblings never separated. A uniform grid finds the neighbours in O(n).
+   * Returns whether any pair that can move overlapped.
    */
   #collide() {
-    const { x, y, halfW, halfH, fx } = this;
+    const { x, y, halfW, halfH, fx, structureTarget } = this;
     const layeredAxis =
       this.options.mode === "layered" ? this.options.axis : null;
     let overlapped = false;
@@ -351,14 +352,15 @@ export class ForceSimulation {
             const overlapX = halfW[i] + halfW[j] - Math.abs(x[j] - x[i]),
               overlapY = halfH[i] + halfH[j] - Math.abs(y[j] - y[i]);
             if (overlapX <= 0 || overlapY <= 0) continue;
-            overlapped = true;
             const iFixed = !Number.isNaN(fx[i]),
               jFixed = !Number.isNaN(fx[j]);
             if (iFixed && jFixed) continue;
+            overlapped = true;
             const share = iFixed ? 0 : jFixed ? 1 : 0.5; // how much of the push i takes
-            const pushAlongX = layeredAxis
-              ? layeredAxis === "y" // flow along y → spread along x
-              : overlapX < overlapY;
+            const pushAlongX =
+              layeredAxis && structureTarget[i] === structureTarget[j]
+                ? layeredAxis === "y" // same level, flow along y → spread along x
+                : overlapX < overlapY;
             if (pushAlongX) {
               const sign = x[j] > x[i] || (x[j] === x[i] && j > i) ? 1 : -1;
               x[i] -= sign * overlapX * share;
@@ -379,8 +381,9 @@ export class ForceSimulation {
    * dense stack overlapping: each push can create a new overlap further along.
    */
   resolveOverlaps(maxPasses = 50) {
+    if (this.options.mode !== "layered") return; // free and radial: per-tick collision, rings kept exact
     for (let pass = 0; pass < maxPasses; pass++) if (!this.#collide()) break;
-    if (this.options.mode === "layered") this.#separateLevels();
+    this.#separateLevels();
   }
 }
 

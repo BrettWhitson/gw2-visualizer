@@ -37,3 +37,19 @@ export function debounce(fn, waitMs) {
     timer = setTimeout(() => fn(...args), waitMs);
   };
 }
+
+/**
+ * Give the page a turn (input, rendering) between slices of long work. Unlike setTimeout(0), this isn't throttled to
+ * once a second in a background tab: scheduler.yield() where available, otherwise a message-channel round trip.
+ */
+export function yieldToPage() {
+  if (globalThis.scheduler?.yield) return globalThis.scheduler.yield();
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    channel.port1.onmessage = () => {
+      channel.port1.close();
+      resolve();
+    };
+    channel.port2.postMessage(null);
+  });
+}

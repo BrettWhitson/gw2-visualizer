@@ -271,3 +271,67 @@ test("−/+ steps land exactly on the slider's grid and stop at its ends", () =>
   assert.equal(stepRange(input, 1), false, "already at the maximum");
   assert.equal(input.value, "6");
 });
+
+test("left-right layouts with wide nodes: levels make room, and nothing overlaps", () => {
+  // A root with 3 products, each with 30: wider nodes (standing in for labels beside them) than the level gap.
+  const ids = ["r"];
+  const edges = [];
+  for (let a = 0; a < 3; a++) {
+    ids.push(`a${a}`);
+    edges.push(["r", `a${a}`]);
+    for (let b = 0; b < 30; b++) {
+      ids.push(`a${a}b${b}`);
+      edges.push([`a${a}`, `a${a}b${b}`]);
+    }
+  }
+  const elements = [
+    ...ids.map((id) => ({ data: { id }, classes: id === "r" ? "root" : "" })),
+    ...edges.map(([source, target]) => ({
+      data: { id: `${source}->${target}`, source, target },
+    })),
+  ];
+  const cy = cytoscape({
+    headless: true,
+    styleEnabled: true,
+    elements,
+    style: [{ selector: "node", style: { width: 200, height: 40 } }],
+  });
+  try {
+    runLayout(
+      cy,
+      {
+        ...DEFAULT_SETTINGS,
+        viewMode: "tree",
+        direction: "RL",
+        linkDistance: 120,
+      },
+      { hasPreviousPositions: false },
+    );
+    const boxes = cy.nodes().map((node) => {
+      const { x, y } = node.position();
+      return {
+        id: node.id(),
+        x1: x - 100,
+        x2: x + 100,
+        y1: y - 20,
+        y2: y + 20,
+      };
+    });
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i],
+          b = boxes[j];
+        const overlaps =
+          Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1) > 1 &&
+          Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1) > 1;
+        assert.ok(!overlaps, `${a.id} overlaps ${b.id}`);
+      }
+    const x = (id) => cy.getElementById(id).position("x");
+    assert.ok(
+      x("a0b0") - x("a0") >= 200,
+      "levels are at least a node's width apart, not the 120 px link distance",
+    );
+  } finally {
+    cy.destroy();
+  }
+});

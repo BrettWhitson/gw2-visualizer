@@ -87,6 +87,8 @@ class CraftablePage {
   showAll = new Set();
   graph = null;
   #gameDataReady = null;
+  /** The item last opened, and for which account: reopened after a refresh. */
+  #lastRoot = null;
   /** "auto" | "columns" | "radial", remembered in this browser. */
   layoutPreference = readStored(
     LAYOUT_KEY,
@@ -150,21 +152,33 @@ class CraftablePage {
 
   // ---------------------------------------------------------------- account → results
 
+  /** Forget the lists, graph and selection: they belonged to the account as it was. */
+  #resetResults() {
+    this.planner = null;
+    this.craftable = new Map();
+    this.craftableEntries = [];
+    this.materials = [];
+    this.rootItemId = null;
+    this.graph = null;
+    this.expanded = new Set();
+    this.collapsed = new Set();
+    this.showAll = new Set();
+    this.#select(null);
+    this.graphView.clear();
+    $("#craftTooltip").hidden = true;
+    this.#renderList();
+  }
+
   async #onAccountChange() {
     const token = ++this.#computeToken;
     const { status } = this.account;
+    this.#resetResults();
     if (status !== "ready") {
-      this.planner = null;
-      this.craftable = new Map();
-      this.craftableEntries = [];
-      this.materials = [];
-      this.#renderList();
       this.#showGraphMessage(
         status === "connecting"
           ? "Loading what your account owns…"
           : "Connect your account (top right) to see what you can craft with what you own. The key needs the <b>inventories</b> permission; add <b>characters</b> to check crafting levels and <b>wallet</b> for recipes that cost coin, karma or other currencies.",
       );
-      this.graphView.clear();
       return;
     }
     if (!this.account.has("inventories")) {
@@ -176,6 +190,12 @@ class CraftablePage {
     this.#showGraphMessage("Working out what you can craft…");
     await this.#gameDataReady;
     if (token !== this.#computeToken) return;
+    if (!this.gameData.recipesByOutputId.size) {
+      this.#showGraphMessage(
+        "The game data couldn't be loaded, so recipes aren't available. Check your connection and reload the page.",
+      );
+      return;
+    }
 
     this.planner = new CraftPlanner({
       getRecipes: (id) => this.gameData.getRecipes(id),
@@ -207,6 +227,14 @@ class CraftablePage {
         ? "Pick an item or one of your materials to see what it can become."
         : "Nothing can be crafted from what this account holds right now.",
     );
+    // After a refresh of the same account, keep looking at the same item when it's still owned or craftable.
+    const previous = this.#lastRoot;
+    if (
+      previous?.accountName === this.account.accountName &&
+      (this.craftable.has(previous.itemId) ||
+        this.planner.owned.get(previous.itemId) > 0)
+    )
+      this.#openRoot(previous.itemId);
     // Prices rank "Most valuable"; the list redraws when they arrive.
     this.priceBook
       .ensure([
@@ -215,6 +243,9 @@ class CraftablePage {
       ])
       .then((arrived) => {
         if (arrived && token === this.#computeToken) this.#renderList();
+      })
+      .catch(() => {
+        /* no prices: "Most valuable" falls back to name order */
       });
   }
 
@@ -383,6 +414,7 @@ class CraftablePage {
 
   #openRoot(itemId) {
     this.rootItemId = itemId;
+    this.#lastRoot = { itemId, accountName: this.account.accountName };
     this.expanded = new Set();
     this.collapsed = new Set();
     this.showAll = new Set();
@@ -420,20 +452,21 @@ class CraftablePage {
         .join(" ");
       return { group: "nodes", data, classes };
     });
-    const edgeElements = this.graph.edges.map((edge) => {
-      const element = this.appearance.edgeElement(
-        { ...edge, sourceId: edge.targetId, targetId: edge.sourceId },
-        this.graph.nodesById,
-        colorsByNodeId,
-      );
-      // appearance.edgeElement expects product → ingredient; the graph runs ingredient → product.
-      Object.assign(element.data, {
+    // Edges run ingredient → product here (the crafting page's run product → ingredient), so they're built directly.
+    const edgeElements = this.graph.edges.map((edge) => ({
+      group: "edges",
+      classes: "",
+      data: {
+        id: edge.edgeId,
         source: edge.sourceId,
         target: edge.targetId,
         label: edge.quantity ? `×${formatNumber(edge.quantity)}` : "",
-      });
-      return element;
-    });
+        sourceColor: colorsByNodeId.get(edge.sourceId),
+        targetColor: colorsByNodeId.get(edge.targetId),
+        controlPointDistances: [0],
+        controlPointWeights: [0.5], // filled in by the layout for curved edges
+      },
+    }));
     this.graphView.render({
       nodeElements,
       edgeElements,
@@ -447,6 +480,9 @@ class CraftablePage {
       .selector("node.overflow")
       .style({ "border-style": "dashed", "background-opacity": 0.4 })
       .update();
+    $("#craftTooltip").hidden = true; // its node may have moved or gone
+    if (this.selectedNodeId && !this.graph.nodesById.has(this.selectedNodeId))
+      this.#select(null);
     const productCount = this.graph.nodes.length - 1;
     this.#status(
       `${formatNumber(productCount)} item${productCount === 1 ? "" : "s"} shown · double-click a node to see what it makes in turn`,
@@ -577,8 +613,8 @@ class CraftablePage {
     if (x == null) return;
     const width = tooltip.offsetWidth,
       height = tooltip.offsetHeight;
-    tooltip.style.left = `${Math.min(x + 14, innerWidth - width - 8)}px`;
-    tooltip.style.top = `${Math.min(y + 14, innerHeight - height - 8)}px`;
+    tooltip.style.left = `${Math.max(8, Math.min(x + 14, innerWidth - width - 8))}px`;
+    tooltip.style.top = `${Math.max(8, Math.min(y + 14, innerHeight - height - 8))}px`;
   }
 }
 
