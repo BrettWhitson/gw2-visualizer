@@ -14,21 +14,25 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
   dragged, and the rest of the graph follows. Owned items and better buys glow, collapsed items show a card stack, and
   Mystic Forge results get a ring and badge. PNG export, legend highlights, keyboard navigation, touch (tap,
   double-tap, long-press, pinch), high-density screens and every style setting work in it too.
-- **Engine sandbox** (new page, linked from the home page): play with Prism and Tether on made-up crafting graphs of
-  1 to 10,000 items (crafting trees with shared materials, even trees, wide, deep or tangled), with every layout,
-  force, node, label, edge, highlight and animation option from the crafting page, and buttons to grow, collapse,
-  scatter, shake, recolour, pulse and flash. Live numbers show what the engine is doing: frames drawn, CPU per frame,
-  what the last GPU upload rewrote and whether the physics is running. Its options are kept apart from the crafting
-  page's.
+- **Engine sandbox** (new page, linked from the home page): developer test tools for Prism and Tether on made-up
+  crafting graphs of 1 to 10,000 items (crafting trees with shared materials, even trees, wide, deep or tangled).
+  Tabs for the graph; the layout and physics options; **every Tether constant**, live, with copy / paste as JSON;
+  every rendering option; **automated tests** (hold and drag probes that report how far items moved by how many links
+  they are from the one dragged, determinism, layout timing, a render benchmark); and tools (shake, scatter, glow
+  what the physics is moving, colour by links from the selection, save / load graphs, PNG export). Live numbers show
+  what both engines are doing. Its options are kept apart from the crafting page's.
 - **Tether, the app's own layout and physics.** Both renderers now lay graphs out with the app's own engine. The
   Merged view's layered layout replaces dagre, and Prism no longer needs Cytoscape at all (it's still loaded for
-  Classic).
-- **Dragging a node works like an elastic net.** The node you hold pulls the items linked to it, they pull theirs,
-  and the pull fades with every link; nothing else moves. It used to re-run the whole layout, so the entire graph
-  drifted off in all directions as soon as you grabbed something. Let go and the graph keeps the shape you pulled it
-  into. **Link force** sets how far a pull carries, **Center force** how firmly items hold their place. On touch
-  screens a tap has to move 10 px before it counts as a drag, and waking the layout physics (Shake, Scatter) no
-  longer slides the graph.
+  Classic). **Two layouts**: a directional tree (up, down, left → right or right → left) and radial (the result in the
+  centre). The force-directed engine, and the ranking and alignment options, are gone; saved force-directed layouts
+  become radial and floating.
+- **Two physics modes** (**Customize → Physics → Mode**, or the ribbon): **Elastic** (the default): the graph holds
+  its layout, and the item you drag pulls the items linked to it, they pull theirs, the pull fading with every link;
+  let go and it keeps the shape you pulled it into. **Floating**: the whole graph is a live simulation, like
+  Obsidian's graph view: new graphs float into place, and grabbing an item makes the graph sway and settle around it.
+  Either way, grabbing an item no longer sends the whole graph drifting (it used to re-run the layout, which isn't
+  quite at rest, so everything moved at once). **Link force** sets how far a pull carries, **Center force** how
+  firmly items hold their place. On touch screens a tap has to move 10 px before it counts as a drag.
 - **Performance.** Measured in Chrome on the development machine (60 Hz display):
   - _Drawing:_ Prism holds 60 fps at 1,000, 3,000 and 10,000 items while panning and zooming, using under 1 ms of CPU
     per frame; its first frame at 10,000 items takes about 90 ms. Classic, for comparison: 0.4 s / 1 s / 8.6 s for
