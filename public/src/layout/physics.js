@@ -1,9 +1,9 @@
 /**
- * Force simulation behind every layout, in the spirit of Obsidian's graph view. Four forces, one slider each, all
- * acting in every direction:
+ * The graph's physics: a force simulation behind every layout, in the spirit of Obsidian's graph view. Four forces,
+ * one slider each, all acting in every direction:
  *
  *  - center:   pulls nodes toward the middle (keeps the graph compact)
- *  - repel:    pushes nodes away from each other
+ *  - repel:    pushes nodes away from each other (Barnes-Hut, O(n log n))
  *  - link:     how strongly links pull their ends toward the link distance (0 = links don't pull at all)
  *  - distance: the length links settle at
  *
@@ -14,8 +14,9 @@
  * Center also sets how firmly nodes hold their level or ring (0 loose, 1 crisp).
  *
  * The simulation keeps running while a node is dragged: the dragged node is held under the pointer and everything
- * else reacts (neighbours follow, others make room), then it cools down and settles, as in Obsidian.
+ * else reacts (neighbours follow, others make room), then it cools down and settles.
  * Deterministic: the same input gives the same layout (no random starts; ties are broken by index).
+ * Works on plain arrays (see layout-graph.js) and allocates nothing per tick beyond its first.
  */
 
 /** Slider value → simulation strength. */
@@ -25,6 +26,7 @@ const BARNES_HUT_THETA = 0.9;
 const ALPHA_MIN = 0.001;
 /** Minimum clear space between the footprints on neighbouring levels. */
 const LEVEL_GAP = 24;
+const MAX_TREE_DEPTH = 24;
 
 /** Ticks to settle a fresh layout: fewer for big graphs (repel is O(n log n) per tick). */
 export function ticksFor(nodeCount) {
@@ -36,20 +38,23 @@ export class ForceSimulation {
   alphaTarget = 0;
 
   /**
-   * @param {import('cytoscape').Core} cy  current positions are the starting point
+   * @param {import('./layout-graph.js').LayoutGraph} graph  current positions are the starting point; ghosts sit out
    * @param {{ mode: 'free' | 'layered' | 'radial', axis?: 'x' | 'y', center: number, repel: number, link: number,
    *           distance: number, depthById?: Map<string, number>, rootId?: string,
-   *           sizeById?: (id: string) => { w: number, h: number } }} options
+   *           sizeOf?: (graphIndex: number) => { w: number, h: number } }} options
    *   axis: layered only, the flow axis levels are spread along
    *   depthById / rootId: radial rings
-   *   sizeById: collision box per node, including its label (default: the node box)
+   *   sizeOf: collision box per node, including its label (default: the node box)
    */
-  constructor(cy, options) {
-    this.cy = cy;
+  constructor(graph, options) {
     this.options = options;
-    this.nodes = cy.nodes().not(".ghost").toArray();
-    const count = (this.count = this.nodes.length);
-    this.indexById = new Map(this.nodes.map((node, i) => [node.id(), i]));
+    /** Graph index of each simulated node. */
+    this.members = [];
+    for (let i = 0; i < graph.count; i++)
+      if (!graph.ghost[i]) this.members.push(i);
+    const count = (this.count = this.members.length);
+    this.ids = this.members.map((i) => graph.ids[i]);
+    this.indexById = new Map(this.ids.map((id, i) => [id, i]));
     this.x = new Float64Array(count);
     this.y = new Float64Array(count);
     this.vx = new Float64Array(count);
@@ -59,35 +64,39 @@ export class ForceSimulation {
     this.fy = new Float64Array(count).fill(NaN);
     this.halfW = new Float64Array(count);
     this.halfH = new Float64Array(count);
-    this.nodes.forEach((node, i) => {
-      const p = node.position();
+    this.members.forEach((g, i) => {
       // Tiny deterministic offsets so coincident seeds can separate.
-      this.x[i] = p.x + ((i % 7) - 3) * 0.01;
-      this.y[i] = p.y + ((i % 5) - 2) * 0.01;
-      const size =
-        options.sizeById?.(node.id()) ??
-        node.layoutDimensions({ nodeDimensionsIncludeLabels: false });
+      this.x[i] = graph.x[g] + ((i % 7) - 3) * 0.01;
+      this.y[i] = graph.y[g] + ((i % 5) - 2) * 0.01;
+      const size = options.sizeOf?.(g) ?? { w: graph.w[g], h: graph.h[g] };
       this.halfW[i] = size.w / 2;
       this.halfH[i] = size.h / 2;
     });
 
-    this.links = [];
+    const local = new Int32Array(graph.count).fill(-1);
+    this.members.forEach((g, i) => (local[g] = i));
+    const sources = [],
+      targets = [];
     this.degree = new Uint32Array(count);
-    cy.edges().forEach((edge) => {
-      const s = this.indexById.get(edge.data("source")),
-        t = this.indexById.get(edge.data("target"));
-      if (s == null || t == null || s === t) return;
-      this.links.push([s, t]);
+    for (let e = 0; e < graph.sources.length; e++) {
+      const s = local[graph.sources[e]],
+        t = local[graph.targets[e]];
+      if (s < 0 || t < 0 || s === t) continue;
+      sources.push(s);
+      targets.push(t);
       this.degree[s]++;
       this.degree[t]++;
-    });
+    }
+    this.linkSources = Int32Array.from(sources);
+    this.linkTargets = Int32Array.from(targets);
 
-    this.root = this.indexById.get(options.rootId ?? cy.nodes(".root").id());
+    const rootId = options.rootId ?? graph.rootId;
+    this.root = this.indexById.get(rootId) ?? null;
     this.structureTarget = new Float64Array(count); // level coordinate or ring radius
     if (options.mode === "radial") {
-      this.nodes.forEach((node, i) => {
+      this.ids.forEach((id, i) => {
         this.structureTarget[i] =
-          (options.depthById?.get(node.id()) ?? 0) * options.distance;
+          (options.depthById?.get(id) ?? 0) * options.distance;
       });
       if (this.root != null) {
         this.fx[this.root] = 0;
@@ -96,7 +105,28 @@ export class ForceSimulation {
     } else if (options.mode === "layered") {
       this.#setUpLevels();
     }
+    // Each link's resting length: the link distance, or in layered layouts at least the gap between its ends'
+    // levels. A link across three levels can't be one link distance long; pulling it that hard only drags its ends
+    // sideways across everything in between (merged graphs, where shared ingredients link to several levels).
+    this.restLength = new Float64Array(this.linkSources.length).fill(
+      options.distance,
+    );
+    if (options.mode === "layered")
+      for (let e = 0; e < this.linkSources.length; e++)
+        this.restLength[e] = Math.max(
+          options.distance,
+          Math.abs(
+            this.structureTarget[this.linkTargets[e]] -
+              this.structureTarget[this.linkSources[e]],
+          ),
+        );
+
+    this.#tree = new Quadtree(count);
+    this.#grid = new CollisionGrid(count);
   }
+
+  #tree;
+  #grid;
 
   /** Settle synchronously (a fresh layout). */
   run(ticks = ticksFor(this.count)) {
@@ -133,25 +163,25 @@ export class ForceSimulation {
     this.fy[i] = NaN;
   }
 
-  /** Re-read positions from Cytoscape (nodes may have been moved by hand since the simulation ran). */
-  syncFromGraph() {
-    this.nodes.forEach((node, i) => {
-      if (node.removed()) return;
-      const p = node.position();
+  /** Start again from these positions (id → { x, y }; nodes moved by hand since), at rest. */
+  setPositions(positionOf) {
+    this.ids.forEach((id, i) => {
+      const p = positionOf(id);
+      if (!p) return;
       this.x[i] = p.x;
       this.y[i] = p.y;
       this.vx[i] = this.vy[i] = 0;
     });
   }
 
-  /** Write positions back to Cytoscape, optionally skipping one node (the one under the pointer). */
-  apply(skipId = null) {
-    this.cy.batch(() =>
-      this.nodes.forEach((node, i) => {
-        if (node.id() !== skipId && !node.removed())
-          node.position({ x: this.x[i], y: this.y[i] });
-      }),
-    );
+  /** Copy positions into the graph's arrays (the simulated nodes only). */
+  writeTo(graph) {
+    this.ids.forEach((id, i) => {
+      const g = graph.indexById.get(id);
+      if (g == null) return;
+      graph.x[g] = this.x[i];
+      graph.y[g] = this.y[i];
+    });
   }
 
   /** One step. `decay` sets how fast alpha moves toward alphaTarget (≈300 ticks to settle by default). */
@@ -180,17 +210,29 @@ export class ForceSimulation {
     this.alpha += (this.alphaTarget - this.alpha) * decay;
   }
 
+  /**
+   * Collision passes on their own, until nothing overlaps (or the budget runs out). One pass per tick can leave a
+   * dense stack overlapping: each push can create a new overlap further along.
+   */
+  resolveOverlaps(maxPasses = 50) {
+    if (this.options.mode !== "layered") return; // free and radial: per-tick collision, rings kept exact
+    for (let pass = 0; pass < maxPasses; pass++) if (!this.#collide()) break;
+    this.#separateLevels();
+  }
+
   // ---------------------------------------------------------------- forces
 
   /** Springs toward the link distance; the busier end of a link moves less. */
   #links(strength) {
     if (!strength) return;
-    const { x, y, vx, vy, degree } = this;
-    const distance = this.options.distance;
-    for (const [s, t] of this.links) {
+    const { x, y, vx, vy, degree, linkSources, linkTargets, restLength } = this;
+    for (let e = 0; e < linkSources.length; e++) {
+      const distance = restLength[e];
+      const s = linkSources[e],
+        t = linkTargets[e];
       const dx = x[t] + vx[t] - x[s] - vx[s] || 0.01,
         dy = y[t] + vy[t] - y[s] - vy[s] || 0.01;
-      const length = Math.hypot(dx, dy);
+      const length = Math.sqrt(dx * dx + dy * dy);
       const pull = ((length - distance) / length) * strength * 0.5;
       const bias = degree[s] / (degree[s] + degree[t]);
       vx[t] -= dx * pull * bias;
@@ -215,14 +257,16 @@ export class ForceSimulation {
     const strength =
       SCALE.structure * (0.15 + 4.25 * this.options.center) * alpha; // 0 loose, default 0.2 → ×1, 1 crisp
     const { x, y, vx, vy, structureTarget: target } = this;
+    if (mode === "layered") {
+      const along = this.options.axis === "x" ? x : y;
+      const velocity = this.options.axis === "x" ? vx : vy;
+      for (let i = 0; i < this.count; i++)
+        velocity[i] += (target[i] - along[i]) * strength;
+      return;
+    }
     for (let i = 0; i < this.count; i++) {
-      if (mode === "layered") {
-        if (this.options.axis === "x") vx[i] += (target[i] - x[i]) * strength;
-        else vy[i] += (target[i] - y[i]) * strength;
-        continue;
-      }
       if (i === this.root) continue;
-      const r = Math.hypot(x[i], y[i]) || 0.01;
+      const r = Math.sqrt(x[i] * x[i] + y[i] * y[i]) || 0.01;
       const k = ((target[i] - r) / r) * strength;
       vx[i] += x[i] * k;
       vy[i] += y[i] * k;
@@ -299,24 +343,31 @@ export class ForceSimulation {
   #repel(strength) {
     if (!strength) return;
     const { x, y, vx, vy } = this;
-    const tree = buildQuadtree(x, y, this.count);
+    const tree = this.#tree;
+    tree.build(x, y, this.count);
+    const { mass, cx, cy, size, index, child } = tree;
+    const theta2 = BARNES_HUT_THETA * BARNES_HUT_THETA;
+    const stack = tree.stack;
     for (let i = 0; i < this.count; i++) {
-      const stack = [tree];
-      while (stack.length) {
-        const cell = stack.pop();
-        if (!cell.mass) continue;
-        const dx = cell.cx - x[i],
-          dy = cell.cy - y[i];
+      let top = 0;
+      stack[top++] = 0;
+      while (top) {
+        const cell = stack[--top];
+        if (!mass[cell]) continue;
+        const dx = cx[cell] - x[i],
+          dy = cy[cell] - y[i];
         const distanceSquared = Math.max(dx * dx + dy * dy, 1);
-        const isFar =
-          (cell.size * cell.size) / distanceSquared <
-          BARNES_HUT_THETA * BARNES_HUT_THETA;
-        if (cell.index != null || isFar) {
-          if (cell.index === i) continue;
-          const push = (strength * cell.mass) / distanceSquared;
+        const leaf = !tree.internal[cell];
+        if (leaf || (size[cell] * size[cell]) / distanceSquared < theta2) {
+          if (index[cell] === i) continue;
+          const push = (strength * mass[cell]) / distanceSquared;
           vx[i] -= dx * push;
           vy[i] -= dy * push;
-        } else for (const child of cell.children) if (child) stack.push(child);
+        } else
+          for (let q = 0; q < 4; q++) {
+            const c = child[cell * 4 + q];
+            if (c) stack[top++] = c;
+          }
       }
     }
   }
@@ -332,22 +383,18 @@ export class ForceSimulation {
     const layeredAxis =
       this.options.mode === "layered" ? this.options.axis : null;
     let overlapped = false;
-    let cell = 1;
+    let cellSize = 1;
     for (let i = 0; i < this.count; i++)
-      cell = Math.max(cell, halfW[i] * 2, halfH[i] * 2);
-    const grid = new Map();
-    const key = (gx, gy) => `${gx},${gy}`;
+      cellSize = Math.max(cellSize, halfW[i] * 2, halfH[i] * 2);
+    const grid = this.#grid;
+    grid.build(x, y, this.count, cellSize);
+    const { next } = grid;
     for (let i = 0; i < this.count; i++) {
-      const k = key(Math.floor(x[i] / cell), Math.floor(y[i] / cell));
-      if (!grid.has(k)) grid.set(k, []);
-      grid.get(k).push(i);
-    }
-    for (let i = 0; i < this.count; i++) {
-      const gx = Math.floor(x[i] / cell),
-        gy = Math.floor(y[i] / cell);
+      const gx = Math.floor(x[i] / cellSize),
+        gy = Math.floor(y[i] / cellSize);
       for (let ox = -1; ox <= 1; ox++)
         for (let oy = -1; oy <= 1; oy++) {
-          for (const j of grid.get(key(gx + ox, gy + oy)) ?? []) {
+          for (let j = grid.first(gx + ox, gy + oy); j >= 0; j = next[j]) {
             if (j <= i) continue;
             const overlapX = halfW[i] + halfW[j] - Math.abs(x[j] - x[i]),
               overlapY = halfH[i] + halfH[j] - Math.abs(y[j] - y[i]);
@@ -375,112 +422,185 @@ export class ForceSimulation {
     }
     return overlapped;
   }
-
-  /**
-   * Collision passes on their own, until nothing overlaps (or the budget runs out). One pass per tick can leave a
-   * dense stack overlapping: each push can create a new overlap further along.
-   */
-  resolveOverlaps(maxPasses = 50) {
-    if (this.options.mode !== "layered") return; // free and radial: per-tick collision, rings kept exact
-    for (let pass = 0; pass < maxPasses; pass++) if (!this.#collide()) break;
-    this.#separateLevels();
-  }
 }
 
-/** Build, settle and apply a layout in one go. Returns the simulation (kept for live dragging). */
-export function simulateForces(cy, options) {
-  if (cy.nodes().length < 2) return null;
-  const simulation = new ForceSimulation(cy, options);
+/**
+ * Build, settle and write back a layout in one go. Returns the simulation (kept for live dragging), or null for
+ * fewer than two nodes.
+ * @param {import('./layout-graph.js').LayoutGraph} graph
+ */
+export function simulateForces(graph, options) {
+  const simulation = new ForceSimulation(graph, options);
+  if (simulation.count < 2) return null;
   simulation.run(options.ticks);
   simulation.resolveOverlaps();
-  simulation.apply();
+  simulation.writeTo(graph);
   simulation.alpha = 0; // settled
   return simulation;
 }
 
 // ---------------------------------------------------------------- Barnes-Hut quadtree
 
-function buildQuadtree(x, y, count) {
-  let minX = Infinity,
-    minY = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity;
-  for (let i = 0; i < count; i++) {
-    minX = Math.min(minX, x[i]);
-    minY = Math.min(minY, y[i]);
-    maxX = Math.max(maxX, x[i]);
-    maxY = Math.max(maxY, y[i]);
+/**
+ * A quadtree over points in flat typed arrays, rebuilt every tick without allocating. Cell 0 is the root; a cell is
+ * a leaf holding one point (index ≥ 0), an internal cell with up to four children, or empty. Coincident points past
+ * MAX_TREE_DEPTH merge into one leaf's mass.
+ */
+export class Quadtree {
+  constructor(points) {
+    this.#grow(Math.max(16, points * 4 + 8));
   }
-  const root = newCell(minX, minY, Math.max(maxX - minX, maxY - minY, 1));
-  for (let i = 0; i < count; i++) insert(root, i, 0);
-  summarize(root);
-  return root;
 
-  function insert(cell, i, depth) {
-    if (!cell.children && cell.index == null && !cell.mass) {
-      cell.index = i;
-      cell.mass = 1;
-      return;
+  #grow(capacity) {
+    const copy = (Type, old, factor = 1) => {
+      const array = new Type(capacity * factor);
+      if (old) array.set(old);
+      return array;
+    };
+    this.left = copy(Float64Array, this.left);
+    this.top = copy(Float64Array, this.top);
+    this.size = copy(Float64Array, this.size);
+    this.mass = copy(Float64Array, this.mass);
+    this.cx = copy(Float64Array, this.cx);
+    this.cy = copy(Float64Array, this.cy);
+    this.index = copy(Int32Array, this.index);
+    this.internal = copy(Uint8Array, this.internal);
+    this.child = copy(Int32Array, this.child, 4); // 0: no child (cell 0 is the root, never a child)
+    this.stack = new Int32Array(capacity);
+    this.capacity = capacity;
+  }
+
+  #newCell(left, top, size) {
+    if (this.cells === this.capacity) this.#grow(this.capacity * 2);
+    const cell = this.cells++;
+    this.left[cell] = left;
+    this.top[cell] = top;
+    this.size[cell] = size;
+    this.mass[cell] = 0;
+    this.cx[cell] = this.cy[cell] = 0;
+    this.index[cell] = -1;
+    this.internal[cell] = 0;
+    this.child.fill(0, cell * 4, cell * 4 + 4);
+    return cell;
+  }
+
+  build(x, y, count) {
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    for (let i = 0; i < count; i++) {
+      if (x[i] < minX) minX = x[i];
+      if (y[i] < minY) minY = y[i];
+      if (x[i] > maxX) maxX = x[i];
+      if (y[i] > maxY) maxY = y[i];
     }
-    if (!cell.children) {
-      if (depth > 24) {
-        cell.mass++; // coincident points: merge
-        return;
+    this.cells = 0;
+    this.#newCell(minX, minY, Math.max(maxX - minX, maxY - minY, 1));
+    for (let i = 0; i < count; i++) this.#insert(i, x, y);
+    this.#summarise(x, y);
+  }
+
+  #insert(i, x, y) {
+    let cell = 0;
+    for (let depth = 0; ; depth++) {
+      if (!this.internal[cell]) {
+        if (this.index[cell] < 0) {
+          this.index[cell] = i; // an empty leaf
+          this.mass[cell] = 1;
+          return;
+        }
+        if (depth > MAX_TREE_DEPTH) {
+          this.mass[cell]++; // coincident points: merge
+          return;
+        }
+        // Split the leaf: its point moves one level down, into a fresh (empty) child.
+        const previous = this.index[cell];
+        this.index[cell] = -1;
+        this.mass[cell] = 0;
+        this.internal[cell] = 1;
+        const child = this.#childFor(cell, previous, x, y);
+        this.index[child] = previous;
+        this.mass[child] = 1;
       }
-      cell.children = [null, null, null, null];
-      const previous = cell.index;
-      cell.index = null;
-      cell.mass = 0;
-      if (previous != null) insertChild(cell, previous, depth);
+      cell = this.#childFor(cell, i, x, y);
     }
-    insertChild(cell, i, depth);
   }
 
-  function insertChild(cell, i, depth) {
-    const half = cell.size / 2;
-    const right = x[i] >= cell.left + half ? 1 : 0,
-      bottom = y[i] >= cell.top + half ? 1 : 0;
-    const slot = right + bottom * 2;
-    cell.children[slot] ??= newCell(
-      cell.left + right * half,
-      cell.top + bottom * half,
-      half,
-    );
-    insert(cell.children[slot], i, depth + 1);
+  /** The child of `cell` that point i falls in, created if needed. */
+  #childFor(cell, i, x, y) {
+    const half = this.size[cell] / 2;
+    const right = x[i] >= this.left[cell] + half ? 1 : 0,
+      bottom = y[i] >= this.top[cell] + half ? 1 : 0;
+    const slot = cell * 4 + right + bottom * 2;
+    if (!this.child[slot]) {
+      // Create first: growing replaces the arrays, so `this.child` must be read after.
+      const created = this.#newCell(
+        this.left[cell] + right * half,
+        this.top[cell] + bottom * half,
+        half,
+      );
+      this.child[slot] = created;
+    }
+    return this.child[slot];
   }
 
-  function summarize(cell) {
-    if (cell.index != null) {
-      cell.cx = x[cell.index];
-      cell.cy = y[cell.index];
-      return;
+  /** Centres of mass, children before parents (cells are created after their parents, so walk backwards). */
+  #summarise(x, y) {
+    const { mass, cx, cy, index, child, internal } = this;
+    for (let cell = this.cells - 1; cell >= 0; cell--) {
+      if (!internal[cell]) {
+        if (index[cell] >= 0) {
+          cx[cell] = x[index[cell]];
+          cy[cell] = y[index[cell]];
+        }
+        continue;
+      }
+      let total = 0,
+        sx = 0,
+        sy = 0;
+      for (let q = 0; q < 4; q++) {
+        const c = child[cell * 4 + q];
+        if (!c) continue;
+        total += mass[c];
+        sx += cx[c] * mass[c];
+        sy += cy[c] * mass[c];
+      }
+      mass[cell] = total;
+      cx[cell] = total ? sx / total : 0;
+      cy[cell] = total ? sy / total : 0;
     }
-    if (!cell.children) return;
-    let mass = 0,
-      sx = 0,
-      sy = 0;
-    for (const child of cell.children) {
-      if (!child) continue;
-      summarize(child);
-      mass += child.mass;
-      sx += child.cx * child.mass;
-      sy += child.cy * child.mass;
-    }
-    cell.mass = mass;
-    cell.cx = mass ? sx / mass : 0;
-    cell.cy = mass ? sy / mass : 0;
   }
 }
 
-function newCell(left, top, size) {
-  return {
-    left,
-    top,
-    size,
-    index: null,
-    children: null,
-    mass: 0,
-    cx: 0,
-    cy: 0,
-  };
+// ---------------------------------------------------------------- collision grid
+
+/** A uniform grid of linked lists over points, rebuilt every tick: `first(gx, gy)` then follow `next`. */
+class CollisionGrid {
+  constructor(points) {
+    this.next = new Int32Array(Math.max(1, points));
+    this.heads = new Map();
+  }
+
+  build(x, y, count, cellSize) {
+    this.heads.clear();
+    for (let i = count - 1; i >= 0; i--) {
+      const key = cellKey(
+        Math.floor(x[i] / cellSize),
+        Math.floor(y[i] / cellSize),
+      );
+      const head = this.heads.get(key);
+      this.next[i] = head ?? -1;
+      this.heads.set(key, i);
+    }
+  }
+
+  first(gx, gy) {
+    return this.heads.get(cellKey(gx, gy)) ?? -1;
+  }
+}
+
+function cellKey(gx, gy) {
+  // Exact for |gx|, |gy| < 2^25: plenty for any graph that fits on screen.
+  return (gx + 33554432) * 67108864 + (gy + 33554432);
 }

@@ -1,6 +1,6 @@
 // Copy the browser builds of the third-party libraries into public/lib/ (the app has no bundler; it loads these as
 // plain UMD scripts). Versions are pinned in package.json devDependencies, so updating is:
-//   npm install --save-dev --save-exact cytoscape@<version> cytoscape-dagre@<version>  &&  npm run vendor
+//   npm install --save-dev --save-exact cytoscape@<version>  &&  npm run vendor
 // then update THIRD_PARTY_NOTICES.md. `npm run check` fails if public/lib/ drifts from the pinned versions.
 // Usage:  node tools/vendor-libs.mjs [--check]
 import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
@@ -13,14 +13,9 @@ const projectRoot = path.resolve(
 );
 const libDir = path.join(projectRoot, "public", "lib");
 
-/** package → file in its dist → file in public/lib/ (cytoscape-dagre bundles @dagrejs/dagre). */
+/** package → file in its dist → file in public/lib/. */
 export const VENDORED = [
   { name: "cytoscape", from: "dist/cytoscape.min.js", to: "cytoscape.min.js" },
-  {
-    name: "cytoscape-dagre",
-    from: "dist/cytoscape-dagre.min.js",
-    to: "cytoscape-dagre.min.js",
-  },
 ];
 
 const installedVersion = (name) =>

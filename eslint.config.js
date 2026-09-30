@@ -14,7 +14,6 @@ export default [
       globals: {
         ...globals.browser,
         cytoscape: "readonly",
-        cytoscapeDagre: "readonly",
       },
     },
   },

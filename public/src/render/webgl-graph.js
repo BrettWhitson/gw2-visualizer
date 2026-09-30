@@ -10,6 +10,13 @@ import {
 import { Spring, springFor } from "./spring.js";
 import { parseColor } from "./color.js";
 import {
+  LABEL_PAD_X,
+  LABEL_PAD_Y,
+  labelBox,
+  labelFont,
+  layoutLabel,
+} from "./labels.js";
+import {
   ARROW_FLOATS,
   EDGE_FLOATS,
   InstanceData,
@@ -39,7 +46,6 @@ import {
 
 const ICON_SIZE = 64; // atlas cell, pixels
 const ATLAS_SIZE = 2048; // 1024 icons
-const LABEL_FONT_FAMILY = '"Segoe UI", system-ui, sans-serif';
 const LABEL_RENDER_SCALE = 2; // label bitmaps are drawn at 2× and scaled down
 const DOUBLE_TAP_MS = 300;
 const LONG_PRESS_MS = 550;
@@ -56,6 +62,7 @@ const COLORS = {
   edgeLabelBackdrop: "rgba(13, 16, 23, 0.9)",
 };
 export { parseColor };
+export { wrapLabel } from "./labels.js";
 
 export class WebGLGraph {
   camera = new Camera();
@@ -1261,37 +1268,21 @@ export class WebGLGraph {
       const scale = all ? zoom : Math.min(2, Math.max(0.8, zoom));
       const w = (image.width / LABEL_RENDER_SCALE) * scale,
         h = (image.height / LABEL_RENDER_SCALE) * scale;
-      const s = record.scale.value;
-      const x = record.px.value,
-        y = record.py.value;
-      const gap = 5 * scale;
-      let anchor;
-      switch (this.#labels.position) {
-        case "below":
-          anchor = camera.toScreen(x, y + record.hh * s);
-          anchor = { x1: anchor.x - w / 2, y1: anchor.y + gap };
-          break;
-        case "above":
-          anchor = camera.toScreen(x, y - record.hh * s);
-          anchor = { x1: anchor.x - w / 2, y1: anchor.y - gap - h };
-          break;
-        case "left":
-          anchor = camera.toScreen(x - record.hw * s, y);
-          anchor = { x1: anchor.x - gap - w, y1: anchor.y - h / 2 };
-          break;
-        case "center":
-          anchor = camera.toScreen(x, y);
-          anchor = { x1: anchor.x - w / 2, y1: anchor.y - h / 2 };
-          break;
-        default:
-          anchor = camera.toScreen(x + record.hw * s, y);
-          anchor = { x1: anchor.x + gap, y1: anchor.y - h / 2 };
-      }
+      const s = record.scale.value * zoom;
+      const centre = camera.toScreen(record.px.value, record.py.value);
+      const offset = labelBox(
+        this.#labels.position,
+        record.hw * s,
+        record.hh * s,
+        w,
+        h,
+        5 * scale,
+      );
       const box = {
-        x1: anchor.x1,
-        y1: anchor.y1,
-        x2: anchor.x1 + w,
-        y2: anchor.y1 + h,
+        x1: centre.x + offset.x1,
+        y1: centre.y + offset.y1,
+        x2: centre.x + offset.x2,
+        y2: centre.y + offset.y2,
       };
       if (!all) {
         if (box.x1 > width || box.x2 < 0 || box.y1 > height || box.y2 < 0)
@@ -1363,26 +1354,18 @@ export class WebGLGraph {
     let image = this.#labelCache.get(key);
     if (image) return image;
     if (this.#labelCache.size > 4000) this.#labelCache.clear();
-    const font = `${bold ? 700 : 600} ${fontSize}px ${LABEL_FONT_FAMILY}`;
+    const font = labelFont(fontSize, bold);
     const measure = (this.#measureContext ??= document
       .createElement("canvas")
       .getContext("2d"));
     measure.font = font;
-    const lines = wrapLabel(
-      String(text),
-      wrapWidth,
-      overflow,
+    const { lines, lineHeight, width, height } = layoutLabel(
+      text,
+      { fontSize, wrapWidth, overflow },
       (t) => measure.measureText(t).width,
     );
-    const lineHeight = Math.round(fontSize * 1.3);
-    const padX = 4,
-      padY = 2;
-    const width =
-      Math.ceil(
-        Math.max(1, ...lines.map((line) => measure.measureText(line).width)),
-      ) +
-      padX * 2;
-    const height = lines.length * lineHeight + padY * 2;
+    const padX = LABEL_PAD_X,
+      padY = LABEL_PAD_Y;
     image = document.createElement("canvas");
     image.width = width * LABEL_RENDER_SCALE;
     image.height = height * LABEL_RENDER_SCALE;
@@ -1775,35 +1758,4 @@ export function flickVelocity(samples, now) {
   const vx = (dx / span) * 1000,
     vy = (dy / span) * 1000;
   return Math.hypot(vx, vy) > FLICK_MIN_SPEED ? { vx, vy } : null;
-}
-
-/**
- * Break a label into lines no wider than `maxWidth` (by `measure`), keeping its own line breaks. "ellipsis" keeps each
- * line to one row, cut with "…". Pure apart from the measuring function.
- */
-export function wrapLabel(text, maxWidth, overflow, measure) {
-  const lines = [];
-  for (const paragraph of text.split("\n")) {
-    if (!maxWidth || measure(paragraph) <= maxWidth) {
-      lines.push(paragraph);
-      continue;
-    }
-    if (overflow === "ellipsis") {
-      let cut = paragraph;
-      while (cut.length > 1 && measure(cut + "…") > maxWidth)
-        cut = cut.slice(0, -1);
-      lines.push(cut.trimEnd() + "…");
-      continue;
-    }
-    let line = "";
-    for (const word of paragraph.split(" ")) {
-      const candidate = line ? `${line} ${word}` : word;
-      if (line && measure(candidate) > maxWidth) {
-        lines.push(line);
-        line = word;
-      } else line = candidate;
-    }
-    if (line) lines.push(line);
-  }
-  return lines;
 }

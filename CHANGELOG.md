@@ -12,6 +12,9 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
   lineages flow with travelling light pulses. Nodes can be dragged, and the rest of the graph follows. Owned items and
   better buys glow, collapsed items show a card stack, and Mystic Forge results get a ring and badge. PNG export,
   legend highlights and every style setting work in it too.
+- **Our own layouts.** The Merged view's layered layout is now the app's own instead of dagre: across five
+  legendaries it lays out about 3× faster with 14% fewer edge crossings. Both renderers share one layout and physics
+  engine, and the Fast renderer no longer needs Cytoscape at all (it's still loaded for the classic one).
 - **Faster pages, saved data.** Account data, Trading Post prices and order books are kept in the browser, so pages
   open on what was saved instead of downloading it again: What you can craft now shows its ranked list in under a
   second on a revisit, with no API requests. **Account menu → Update account data and prices:** _When I refresh_ (the

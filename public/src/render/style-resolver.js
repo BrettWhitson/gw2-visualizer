@@ -51,6 +51,8 @@ export function resolveFlowAxis(s) {
 export function resolveNodeStyle(classes, data, s, extra = {}) {
   const color = data.color ?? UI_COLORS.muted;
   const style = {
+    /** Width and height, before any scaling for hover or drag. */
+    size: LAYOUT_BASE.nodeSize * s.nodeSizeScale,
     shape: s.nodeShape,
     fill: s.tintNodeFill ? color : UI_COLORS.nodeFill,
     fillAlpha: s.tintNodeFill ? 0.3 : 1,
@@ -72,6 +74,7 @@ export function resolveNodeStyle(classes, data, s, extra = {}) {
   };
   const has = (name) => classes.has(name);
   if (has("root")) {
+    style.size *= s.rootSizeScale;
     style.borderWidth += 1.5;
     style.fontSize *= 1.2;
     style.bold = true;

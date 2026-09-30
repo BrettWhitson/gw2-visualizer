@@ -42,6 +42,7 @@ const CLASS_STYLES = {
 };
 import { NodeAppearance } from "./graph/node-appearance.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
+import { canDrawGraphs } from "./render/choose-graph-view.js";
 import { registerServiceWorker } from "./pwa.js";
 import { escapeHtml, querySelector as $ } from "./utils/dom.js";
 import {
@@ -1038,16 +1039,11 @@ function showFatalError(message) {
 
 const account = createAccountSession();
 mountSiteChrome({ page: "craftable", account });
-if (!globalThis.cytoscape) {
+if (!canDrawGraphs()) {
   showFatalError(
     "The graph library failed to load. Check your connection and reload the page.",
   );
 } else {
-  try {
-    globalThis.cytoscape.use(globalThis.cytoscapeDagre);
-  } catch {
-    // cytoscape-dagre registers itself when loaded after cytoscape; use() then throws "already registered".
-  }
   const page = new CraftablePage(account);
   if (["localhost", "127.0.0.1"].includes(location.hostname))
     globalThis.gw2Craftable = page; // console access while developing

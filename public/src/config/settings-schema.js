@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   layoutEngine: "layered", // layered | force
   dagreRanker: "network-simplex",
   treeAlignment: "", // '' | UL | UR | DL | DR
-  // forces (force-simulation.js): like Obsidian's graph view
+  // forces (layout/physics.js): like Obsidian's graph view
   centerForce: 0.2, // pull toward the middle
   repelForce: 8, // push nodes apart (spacing)
   linkForce: 0.5, // pull connected nodes together

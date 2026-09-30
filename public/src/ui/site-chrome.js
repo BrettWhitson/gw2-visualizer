@@ -72,8 +72,7 @@ function aboutHtml() {
       ${external("https://account.arena.net/applications", "account.arena.net/applications")}.</p>
     <h3>Open source</h3>
     <ul>
-      <li>Built with ${external("https://js.cytoscape.org/", "Cytoscape.js")}, ${external("https://github.com/dagrejs/dagre", "dagre")}
-        and ${external("https://github.com/cytoscape/cytoscape.js-dagre", "cytoscape-dagre")} (MIT).</li>
+      <li>The classic renderer is built with ${external("https://js.cytoscape.org/", "Cytoscape.js")} (MIT).</li>
       <li>${APP_NAME} itself is open source under the <a href="LICENSE" target="_blank" rel="noopener">MIT License</a>
         (<a href="THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">third-party notices</a>).</li>
       ${REPOSITORY_URL ? `<li>${external(REPOSITORY_URL, "Source code")}</li>` : ""}

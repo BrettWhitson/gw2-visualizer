@@ -5,8 +5,8 @@ import {
   UI_COLORS,
   ZOOM_LIMITS,
 } from "../config/constants.js";
-import { buildStylesheet } from "../graph/stylesheet.js";
-import { runLayout } from "../graph/layouts.js";
+import { LayoutGraph } from "../layout/layout-graph.js";
+import { runLayout } from "../layout/run-layout.js";
 import {
   isDirectionalLayout,
   treeDirection,
@@ -20,14 +20,15 @@ import {
   resolveRouting,
 } from "./style-resolver.js";
 import { planTransition } from "./transition-plan.js";
+import { labelBox, labelFont, layoutLabel } from "./labels.js";
 
 /** Graphs up to this size morph between renders; bigger ones snap (springs handle thousands, but not forever). */
 const MAX_ANIMATED_NODES = 5000;
 
 /**
  * The WebGL engine behind the interface the pages use for GraphView (render, select, lineage, fit, export…), so a
- * page can switch renderers without other changes. Layout is shared: the app's layouts run on a hidden Cytoscape
- * instance (which also measures labels); everything drawn and animated is the engine's.
+ * page can switch renderers without other changes. Layouts come from ../layout/ (the same ones the classic renderer
+ * uses), with room for each label as the engine draws it; everything drawn and animated is the engine's.
  */
 export class WebGLGraphView {
   #settings;
@@ -86,14 +87,6 @@ export class WebGLGraphView {
     );
     this.graph.camera.minZoom = ZOOM_LIMITS.min;
     this.graph.camera.maxZoom = ZOOM_LIMITS.max;
-    // Layout only: never shown, so it never draws.
-    this.layoutContainer = document.createElement("div");
-    this.layoutContainer.style.display = "none";
-    container.append(this.layoutContainer);
-    this.cy = globalThis.cytoscape({
-      container: this.layoutContainer,
-      style: buildStylesheet(settings.values),
-    });
     new ResizeObserver(() => {
       if (this.#pendingFit && container.clientWidth) this.fit();
     }).observe(container);
@@ -162,23 +155,6 @@ export class WebGLGraphView {
     });
     this.#parentOf = parentOf;
 
-    // Lay out on the hidden instance, seeded with where things are now (the force engine continues from there).
-    const cy = this.cy;
-    cy.batch(() => {
-      cy.elements().remove();
-      cy.style(buildStylesheet(values));
-      cy.add([
-        ...nodeElements.map((element) => ({
-          ...element,
-          position: { ...(plan.startOf(element.data.id) ?? { x: 0, y: 0 }) },
-        })),
-        ...edgeElements,
-      ]);
-    });
-    this.#simulation = runLayout(cy, values, {
-      hasPreviousPositions: previous.size > 0,
-    });
-
     this.#nodes = new Map(
       nodeElements.map((e) => [
         e.data.id,
@@ -198,18 +174,45 @@ export class WebGLGraphView {
     );
     this.#indexEdges();
 
+    // Lay out, seeded with where things are now (the physics continues from there).
+    const styles = new Map(
+      nodeElements.map((e) => [e.data.id, this.#nodeStyle(e.data.id)]),
+    );
+    const layoutGraph = new LayoutGraph(
+      nodeElements.map((e) => {
+        const id = e.data.id;
+        const style = styles.get(id);
+        const start = plan.startOf(id) ?? { x: 0, y: 0 };
+        return {
+          id,
+          w: style.size,
+          h: style.size,
+          ...this.#footprint(style),
+          x: start.x,
+          y: start.y,
+          root: this.#nodes.get(id).classes.has("root"),
+        };
+      }),
+      edgeElements.map((e) => ({
+        source: e.data.source,
+        target: e.data.target,
+      })),
+    );
+    this.#simulation = runLayout(layoutGraph, values, {
+      hasPreviousPositions: previous.size > 0,
+    });
+
     const finalPositions = new Map();
-    const nodes = cy.nodes().map((node) => {
-      const id = node.id();
-      const position = { ...node.position() };
+    const nodes = layoutGraph.ids.map((id, i) => {
+      const position = { x: layoutGraph.x[i], y: layoutGraph.y[i] };
       finalPositions.set(id, position);
+      const style = styles.get(id);
       return {
         id,
-        x: position.x,
-        y: position.y,
-        width: node.width(),
-        height: node.height(),
-        style: this.#nodeStyle(id),
+        ...position,
+        width: style.size,
+        height: style.size,
+        style,
       };
     });
     const animate =
@@ -263,7 +266,6 @@ export class WebGLGraphView {
     this.#stopPhysics?.();
     this.#simulation = null;
     this.#lineage = { nodeId: null, isPinned: false, dimmed: null };
-    this.cy.elements().remove();
     this.#nodes = new Map();
     this.#edges = new Map();
     this.#parentOf = new Map();
@@ -337,6 +339,48 @@ export class WebGLGraphView {
       curvature: s.edgeCurvature ?? 1,
     };
   }
+
+  /**
+   * A node's footprint with its label (the box they make together), as the engine will draw it at zoom 1. The
+   * layouts leave this much room.
+   */
+  #footprint(style) {
+    const size = style.size;
+    if (!style.label) return { fullW: size, fullH: size };
+    const s = this.#values;
+    const font = labelFont(style.fontSize, style.bold);
+    const wrapWidth = LAYOUT_BASE.labelWidth * s.labelWrapScale;
+    const key = `${font}|${wrapWidth}|${s.labelOverflow}|${style.label}`;
+    let label = this.#labelSizes.get(key);
+    if (!label) {
+      const measure = (this.#measureContext ??= document
+        .createElement("canvas")
+        .getContext("2d"));
+      measure.font = font;
+      label = layoutLabel(
+        style.label,
+        { fontSize: style.fontSize, wrapWidth, overflow: s.labelOverflow },
+        (text) => measure.measureText(text).width,
+      );
+      if (this.#labelSizes.size > 20000) this.#labelSizes.clear();
+      this.#labelSizes.set(key, label);
+    }
+    const half = size / 2;
+    const box = labelBox(
+      resolveLabelPosition(s),
+      half,
+      half,
+      label.width,
+      label.height,
+    );
+    return {
+      fullW: Math.max(half, box.x2) - Math.min(-half, box.x1),
+      fullH: Math.max(half, box.y2) - Math.min(-half, box.y1),
+    };
+  }
+
+  #labelSizes = new Map();
+  #measureContext = null;
 
   #nodeStyle(id) {
     const { data, classes } = this.#nodes.get(id);
@@ -658,16 +702,10 @@ export class WebGLGraphView {
     if (!this.#values.dragPhysics || !simulation) return;
     this.#stopPhysics?.();
     // Start from what's on screen (a transition may still be settling).
-    simulation.nodes.forEach((node, i) => {
-      const position = this.graph.livePositionOf(node.id());
-      if (!position) return;
-      simulation.x[i] = position.x;
-      simulation.y[i] = position.y;
-      simulation.vx[i] = simulation.vy[i] = 0;
-    });
+    simulation.setPositions((nodeId) => this.graph.livePositionOf(nodeId));
     simulation.fix(id, this.graph.livePositionOf(id));
     simulation.reheat(0.3);
-    const ids = simulation.nodes.map((node) => node.id());
+    const ids = simulation.ids;
     const entries = ids.map((nodeId) => [nodeId, 0, 0]);
     const stop = this.graph.addTicker(() => {
       simulation.tick();
@@ -677,7 +715,6 @@ export class WebGLGraphView {
       }
       this.graph.moveNodes(entries);
       if (simulation.isActive) return true;
-      simulation.apply(); // settled: the next layout starts from here
       this.#stopPhysics = null;
       return false;
     });
@@ -692,11 +729,8 @@ export class WebGLGraphView {
     if (simulation && this.#values.dragPhysics && this.#stopPhysics) {
       simulation.release(id);
       simulation.reheat(0); // cool down from here
-      return;
     }
-    // No physics: the node just stays where it was dropped.
-    const position = this.graph.livePositionOf(id);
-    if (position) this.cy.getElementById(id).position(position);
+    // Otherwise the node just stays where it was dropped (the next layout starts from what's on screen).
   }
 
   // ---------------------------------------------------------------- export

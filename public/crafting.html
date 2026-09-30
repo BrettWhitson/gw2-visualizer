@@ -1003,9 +1003,8 @@
       </div>
     </dialog>
 
-    <!-- Vendored UMD libraries (globals: cytoscape, cytoscapeDagre; see npm run vendor). `defer` keeps them in order, before the module. -->
+    <!-- Vendored UMD library (global: cytoscape, the classic renderer; see npm run vendor). `defer` runs it before the module. -->
     <script src="lib/cytoscape.min.js" defer></script>
-    <script src="lib/cytoscape-dagre.min.js" defer></script>
     <script type="module" src="src/main.js"></script>
   </body>
 </html>

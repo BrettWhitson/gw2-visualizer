@@ -24,7 +24,6 @@ const SHELL_URLS = [
   "manifest.webmanifest",
   "icons/icon.svg",
   "lib/cytoscape.min.js",
-  "lib/cytoscape-dagre.min.js",
   "src/home-main.js",
   "css/pages.css",
   "crafting.html",

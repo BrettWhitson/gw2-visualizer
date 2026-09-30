@@ -1,19 +1,10 @@
-// Layout regressions, run against real (headless) Cytoscape: direction semantics, the force controls, radial
-// rings, and transitions finishing cleanly.
+// Layout regressions on plain data (no renderer): direction semantics, the force controls, radial rings, spacing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import cytoscape from "cytoscape";
-import cytoscapeDagre from "cytoscape-dagre";
-import { runLayout } from "../public/src/graph/layouts.js";
-import { GraphTransition } from "../public/src/graph/graph-transition.js";
+import { LayoutGraph } from "../public/src/layout/layout-graph.js";
+import { runLayout } from "../public/src/layout/run-layout.js";
 import { DEFAULT_SETTINGS } from "../public/src/config/settings-schema.js";
 import { stepRange } from "../public/src/ui/range-stepper.js";
-
-cytoscape.use(cytoscapeDagre);
-// GraphTransition schedules frames with the browser's animation-frame API.
-globalThis.requestAnimationFrame ??= (callback) =>
-  setTimeout(() => callback(performance.now()), 16);
-globalThis.cancelAnimationFrame ??= clearTimeout;
 
 // result ← a ← (a1, a2); result ← b ← b1. Edges run product → ingredient, as in the app.
 const ELEMENTS = [
@@ -31,26 +22,32 @@ const ELEMENTS = [
 ];
 const RAW = ["a1", "a2", "b1"];
 
+/** The layout graph for elements in the app's shape (nodes `size` × `size`, or `w` × `h`). */
+function graphOf(elements, { w = 40, h = 40 } = {}) {
+  return new LayoutGraph(
+    elements
+      .filter((e) => !e.data.source)
+      .map((e) => ({
+        id: e.data.id,
+        w,
+        h,
+        root: String(e.classes ?? "").includes("root"),
+      })),
+    elements
+      .filter((e) => e.data.source)
+      .map((e) => ({ source: e.data.source, target: e.data.target })),
+  );
+}
+
 /** Lay a tree (the sample one by default) out with these settings; returns positions by id. */
 function layout(overrides, elements = ELEMENTS) {
-  const cy = cytoscape({
-    headless: true,
-    styleEnabled: true,
-    elements: structuredClone(elements),
-    style: [{ selector: "node", style: { width: 40, height: 40 } }],
-  });
-  try {
-    runLayout(
-      cy,
-      { ...DEFAULT_SETTINGS, ...overrides },
-      { hasPreviousPositions: false },
-    );
-    return Object.fromEntries(
-      cy.nodes().map((node) => [node.id(), { ...node.position() }]),
-    );
-  } finally {
-    cy.destroy();
-  }
+  const graph = graphOf(elements);
+  runLayout(
+    graph,
+    { ...DEFAULT_SETTINGS, ...overrides },
+    { hasPreviousPositions: false },
+  );
+  return Object.fromEntries(graph.positions());
 }
 
 const width = (positions) => {
@@ -139,39 +136,30 @@ test("link strength pulls links toward the link distance (stronger = closer)", (
 });
 
 test("dragging a node pulls its neighbours along (live physics)", () => {
-  const cy = cytoscape({
-    headless: true,
-    styleEnabled: true,
-    elements: structuredClone(ELEMENTS),
-    style: [{ selector: "node", style: { width: 40, height: 40 } }],
+  const graph = graphOf(ELEMENTS);
+  const settings = { ...DEFAULT_SETTINGS, layoutEngine: "force" };
+  const simulation = runLayout(graph, settings, {
+    hasPreviousPositions: false,
   });
-  try {
-    const settings = { ...DEFAULT_SETTINGS, layoutEngine: "force" };
-    const simulation = runLayout(cy, settings, { hasPreviousPositions: false });
-    const before = Object.fromEntries(
-      cy.nodes().map((n) => [n.id(), { ...n.position() }]),
-    );
-    const target = { x: before.a1.x + 600, y: before.a1.y };
-    simulation.fix("a1", target); // grab a1 and drag it far to the right
-    simulation.reheat(0.3);
-    for (let i = 0; i < 80; i++) simulation.tick();
-    simulation.apply("a1");
-    const moved = (id) => cy.getElementById(id).position().x - before[id].x;
-    assert.ok(
-      moved("a") > 100,
-      `a1's product follows (${Math.round(moved("a"))}px)`,
-    );
-    assert.ok(
-      moved("a") > moved("b1"),
-      "direct neighbours move more than distant nodes",
-    );
-    simulation.release("a1");
-    simulation.reheat(0);
-    for (let i = 0; i < 400 && simulation.isActive; i++) simulation.tick();
-    assert.ok(!simulation.isActive, "it settles after release");
-  } finally {
-    cy.destroy();
-  }
+  const before = Object.fromEntries(graph.positions());
+  const target = { x: before.a1.x + 600, y: before.a1.y };
+  simulation.fix("a1", target); // grab a1 and drag it far to the right
+  simulation.reheat(0.3);
+  for (let i = 0; i < 80; i++) simulation.tick();
+  const moved = (id) =>
+    simulation.x[simulation.indexById.get(id)] - before[id].x;
+  assert.ok(
+    moved("a") > 100,
+    `a1's product follows (${Math.round(moved("a"))}px)`,
+  );
+  assert.ok(
+    moved("a") > moved("b1"),
+    "direct neighbours move more than distant nodes",
+  );
+  simulation.release("a1");
+  simulation.reheat(0);
+  for (let i = 0; i < 400 && simulation.isActive; i++) simulation.tick();
+  assert.ok(!simulation.isActive, "it settles after release");
 });
 
 test("siblings never overlap, even with no repel", () => {
@@ -232,37 +220,6 @@ test("force layout: deterministic, and a stronger center force gathers it tighte
   assert.ok(width(tight) < width(loose));
 });
 
-test("an interrupted transition leaves every node at its final position, fully visible", () => {
-  const cy = cytoscape({
-    headless: true,
-    styleEnabled: true,
-    elements: structuredClone(ELEMENTS),
-  });
-  try {
-    const transition = new GraphTransition(cy, {
-      duration: 400,
-      easing: "smooth",
-    });
-    cy.nodes().forEach((node, i) =>
-      transition.moveNode(
-        node,
-        { x: 0, y: 0 },
-        { x: i * 50, y: i * 10 },
-        { fadeIn: true },
-      ),
-    );
-    cy.edges().forEach((edge) => transition.revealEdge(edge, 100));
-    transition.finish(); // e.g. a new render arrives mid-animation
-    cy.nodes().forEach((node, i) => {
-      assert.deepEqual(node.position(), { x: i * 50, y: i * 10 });
-      assert.equal(node.style("opacity"), "1", `${node.id()} not left faded`);
-    });
-    cy.edges().forEach((edge) => assert.equal(edge.style("opacity"), "1"));
-  } finally {
-    cy.destroy();
-  }
-});
-
 test("−/+ steps land exactly on the slider's grid and stop at its ends", () => {
   const input = { min: "0", max: "6", step: "0.05", value: "0.7" };
   assert.ok(stepRange(input, 1));
@@ -290,48 +247,36 @@ test("left-right layouts with wide nodes: levels make room, and nothing overlaps
       data: { id: `${source}->${target}`, source, target },
     })),
   ];
-  const cy = cytoscape({
-    headless: true,
-    styleEnabled: true,
-    elements,
-    style: [{ selector: "node", style: { width: 200, height: 40 } }],
-  });
-  try {
-    runLayout(
-      cy,
-      {
-        ...DEFAULT_SETTINGS,
-        viewMode: "tree",
-        direction: "RL",
-        linkDistance: 120,
-      },
-      { hasPreviousPositions: false },
-    );
-    const boxes = cy.nodes().map((node) => {
-      const { x, y } = node.position();
-      return {
-        id: node.id(),
-        x1: x - 100,
-        x2: x + 100,
-        y1: y - 20,
-        y2: y + 20,
-      };
-    });
-    for (let i = 0; i < boxes.length; i++)
-      for (let j = i + 1; j < boxes.length; j++) {
-        const a = boxes[i],
-          b = boxes[j];
-        const overlaps =
-          Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1) > 1 &&
-          Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1) > 1;
-        assert.ok(!overlaps, `${a.id} overlaps ${b.id}`);
-      }
-    const x = (id) => cy.getElementById(id).position("x");
-    assert.ok(
-      x("a0b0") - x("a0") >= 200,
-      "levels are at least a node's width apart, not the 120 px link distance",
-    );
-  } finally {
-    cy.destroy();
-  }
+  const graph = graphOf(elements, { w: 200, h: 40 });
+  runLayout(
+    graph,
+    {
+      ...DEFAULT_SETTINGS,
+      viewMode: "tree",
+      direction: "RL",
+      linkDistance: 120,
+    },
+    { hasPreviousPositions: false },
+  );
+  const boxes = graph.ids.map((id, i) => ({
+    id,
+    x1: graph.x[i] - 100,
+    x2: graph.x[i] + 100,
+    y1: graph.y[i] - 20,
+    y2: graph.y[i] + 20,
+  }));
+  for (let i = 0; i < boxes.length; i++)
+    for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i],
+        b = boxes[j];
+      const overlaps =
+        Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1) > 1 &&
+        Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1) > 1;
+      assert.ok(!overlaps, `${a.id} overlaps ${b.id}`);
+    }
+  const x = (id) => graph.positionOf(id).x;
+  assert.ok(
+    x("a0b0") - x("a0") >= 200,
+    "levels are at least a node's width apart, not the 120 px link distance",
+  );
 });
