@@ -165,8 +165,8 @@ Larger architectural changes that have been weighed but not made. Each is worth 
 **Our own graph engines: Prism and Tether** (replacing Cytoscape)
 - **Prism** (`src/render/`) draws, animates and handles input: WebGL2 instanced drawing of nodes, edges and
   arrowheads, a label layer, springs for every motion, partial GPU uploads (a frame costs what moves), hit-testing,
-  pan / zoom / pinch, tiled PNG export. It's the Renderer setting's "Prism (preview)"; Classic (Cytoscape) is still
-  the default while Prism proves itself, then Cytoscape goes.
+  pan / zoom / pinch, tiled PNG export. Prism is the default; Classic (Cytoscape) stays selectable under
+  Customize → Canvas → Renderer for now, and goes, with Cytoscape, once nobody needs it.
 - **Tether** (`src/layout/`) decides where things go: tidy and radial tree seeds, a layered layout for the merged
   view (ranks, crossing minimisation by barycentre sweeps and transposition, exact per-rank placement; it replaced
   dagre), and the physics (a deterministic force simulation with a Barnes-Hut quadtree and a hashed collision grid,

@@ -376,7 +376,7 @@ export class CraftingTreeApp {
    */
   changeSetting(key, value, redraw) {
     this.settings.set(key, value);
-    if (key === "renderer") {
+    if (key === "graphRenderer") {
       location.reload(); // the graph view is built once, at start
       return;
     }

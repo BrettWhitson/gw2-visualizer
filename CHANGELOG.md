@@ -5,14 +5,15 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 
 ## Unreleased
 
-- **Prism, the app's own renderer (preview).** **Customize → Canvas → Renderer → Prism** (or `?renderer=webgl`) draws
-  the crafting and What you can craft graphs on the GPU instead of with Cytoscape. It stays smooth with thousands of
-  items, and everything moves on springs, so a change can interrupt another without jumping: branches unfold from and
-  fold back into their parent, the view glides after a flick, hover and selection ease in and out, and colours blend
-  when they change (prices arriving, another colour mode). Hovered and selected lineages flow with travelling light
-  pulses. Nodes can be dragged, and the rest of the graph follows. Owned items and better buys glow, collapsed items
-  show a card stack, and Mystic Forge results get a ring and badge. PNG export, legend highlights, keyboard navigation,
-  touch (tap, double-tap, long-press, pinch), high-density screens and every style setting work in it too.
+- **Prism, the app's own renderer, is now the default.** It draws the crafting and What you can craft graphs on the
+  GPU instead of with Cytoscape. The previous renderer stays available for now under **Customize → Canvas → Renderer →
+  Classic** (or `?renderer=classic` for one visit). It stays smooth with thousands of items, and everything moves on
+  springs, so a change can interrupt another without jumping: branches unfold from and fold back into their parent,
+  the view glides after a flick, hover and selection ease in and out, and colours blend when they change (prices
+  arriving, another colour mode). Hovered and selected lineages flow with travelling light pulses. Nodes can be
+  dragged, and the rest of the graph follows. Owned items and better buys glow, collapsed items show a card stack, and
+  Mystic Forge results get a ring and badge. PNG export, legend highlights, keyboard navigation, touch (tap,
+  double-tap, long-press, pinch), high-density screens and every style setting work in it too.
 - **Tether, the app's own layout and physics.** Both renderers now lay graphs out with the app's own engine. The
   Merged view's layered layout replaces dagre, and Prism no longer needs Cytoscape at all (it's still loaded for
   Classic).
