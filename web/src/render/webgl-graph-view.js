@@ -17,6 +17,8 @@ export class WebGLGraphView {
   #settings;
   #view;
   #pageRules = {};
+  /** Prism options that win over the settings (a design-branch prototype turning something off). */
+  #optionOverrides = {};
   /** What was last handed to Prism, so unchanged settings don't restyle everything. */
   #sent = { options: "", theme: "", rules: "" };
 
@@ -77,9 +79,17 @@ export class WebGLGraphView {
   }
 
   #syncOptions() {
-    this.#sync("options", prismOptions(this.#settings.values), (options) =>
-      this.#view.setOptions(options),
+    this.#sync(
+      "options",
+      { ...prismOptions(this.#settings.values), ...this.#optionOverrides },
+      (options) => this.#view.setOptions(options),
     );
+  }
+
+  /** Options that override the settings until cleared (`{}`), e.g. `{ pinSelectionLineage: false }`. */
+  setOptionOverrides(overrides) {
+    this.#optionOverrides = overrides ?? {};
+    this.#syncOptions();
   }
 
   /**
@@ -265,5 +275,26 @@ export class WebGLGraphView {
 
   boundingBox() {
     return this.#view.boundingBox();
+  }
+
+  // ---------------------------------------------------------------- camera and events (the minimap)
+
+  /** `{ zoom, panX, panY }`, where a graph point (x, y) is drawn at (x·zoom + panX, y·zoom + panY). */
+  getViewport() {
+    return this.#view.getViewport();
+  }
+
+  setViewport(viewport, options) {
+    this.#view.setViewport(viewport, options);
+  }
+
+  /** Every node's position now: id → { x, y } (graph coordinates). */
+  positions() {
+    return this.#view.positions();
+  }
+
+  /** Subscribe to a Prism event (viewportChange, render, drag, physicsStart…); returns the unsubscribe. */
+  on(type, listener) {
+    return this.#view.on(type, listener);
   }
 }

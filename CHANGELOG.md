@@ -5,6 +5,11 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 
 ## Unreleased
 
+- **Design branch prototypes** (the `design` branch only; experiments from the Hybrid redesign, each switchable in the
+  new **Lab** menu so it can be compared with today's crafting page): edges coloured by where each ingredient comes
+  from, with an edge key in the legend; a **View** popover (V) with the presets and the ribbon's controls in place of
+  the ribbon, and All settings for the rest; a KPI strip with the craft cost, Trading Post price, profit after the 15%
+  fee and margin; and a minimap you can click or drag to move the view.
 - **The site is now built with Vite** (phase 1 of moving to Svelte; nothing looks or works differently). Pages load
   a handful of bundled, content-hashed files instead of about 80 separate modules: the crafting page drops from 82
   requests and 408 KB to 9 requests and 285 KB (gzip, Cytoscape and the Mystic Forge data included). Hashed files are

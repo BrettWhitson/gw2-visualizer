@@ -39,6 +39,7 @@ import { RibbonPopout } from "./ui/ribbon-popout.js";
 import { sectionResetKeys } from "./ui/ribbon-sections.js";
 import { StatusBar, LoadingOverlay, SidePanel } from "./ui/app-chrome.js";
 import { ToastCenter } from "./ui/toast.js";
+import { DesignLab } from "./design/design-lab.js";
 import {
   querySelector as $,
   querySelectorAll as $$,
@@ -206,6 +207,7 @@ export class CraftingTreeApp {
         onViewportChange: () => this.tooltip.hide(),
       },
     });
+    this.designLab = new DesignLab(this);
   }
 
   async start() {
@@ -230,6 +232,7 @@ export class CraftingTreeApp {
       if (this.treeState.hasRoot)
         this.#render({ anchorNodeId: this.#anchorNodeId() });
     });
+    this.designLab.start();
     this.optionPanels.forEach((panel) => panel.render());
     this.toolbar.sync();
     // Phones start with the graph uncovered: toolbar and panel collapsed (for this visit only; the handles open them).
@@ -283,6 +286,7 @@ export class CraftingTreeApp {
     this.legend.update(this.graph.nodesById, 0);
     this.detailsPanel.render(null);
     this.shoppingListPanel.render(null);
+    this.designLab.refresh();
     this.statusBar.setCounts(0, 0);
     $("#rootQty").value = this.treeState.rootQuantity;
     this.#syncRootControls();
@@ -700,6 +704,7 @@ export class CraftingTreeApp {
       this.graph.nodesById.get(this.treeState.selectedNodeId) ?? null,
     );
     this.shoppingListPanel.render(this.tree);
+    this.designLab.refresh();
   }
 
   /** Fetch trading-post prices for everything in the tree; update in place when they arrive. */

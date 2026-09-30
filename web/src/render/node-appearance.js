@@ -100,7 +100,13 @@ export class NodeAppearance {
       product = nodesById.get(edge.sourceId);
     return {
       group: "edges",
-      classes: isForgeResult(product) ? "mf" : "",
+      // "src-<category>": where the ingredient comes from (the design branch's source-coloured edges).
+      classes: [
+        isForgeResult(product) && "mf",
+        `src-${getSourceCategory(ingredient)}`,
+      ]
+        .filter(Boolean)
+        .join(" "),
       data: {
         id: edge.edgeId,
         source: edge.sourceId,

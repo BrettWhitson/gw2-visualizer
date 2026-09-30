@@ -1,0 +1,247 @@
+/* Design-branch prototypes (src/design/design-lab.js): Lab menu, View popover, KPI strip, minimap. */
+
+/* ---------- the ribbon gives way to the View popover ---------- */
+body.dl-no-ribbon #toolbar,
+body.dl-no-ribbon #ribbonHandle,
+body.dl-no-ribbon #ribbonPopout {
+  display: none !important;
+}
+.dl-view-btn,
+.dl-lab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dl-view-btn[hidden] {
+  display: none;
+}
+.dl-view-btn .ico {
+  width: 15px;
+  height: 15px;
+}
+.dl-view-btn[aria-expanded="true"],
+.dl-lab-btn[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+
+/* ---------- popovers ---------- */
+.dl-pop {
+  position: fixed;
+  z-index: 60;
+  width: 330px;
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+  padding: 10px 12px 12px;
+}
+.dl-pop[hidden] {
+  display: none;
+}
+.dl-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.dl-note {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.dl-feature {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 7px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.dl-feature:hover {
+  background: var(--panel2);
+}
+.dl-feature input {
+  margin-top: 3px;
+}
+.dl-feature b {
+  display: block;
+  font-weight: 600;
+}
+.dl-feature small {
+  display: block;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+/* View popover: quick rows, then the options list */
+.dl-row {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.dl-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.dl-pair select {
+  width: 100%;
+}
+.dl-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+}
+.dl-seg button {
+  flex: 1;
+  border: 0;
+  background: none;
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.dl-seg button.on {
+  background: var(--panel2);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.dl-step {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  width: max-content;
+}
+.dl-step button {
+  border: 0;
+  background: none;
+  width: 28px;
+  padding: 3px 0;
+}
+.dl-step output {
+  min-width: 36px;
+  text-align: center;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.dl-options {
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
+  padding-top: 4px;
+}
+.dl-foot {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+/* ---------- KPI strip ---------- */
+.dl-kpi {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  background: #0d1017e6;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+.dl-kpi[hidden] {
+  display: none;
+}
+.dl-k {
+  padding: 6px 14px;
+  border-left: 1px solid var(--line);
+  text-align: right;
+}
+.dl-k:first-child {
+  border-left: 0;
+}
+.dl-k > span {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.dl-k b {
+  font-size: 13.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.dl-k.up b {
+  color: #3fb68b;
+}
+.dl-k.down b {
+  color: var(--danger);
+}
+.dl-chip {
+  font-style: normal;
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 999px;
+  vertical-align: 1px;
+}
+.dl-chip.up {
+  background: #3fb68b26;
+}
+.dl-chip.down {
+  background: #e0645c26;
+}
+
+/* ---------- minimap ---------- */
+.dl-minimap {
+  position: absolute;
+  right: 56px;
+  bottom: 12px;
+  z-index: 3;
+  width: 184px;
+  height: 120px;
+  background: #0d1017e6;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: crosshair;
+  touch-action: none;
+}
+.dl-minimap[hidden] {
+  display: none;
+}
+
+/* ---------- legend: edge-colour swatches ---------- */
+#legend i.lg-line {
+  width: 14px;
+  height: 3px;
+  border: 0;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+@media (max-width: 700px) {
+  .dl-minimap,
+  .dl-lab-btn span:last-child,
+  .dl-view-btn span {
+    display: none;
+  }
+  .dl-kpi {
+    left: 12px;
+    right: auto;
+    top: 8px;
+    flex-wrap: wrap;
+  }
+}

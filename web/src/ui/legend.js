@@ -26,6 +26,7 @@ import {
  * @property {string} color
  * @property {'double' | 'dashed'} [border]
  * @property {string} [image]
+ * @property {boolean} [line]  drawn as a line swatch (an edge colour)
  * @property {number} count  How many drawn nodes match.
  */
 
@@ -36,6 +37,8 @@ import {
 export class Legend {
   /** @type {LegendEntry[]} */ entries = [];
   /** @type {Set<string>} */ selectedKeys = new Set();
+  /** Optional extra entries after the colour mode's (the design branch's edge-source key). @type {null | (() => LegendEntry[])} */
+  extraEntries = null;
   #nodesById = new Map();
   #rootCost = 0;
   /** Collapsed to a single toggle button; starts collapsed on phone-sized screens. */
@@ -152,7 +155,9 @@ export class Legend {
         .join(" ");
       const swatch = entry.image
         ? `<img class="mfb" src="${entry.image}">`
-        : `<i style="border-color:${entry.color}${entry.border ? `;border-style:${entry.border}` : ""}"></i>`;
+        : entry.line
+          ? `<i class="lg-line" style="background:${entry.color}"></i>`
+          : `<i style="border-color:${entry.color}${entry.border ? `;border-style:${entry.border}` : ""}"></i>`;
       return `<button type="button" class="${classes}" data-key="${escapeHtml(entry.key)}" aria-pressed="${this.selectedKeys.has(entry.key)}" title="Click to highlight · double-click to zoom to them">${swatch}${escapeHtml(entry.label)}<small>${entry.count}</small></button>`;
     });
     if (this.selectedKeys.size)
@@ -215,6 +220,9 @@ export class Legend {
           ENTITY_KIND_COLORS[EntityKind.currency],
         );
     }
+    for (const extra of this.extraEntries?.() ?? [])
+      if (!entries.some((entry) => entry.key === extra.key))
+        add(extra.key, extra.label, extra.color, extra);
     if (s.forgeIndicator !== "off")
       add("flag:mf", "Forge craft", FORGE_COLOR, { image: FORGE_BADGE_URI });
     add("flag:collapsed", "Collapsed", UI_COLORS.accentLight, {
