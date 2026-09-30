@@ -35,6 +35,9 @@ const MIRRORS = {
   accentLight: "brand-light",
   nodeFill: "raised",
   danger: "down",
+  gold: "gold",
+  silver: "silver",
+  copper: "copper",
 };
 
 test("UI_COLORS mirrors the design tokens", () => {

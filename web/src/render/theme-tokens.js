@@ -6,6 +6,10 @@ const TOKENS = {
   nodeFill: ["raised", UI_COLORS.nodeFill],
   labelText: ["text", UI_COLORS.text],
   edgeLabelText: ["muted", UI_COLORS.muted],
+  cardBorder: ["line", UI_COLORS.line],
+  cardText: ["text", UI_COLORS.text],
+  cardMuted: ["muted", UI_COLORS.muted],
+  portFill: ["bg", UI_COLORS.canvas],
 };
 
 /**

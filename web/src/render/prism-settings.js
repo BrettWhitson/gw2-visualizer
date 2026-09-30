@@ -90,6 +90,8 @@ export function prismOptions(s) {
     canvasBackground: s.canvasBackground,
 
     animationsEnabled: s.animationsEnabled,
+    nodeLook: s.nodeLook,
+    cardConnectors: s.cardConnectors,
     animationDuration: s.animationDuration,
     animationEasing: s.animationEasing,
     growNewGraphs: s.growNewTrees,

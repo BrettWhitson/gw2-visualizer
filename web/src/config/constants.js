@@ -198,6 +198,9 @@ export const UI_COLORS = {
   lineageDown: "#62a4da",
   focus: "#62a4da",
   danger: "#ef5f5f", // --down
+  gold: "#e2b54f", // --gold
+  silver: "#b9bec7", // --silver
+  copper: "#c98244", // --copper
   owned: "#4fc1b0", // covered by the account's own items
   good: "#8fd07a",
 };

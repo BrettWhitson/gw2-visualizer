@@ -19,6 +19,11 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
   framed; click or drag it to move the view.
 - **Fixed: on phones, the toolbar and side panel stayed collapsed on later visits.** They start collapsed on a small
   screen for that visit only, but the next change to any setting used to save that too.
+- **Items as cards** (Customize → Nodes → Items as): wide cards with the item's name, quantity and where it comes from,
+  its cost in coins and what you own, a rarity stripe and dots where the lines meet. Icons stay the default. Card
+  links chooses dots, arrowheads or both. Drawn by Prism 0.3.0.
+- The Characters page is now a Svelte app (phase 3 of the move to Svelte, first page). It looks and works as before:
+  the list, each character's armory, the view choices (focus and scroll kept when they redraw) and the gear tooltips.
 - The legend is the site's first Svelte component (phase 2 of the move to Svelte). It looks and works as before, and
   now follows setting changes on its own.
 - Development: Svelte 5, with `svelte-check`, ESLint and Prettier covering `.svelte` files in `npm run verify`.

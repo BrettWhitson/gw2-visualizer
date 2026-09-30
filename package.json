@@ -33,7 +33,7 @@
     "globals": "^17.12.0",
     "prettier": "3.9.9",
     "prettier-plugin-svelte": "4.1.1",
-    "prism": "github:BrettWhitson/prism#v0.2.0",
+    "prism": "github:BrettWhitson/prism#v0.3.0",
     "svelte": "5.57.1",
     "svelte-check": "4.7.6",
     "tether": "github:BrettWhitson/tether#v0.2.0",
