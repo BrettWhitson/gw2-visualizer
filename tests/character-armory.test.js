@@ -380,9 +380,16 @@ test("effects list the relic first and strip game markup", () => {
 test("unknown items are shown as missing instead of failing", () => {
   const character = makeCharacter();
   character.equipment_tabs[1].equipment[0].id = 999999;
-  const { slots } = buildArmory(character, CATALOGS, 2);
+  character.equipment_tabs[1].equipment[1].upgrades = [888888];
+  const { slots, missingItemIds } = buildArmory(character, CATALOGS, 2);
   assert.equal(slots.Helm.missing, true);
   assert.equal(slots.Helm.name, "Unknown item #999999");
+  assert.equal(slots.Shoulders.upgrades[0].name, "Unknown upgrade #888888");
+  assert.deepEqual(
+    missingItemIds.sort(),
+    [888888, 999999],
+    "reported, so the page can say the totals are incomplete",
+  );
 });
 
 test("parseRuneBonus", () => {

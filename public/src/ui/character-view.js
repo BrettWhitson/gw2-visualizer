@@ -41,7 +41,7 @@ export function characterListHtml(characters, accountName) {
       </a></li>`;
     })
     .join("");
-  return `<h2 class="page-title">${escapeHtml(accountName ?? "Characters")}<span class="muted"> · ${characters.length} characters</span></h2>
+  return `<h2 class="page-title">${escapeHtml(accountName ?? "Characters")}<span class="muted"> · ${characters.length} character${characters.length === 1 ? "" : "s"}</span></h2>
     <ul class="char-list">${cards}</ul>`;
 }
 
@@ -231,6 +231,7 @@ export function armoryHtml(armory, weaponSet) {
         <div class="control"><span class="control-label">Stats with weapon</span><div class="seg">${setButtons}</div></div>
       </div>
     </div>
+    ${armory.missingItemIds.length ? `<p class="notice">${armory.missingItemIds.length} item${armory.missingItemIds.length > 1 ? "s" : ""} couldn't be looked up in the API, so the totals below may be incomplete. Reload to try again.</p>` : ""}
     <div class="paper-doll">
       <div class="gear-column"><h3>Armor</h3>${SLOT_GROUPS.armor.map((slot) => tile(slot)).join("")}</div>
       <div class="stat-column">${statPanelHtml(armory.totals[weaponSet], tip)}</div>

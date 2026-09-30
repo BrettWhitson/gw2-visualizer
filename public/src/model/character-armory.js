@@ -284,6 +284,7 @@ function describeUpgrade(id, items) {
       attributes: [],
       buff: "",
       bonuses: [],
+      missing: true,
     };
   const details = item.details ?? {};
   const infix = details.infix_upgrade ?? {};
@@ -660,5 +661,14 @@ export function buildArmory(character, catalogs, tab = null) {
     ),
     defaultSet: slots.WeaponA1 || slots.WeaponA2 ? "A" : "B",
     missingStatIds: [...statIds].filter((id) => !catalogs.itemstats.has(id)),
+    // Items the API didn't return: their stats are missing from the totals.
+    missingItemIds: Object.values(slots)
+      .flatMap((piece) => [
+        piece,
+        ...(piece.upgrades ?? []),
+        ...(piece.infusions ?? []),
+      ])
+      .filter((entry) => entry.missing)
+      .map((entry) => entry.id),
   };
 }

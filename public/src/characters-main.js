@@ -35,65 +35,83 @@ class CharactersPage {
     $("#changeKey").addEventListener("click", () => this.showKeyPanel());
     $("#forgetKey").addEventListener("click", () => {
       this.keys.clear();
-      this.characters = null;
       this.showKeyPanel();
     });
     window.addEventListener("hashchange", () => this.render());
     this.bindTooltips();
 
     const saved = this.keys.get();
-    if (saved) this.connect(saved, true);
+    if (saved) this.connect(saved, true, { saved: true });
     else this.showKeyPanel();
   }
 
-  showKeyPanel(error = "") {
+  /** Any view change: an armory still loading must not draw over what replaced it. */
+  #invalidate() {
+    return ++this.renderToken;
+  }
+
+  /** Back to the key form; the previous account's data is dropped so nothing of it can reappear. */
+  showKeyPanel(error = "", { keepInput = false } = {}) {
+    this.#invalidate();
+    this.characters = null;
+    this.accountName = null;
+    this.choices.clear();
     $("#keyPanel").hidden = false;
     $("#keyStatus").hidden = true;
-    $("#characterContent").innerHTML = "";
+    this.setContent("");
     $("#keyError").textContent = error;
-    $("#apiKey").value = "";
+    if (!keepInput) $("#apiKey").value = "";
     $("#apiKey").focus();
   }
 
-  async connect(rawKey, remember) {
+  async connect(rawKey, remember, { saved = false } = {}) {
     const key = rawKey.trim();
     if (!looksLikeApiKey(key)) {
       this.showKeyPanel(
         "That doesn't look like a GW2 API key: it should be 72 characters of letters, digits and hyphens.",
+        { keepInput: true },
       );
       return;
     }
+    const token = this.#invalidate();
     $("#keyPanel").hidden = true;
     this.setContent('<p class="loading">Connecting to your account…</p>');
     const client = new AccountClient(key);
+    let account, characters, missing;
     try {
-      const token = await client.tokenInfo();
-      const missing = CHARACTER_SCOPES.filter(
-        (scope) => !token.permissions?.includes(scope),
+      const info = await client.tokenInfo();
+      missing = CHARACTER_SCOPES.filter(
+        (scope) => !info.permissions?.includes(scope),
       );
       if (missing.includes("characters")) {
+        if (saved) this.keys.clear();
         this.showKeyPanel(
           `This key doesn't have the characters permission. Create a key with: ${CHARACTER_SCOPES.join(", ")}.`,
         );
         return;
       }
-      const [account, characters] = await Promise.all([
+      [account, characters] = await Promise.all([
         client.account(),
         client.characters(),
         this.catalogs.loadSpecializations(),
       ]);
-      this.keys.set(key, { remember });
-      this.accountName = account.name;
-      this.characters = characters;
-      this.missingScopes = missing;
     } catch (error) {
+      if (token !== this.renderToken) return;
+      // The API answers an invalid key with 400, a deleted one with 401 / 403.
+      const rejected = [400, 401, 403].includes(error.status);
+      if (rejected && saved) this.keys.clear();
       this.showKeyPanel(
-        [400, 401, 403].includes(error.status) // the API answers an invalid key with 400
+        rejected
           ? "The API rejected this key. It may have been deleted, or mistyped."
           : `Couldn't reach the Guild Wars 2 API (${error.message}). Try again in a moment.`,
       );
       return;
     }
+    if (token !== this.renderToken) return; // the key form was reopened meanwhile
+    this.keys.set(key, { remember });
+    this.accountName = account.name;
+    this.characters = characters;
+    this.missingScopes = missing;
     $("#keyAccount").textContent = this.accountName;
     $("#keyStatus").hidden = false;
     this.render();
@@ -101,8 +119,13 @@ class CharactersPage {
 
   render() {
     if (!this.characters) return;
-    this.hideTip();
-    const name = decodeURIComponent(location.hash.slice(1));
+    this.#invalidate();
+    let name = "";
+    try {
+      name = decodeURIComponent(location.hash.slice(1));
+    } catch {
+      /* malformed hash: show the list */
+    }
     const character = name
       ? this.characters.find((candidate) => candidate.name === name)
       : null;
@@ -122,48 +145,47 @@ class CharactersPage {
   }
 
   async renderArmory(character) {
-    const token = ++this.renderToken;
+    const token = this.#invalidate();
     this.setContent(
       `<p class="loading">Loading ${escapeHtml(character.name)}'s gear…</p>`,
     );
     try {
       await this.catalogs.loadFor(character);
+      if (token !== this.renderToken) return; // the user moved on while this loaded
+
+      const choice = this.choices.get(character.name) ?? {};
+      const armory = buildArmory(character, this.catalogs, choice.tab ?? null);
+      const weaponSet = choice.weaponSet ?? armory.defaultSet;
+      const { html, tooltips } = armoryHtml(armory, weaponSet);
+      this.tooltips = tooltips;
+      this.setContent(html);
+
+      const content = $("#characterContent");
+      content.querySelectorAll("[data-tab]").forEach((button) =>
+        button.addEventListener("click", () => {
+          this.choices.set(character.name, {
+            ...choice,
+            tab: Number(button.dataset.tab),
+          });
+          this.renderArmory(character);
+        }),
+      );
+      content.querySelectorAll("[data-weapon-set]").forEach((button) =>
+        button.addEventListener("click", () => {
+          this.choices.set(character.name, {
+            ...choice,
+            tab: armory.tab,
+            weaponSet: button.dataset.weaponSet,
+          });
+          this.renderArmory(character);
+        }),
+      );
     } catch (error) {
       if (token === this.renderToken)
         this.setContent(
-          `<p class="empty">Couldn't load item details: ${escapeHtml(error.message)}</p>`,
+          `<p class="empty">Couldn't show ${escapeHtml(character.name)}'s gear: ${escapeHtml(error.message)}</p>`,
         );
-      return;
     }
-    if (token !== this.renderToken) return; // the user moved on while this loaded
-
-    const choice = this.choices.get(character.name) ?? {};
-    const armory = buildArmory(character, this.catalogs, choice.tab ?? null);
-    const weaponSet = choice.weaponSet ?? armory.defaultSet;
-    const { html, tooltips } = armoryHtml(armory, weaponSet);
-    this.tooltips = tooltips;
-    this.setContent(html);
-
-    const content = $("#characterContent");
-    content.querySelectorAll("[data-tab]").forEach((button) =>
-      button.addEventListener("click", () => {
-        this.choices.set(character.name, {
-          ...choice,
-          tab: Number(button.dataset.tab),
-        });
-        this.renderArmory(character);
-      }),
-    );
-    content.querySelectorAll("[data-weapon-set]").forEach((button) =>
-      button.addEventListener("click", () => {
-        this.choices.set(character.name, {
-          ...choice,
-          tab: armory.tab,
-          weaponSet: button.dataset.weaponSet,
-        });
-        this.renderArmory(character);
-      }),
-    );
   }
 
   setContent(html) {

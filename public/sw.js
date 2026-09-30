@@ -78,12 +78,17 @@ self.addEventListener("fetch", (event) => {
   // Everything else (GW2 API, wiki links) goes straight to the network.
 });
 
-/** Each page is cached under its own file name; the site root and unknown paths fall back to index.html. */
+/**
+ * Each page is cached under its own file name; the site root and unknown paths fall back to index.html. Hosts that
+ * serve pretty URLs (Cloudflare Pages redirects /characters.html to /characters) are matched without the extension.
+ */
 function navigationCacheKey(url) {
-  const page = url.pathname.split("/").pop();
-  return SHELL_URLS.includes(page) && page.endsWith(".html")
-    ? page
-    : "index.html";
+  const name = url.pathname
+    .split("/")
+    .pop()
+    .replace(/.html$/, "");
+  const page = `${name}.html`;
+  return name && SHELL_URLS.includes(page) ? page : "index.html";
 }
 
 /** @param {Request} request  @param {string} [cacheKey] store under this key instead (navigations → their page) */
