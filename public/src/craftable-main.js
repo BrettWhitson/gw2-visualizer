@@ -346,10 +346,7 @@ class CraftablePage {
       this.#openRoot(previous.itemId, { keep: previous.view });
     // Prices, then profits: what each item sells for, minus what its materials would. Only what can matter is
     // priced: craftable items that can be traded, and owned items that feed something craftable.
-    const tradeable = (id) =>
-      !(this.gameData.items.get(id)?.flags ?? []).some(
-        (flag) => flag === "AccountBound" || flag === "SoulbindOnAcquire",
-      );
+    const tradeable = (id) => this.#isTradeable(id);
     const fetchPrices = async (ids) => {
       try {
         await this.priceBook.ensure(ids.filter(tradeable), { force });
@@ -402,6 +399,13 @@ class CraftablePage {
     }
   }
 
+  /** Can it go on the Trading Post at all (only those are priced here)? */
+  #isTradeable(id) {
+    return !(this.gameData.items.get(id)?.flags ?? []).some(
+      (flag) => flag === "AccountBound" || flag === "SoulbindOnAcquire",
+    );
+  }
+
   /** "Account data 3 h ago · prices 3 h ago · Refresh", and whether updates are manual. */
   #renderDataBar() {
     const bar = $("#craftData");
@@ -410,7 +414,10 @@ class CraftablePage {
       return;
     }
     const now = Date.now();
-    const pricesAt = this.priceBook.oldestFetchedAt(this.craftable.keys());
+    // Only what this page prices: account-bound items keep whatever age another page gave them.
+    const pricesAt = this.priceBook.oldestFetchedAt(
+      [...this.craftable.keys()].filter((id) => this.#isTradeable(id)),
+    );
     const parts = [
       this.account.fetchedAt != null
         ? `Account data ${formatAge(now - this.account.fetchedAt)}`
@@ -545,11 +552,15 @@ class CraftablePage {
     return this.priceBook.fetchFailed?.(itemId) ?? false;
   }
 
-  /** "no buyers", or "price unavailable" when fetching it failed. */
+  /** Why an item has no price: account bound, fetching it failed, not fetched yet, or no buy orders. */
   #noPriceHtml(itemId) {
-    return this.#priceFailed(itemId)
-      ? `<span class="muted" title="The price couldn't be fetched. Refresh to retry.">price unavailable</span>`
-      : '<span class="muted" title="No buy orders">no buyers</span>';
+    if (!this.#isTradeable(itemId))
+      return '<span class="muted" title="Account bound: it can\'t be sold">account bound</span>';
+    if (this.#priceFailed(itemId))
+      return `<span class="muted" title="The price couldn't be fetched. Refresh to retry.">price unavailable</span>`;
+    if (!this.priceBook.has(itemId))
+      return '<span class="muted" title="Fetching its price…">…</span>';
+    return '<span class="muted" title="No buy orders">no buyers</span>';
   }
 
   #nameOf(itemId) {
@@ -938,7 +949,9 @@ class CraftablePage {
       this.#select(null);
     const productCount = this.graph.nodes.length - 1;
     this.#status(
-      `${formatNumber(productCount)} item${productCount === 1 ? "" : "s"} shown · double-click a node to see what it makes in turn`,
+      productCount
+        ? `${formatNumber(productCount)} item${productCount === 1 ? "" : "s"} shown · double-click a node to see what it makes in turn`
+        : "Nothing you can craft uses it",
     );
   }
 
