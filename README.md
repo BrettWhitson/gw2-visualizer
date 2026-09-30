@@ -11,7 +11,7 @@ Guild Wars 2 tools that run entirely in the browser and install as a PWA:
 - **Your account in the crafting explorer:** with a key connected, what you already own is used first, so costs and
   the shopping list show only what's left to buy, and missing crafting levels are flagged.
 
-**Live: [gw2visualizer.com](https://gw2visualizer.com)** · Current version: **0.10.0** · [Changelog](CHANGELOG.md) · [Next steps](#next-steps) · [Roadmap](#roadmap) · [Considerations](#considerations)
+**Live: [gw2visualizer.com](https://gw2visualizer.com)** · Current version: **0.11.0** · [Changelog](CHANGELOG.md) · [Next steps](#next-steps) · [Roadmap](#roadmap) · [Considerations](#considerations)
 
 ## Using it
 

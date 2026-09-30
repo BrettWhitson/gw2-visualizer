@@ -1,6 +1,6 @@
 {
   "name": "gw2-visualizer",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "license": "MIT",
   "description": "GW2 Visualizer: interactive Guild Wars 2 crafting tree explorer (static web app, built with Vite).",

@@ -5,7 +5,7 @@
 
 // ---------------------------------------------------------------- release
 /** Bump on every release: it versions the service-worker cache so users get the new build. */
-export const APP_VERSION = "0.10.0";
+export const APP_VERSION = "0.11.0";
 export const REPOSITORY_URL = "https://github.com/BrettWhitson/gw2-visualizer"; // shown in About; the wiki contact
 
 /** ArenaNet's Content Terms of Use require fan sites to be labelled unofficial, including in the browser title bar. */

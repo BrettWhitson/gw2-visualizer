@@ -3,7 +3,7 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `web/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
-## Unreleased
+## 0.11.0 — 2026-09-30
 
 - **Fixed: costs missing on a return visit.** With prices already saved in the browser and still fresh (always the
   case with manual price updates, the default), the crafting page showed no costs until something else redrew it,
