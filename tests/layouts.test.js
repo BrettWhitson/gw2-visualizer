@@ -329,7 +329,7 @@ test("waking the physics (a drag, a tap) doesn't slide the graph", () => {
   }
 });
 
-test("floating: grabbing a node moves nothing by itself, and a small nudge stays near it", () => {
+test("floating: grabbing a node moves nothing by itself, a small nudge is absorbed, and a real drag pulls its product", () => {
   // result → 3 products → 6 ingredients each.
   const elements = [{ data: { id: "r" }, classes: "root" }];
   for (let a = 0; a < 3; a++) {
@@ -377,16 +377,18 @@ test("floating: grabbing a node moves nothing by itself, and a small nudge stays
       Math.max(...held.values()) < 1e-6,
       `${direction}: grabbing alone moved something ${Math.max(...held.values())}`,
     );
+    // Tether's dead zone keeps barely-pushed nodes still, so a small nudge stays in the leaf's own branch.
     const nudged = grab(direction, 8);
     const elsewhere = [...nudged].filter(([id]) => !id.startsWith("a0"));
     const most = Math.max(...elsewhere.map(([, d]) => d));
     assert.ok(
-      most < 8,
-      `${direction}: other branches moved up to ${most.toFixed(1)}`,
+      most < 1,
+      `${direction}: a nudge moved other branches up to ${most.toFixed(2)}`,
     );
+    const dragged = grab(direction, 40);
     assert.ok(
-      nudged.get("a0") > 0.1,
-      `${direction}: the leaf's product responds`,
+      dragged.get("a0") > 0.1,
+      `${direction}: a real drag reaches the leaf's product`,
     );
   }
 });
