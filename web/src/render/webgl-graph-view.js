@@ -6,6 +6,7 @@ import {
   prismOptions,
   prismTheme,
 } from "./prism-settings.js";
+import { tokenTheme } from "./theme-tokens.js";
 
 /**
  * Prism (the prism package, laid out and moved by Tether) behind the interface the pages use (render,
@@ -31,7 +32,7 @@ export class WebGLGraphView {
       container,
       canvasWrapper,
       options: prismOptions(values),
-      theme: prismTheme(values),
+      theme: this.#theme(),
       handlers,
       rendererOptions: {
         // ?screenshot keeps frames readable for screenshots (a little slower).
@@ -42,7 +43,7 @@ export class WebGLGraphView {
       },
     });
     this.#sent.options = JSON.stringify(prismOptions(values));
-    this.#sent.theme = JSON.stringify(prismTheme(values));
+    this.#sent.theme = JSON.stringify(this.#theme());
     this.#syncClassRules();
     // The page's graph container is the accessible surface (role, description, keyboard, live announcements).
     for (const canvas of [this.graph.canvas, this.graph.labelCanvas])
@@ -87,11 +88,14 @@ export class WebGLGraphView {
    * after every settings change, since some settings (hover highlight, zoom speed, background…) redraw nothing.
    */
   syncSettings() {
-    this.#sync("theme", prismTheme(this.#settings.values), (theme) =>
-      this.#view.setTheme(theme),
-    );
+    this.#sync("theme", this.#theme(), (theme) => this.#view.setTheme(theme));
     this.#syncClassRules();
     this.#syncOptions();
+  }
+
+  /** The settings' colours, over the design tokens (css/app.css). */
+  #theme() {
+    return { ...tokenTheme(), ...prismTheme(this.#settings.values) };
   }
 
   #syncClassRules() {

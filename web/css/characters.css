@@ -339,7 +339,7 @@
   max-height: calc(100vh - 16px);
   overflow-y: auto;
   padding: 10px 12px;
-  background: #0b0d12;
+  background: #0a0b0d;
   border: 1px solid var(--line);
   border-radius: 6px;
   box-shadow: 0 6px 24px rgb(0 0 0 / 50%);

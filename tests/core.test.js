@@ -22,7 +22,7 @@ test("coin formatting", () => {
   assert.equal(formatCoinsText(501), "5s 1c");
   assert.equal(formatCoinsText(7), "7c");
   assert.equal(formatCoinsText(-10050), "−1g 0s 50c");
-  assert.match(formatCoinsHtml(10000), /<span class="g">1g<\/span>/);
+  assert.match(formatCoinsHtml(10000), /<span class="g">1<i>g<\/i><\/span>/);
   assert.match(formatCoinsHtml(null), /—/);
   assert.equal(
     formatQuantity("currency", 1, 250),

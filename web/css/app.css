@@ -1,16 +1,34 @@
+/* Design tokens (the Hybrid direction, see gw2_design_WIP). Colours stay literal: UI_COLORS in config/constants.js
+   mirrors the ones the graph and PNG export need (a test keeps them in step), and theme-tokens.js reads them for Prism. */
 :root {
-  --bg: #0d1017;
-  --panel: #151a24;
-  --panel2: #1b2130;
-  --line: #2a3242;
-  --text: #e3e6ec;
-  --muted: #8a93a6;
-  --accent: #d6a74a;
-  --accent2: #f0c46a;
-  --danger: #e0645c;
-  --gold: #e5b83b;
-  --silver: #c0c4cc;
-  --copper: #c7793c;
+  --bg: #0e0f12;
+  --panel: #15171b;
+  --raised: #1c1f24;
+  --hover: #23262c;
+  --line: #2a2d34;
+  --line2: #353941;
+  --text: #e6e8eb;
+  --muted: #8d939e;
+  --faint: #5d636e;
+  --brand: #e2b54f;
+  --brand-light: #f0c46a;
+  --up: #3fb68b;
+  --down: #ef5f5f;
+  --gold: #e2b54f;
+  --silver: #b9bec7;
+  --copper: #c98244;
+  /* Where an item comes from (edges, legend, shopping list groups). */
+  --s-craft: #6ea0ff;
+  --s-forge: #b28cff;
+  --s-buy: #e0a05a;
+  --s-vendor: #5cc9a7;
+  --s-bound: #6b717c;
+  --shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+  /* Older names, kept while the stylesheets move over. */
+  --panel2: var(--raised);
+  --accent: var(--brand);
+  --accent2: var(--brand-light);
+  --danger: var(--down);
 }
 * {
   box-sizing: border-box;
@@ -449,7 +467,7 @@ main {
   position: relative;
   flex: 1;
   min-width: 0;
-  background: radial-gradient(circle at 50% 40%, #151b27 0%, var(--bg) 70%);
+  background: radial-gradient(circle at 50% 40%, #17191e 0%, var(--bg) 70%);
 }
 #cy {
   position: absolute;
@@ -629,7 +647,7 @@ table.mats {
 }
 table.mats td {
   padding: 3px 4px;
-  border-bottom: 1px solid #222938;
+  border-bottom: 1px solid var(--raised);
   vertical-align: middle;
 }
 table.mats tr {
@@ -649,17 +667,36 @@ table.mats tfoot td {
 }
 
 /* ---------- money ---------- */
+/* Tabular figures; gold in full, silver and copper quieter; each unit a small metallic coin dot. */
 .coin {
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
-.coin .g {
-  color: var(--gold);
-}
-.coin .s {
-  color: var(--silver);
-}
+.coin .s,
 .coin .c {
-  color: var(--copper);
+  color: var(--muted);
+}
+.coin i {
+  display: inline-block;
+  width: 0.56em;
+  height: 0.56em;
+  margin: 0 0.22em 0 0.1em;
+  border-radius: 50%;
+  vertical-align: 0.04em;
+  /* The letter stays for copying and screen readers, pushed out of the dot. */
+  overflow: hidden;
+  text-indent: 1em;
+  white-space: nowrap;
+  font-style: normal;
+}
+.coin .g i {
+  background: radial-gradient(circle at 35% 30%, #fff1c2, var(--gold) 60%);
+}
+.coin .s i {
+  background: radial-gradient(circle at 35% 30%, #fff, var(--silver) 60%);
+}
+.coin .c i {
+  background: radial-gradient(circle at 35% 30%, #f7cfa8, var(--copper) 60%);
 }
 .good {
   color: #8fd07a;
@@ -972,13 +1009,17 @@ table.mats tfoot td {
 }
 #cyWrap[data-bg="dots"] {
   background-color: var(--bg);
-  background-image: radial-gradient(circle, #2c3547 1.2px, transparent 1.6px);
+  background-image: radial-gradient(
+    circle,
+    var(--line2) 1.2px,
+    transparent 1.6px
+  );
 }
 #cyWrap[data-bg="grid"] {
   background-color: #0c1422;
   background-image:
-    linear-gradient(#17243a 1px, transparent 1px),
-    linear-gradient(90deg, #17243a 1px, transparent 1px);
+    linear-gradient(#1b1d22 1px, transparent 1px),
+    linear-gradient(90deg, #1b1d22 1px, transparent 1px);
 }
 
 /* ---------- motion ---------- */
@@ -1545,7 +1586,7 @@ button.danger:hover:not(:disabled) {
 .src-card > span {
   display: block;
   padding: 3px 0;
-  border-bottom: 1px solid #222938;
+  border-bottom: 1px solid var(--raised);
 }
 .src-card > span:last-child {
   border-bottom: 0;

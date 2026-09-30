@@ -93,11 +93,12 @@ export function prismOptions(s) {
   };
 }
 
-/** @param {object} s  settings values */
+/**
+ * The theme colours the settings choose. The rest follow the design tokens (render/theme-tokens.js).
+ * @param {object} s  settings values
+ */
 export function prismTheme(s) {
   return {
-    node: UI_COLORS.muted,
-    nodeFill: UI_COLORS.nodeFill,
     edge: s.edgeColor,
     ancestors: s.lineageUpColor,
     descendants: s.lineageDownColor,

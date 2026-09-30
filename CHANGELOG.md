@@ -5,6 +5,12 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 
 ## Unreleased
 
+- **Fixed: costs missing on a return visit.** With prices already saved in the browser and still fresh (always the
+  case with manual price updates, the default), the crafting page showed no costs until something else redrew it,
+  because loading the saved prices didn't count as prices arriving. Costs now appear straight away.
+- **A calmer, more neutral look**, the first step of the new design: neutral greys instead of blue-tinted ones, and
+  prices set in tabular figures with small gold, silver and copper coin dots, silver and copper quieter than gold.
+  The colours are design tokens in the stylesheet, and the graph takes its node and label colours from them.
 - **The site is now built with Vite** (phase 1 of moving to Svelte; nothing looks or works differently). Pages load
   a handful of bundled, content-hashed files instead of about 80 separate modules: the crafting page drops from 82
   requests and 408 KB to 9 requests and 285 KB (gzip, Cytoscape and the Mystic Forge data included). Hashed files are
