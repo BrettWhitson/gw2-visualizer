@@ -11,19 +11,7 @@ Guild Wars 2 tools that run entirely in the browser and install as a PWA:
 - **Your account in the crafting explorer:** with a key connected, what you already own is used first, so costs and
   the shopping list show only what's left to buy, and missing crafting levels are flagged.
 
-**Live: [gw2visualizer.com](https://gw2visualizer.com)** · Current version: **0.9.0** · [Changelog](CHANGELOG.md) · [Next steps](#next-steps) · [Roadmap](#roadmap) · [Considerations](#considerations)
-
-## Quick start
-
-Requires [Node.js](https://nodejs.org/) 22 or newer.
-
-```bash
-npm install
-npm run snapshot   # optional: build the game-data snapshot locally (~25 s); without it the app uses the API directly
-npm start          # http://localhost:8642
-```
-
-The app is plain ES modules, which browsers only load over http, so opening the HTML files in `public/` from disk won't work.
+**Live: [gw2visualizer.com](https://gw2visualizer.com)** · Current version: **0.10.0** · [Changelog](CHANGELOG.md) · [Next steps](#next-steps) · [Roadmap](#roadmap) · [Considerations](#considerations)
 
 ## Using it
 
@@ -301,26 +289,14 @@ back into `CraftingTreeApp` for actions. Settings changes carry a `Redraw` level
 - Release: update `CHANGELOG.md`, bump `APP_VERSION` (constants.js) and `version` (package.json) together, then
   `npm run verify`. The service-worker cache is keyed on the version, so returning users get a reload prompt.
 
-## Publishing
+## Security and fair use
 
-The site is static; `npm run build` writes the deployable files to `_site/`.
-
-| Host | How |
-|---|---|
-| **GitHub Pages** | Settings → Pages → Source: *GitHub Actions*. `deploy-pages.yml` verifies, builds a fresh data snapshot and deploys on every push to `main` and once a day. Paths are relative, so `https://<user>.github.io/<repo>/` works. |
-| **Netlify / Cloudflare Pages** | Build command `npm ci && npm run snapshot && npm run build`, publish directory `_site`. `_headers` supplies security and caching headers. |
-| **Anything else** | Run the same commands and upload `_site/`; serve over HTTPS with gzip / brotli. |
-
-For the weekly Mystic Forge refresh on GitHub, allow Actions to create pull requests (Settings → Actions → General →
-Workflow permissions). Before going public, set `REPOSITORY_URL` in `constants.js`: it's linked from About and is
-the contact the wiki updater identifies itself with.
-
-**In place:** a strict Content-Security-Policy (no inline scripts; only `api.guildwars2.com`, `render.guildwars2.com`
+The site runs with a strict Content-Security-Policy (no inline scripts; only `api.guildwars2.com`, `render.guildwars2.com`
 and `wiki.guildwars2.com` as third parties; keep the `<meta>` in every page and `_headers` in sync), HTML-escaped
 API and wiki text, an installable PWA with an offline shell, request timeouts with retry and back-off, graceful
 fallbacks when storage, the snapshot or the wiki is unavailable, and a pinned GW2 API schema version.
 
-### Staying within the rules
+### Staying within ArenaNet's rules
 
 - **ArenaNet's [Content Terms of Use](https://www.arena.net/en/legal/content-terms-of-use)** cover fan projects
   that use game content and the API. This app is run by an individual, free and non-commercial, labelled as an

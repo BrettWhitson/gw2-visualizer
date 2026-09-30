@@ -3,7 +3,7 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `public/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
-## Unreleased
+## 0.10.0 — 2026-09-30
 
 - **Prism, the app's own renderer, is now the default.** It draws the crafting and What you can craft graphs on the
   GPU instead of with Cytoscape. The previous renderer stays available for now under **Customize → Canvas → Renderer →
