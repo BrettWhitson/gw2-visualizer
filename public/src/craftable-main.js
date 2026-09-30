@@ -42,6 +42,7 @@ const PAGE_SIZE = 150;
 const GRAPH_OVERRIDES = {
   direction: "RL",
   arrowEnd: "ingredient",
+  flowToward: "target", // edges run ingredient → product here
   viewMode: "tree",
   showCostInLabel: false,
   edgeQuantityLabels: "on",
@@ -366,6 +367,7 @@ class CraftablePage {
             this.gameData.getEntity(EntityKind.item, id).rarity,
           ),
         countOf: (entry) => (isMaterials ? entry.productCount : entry.count),
+        quantityOf: (entry) => (isMaterials ? entry.owned : entry.count),
         disciplinesOf: (entry) => recipeDisciplines(entry.recipe),
         isAllowed: (entry) => isMaterials || this.#levelAllows(entry.recipe),
       },
@@ -374,6 +376,7 @@ class CraftablePage {
       const entity = this.gameData.getEntity(EntityKind.item, entry.itemId);
       const color = this.gameData.getEntityColor(EntityKind.item, entry.itemId);
       const price = priceOf(entry.itemId);
+      const quantity = isMaterials ? entry.owned : entry.count;
       const detail = isMaterials
         ? `you have ${formatNumber(entry.owned)} · makes ${formatNumber(entry.productCount)} thing${entry.productCount === 1 ? "" : "s"}`
         : `can make ${countLabel(entry.count)} · ${escapeHtml(recipeDisciplines(entry.recipe).join(", ") || "Recipe")}`;
@@ -381,7 +384,11 @@ class CraftablePage {
         ${entity.icon ? `<img src="${escapeHtml(entity.icon)}" alt="" loading="lazy" decoding="async" style="border-color:${color}">` : '<span class="no-icon"></span>'}
         <span class="craft-row-text"><span class="craft-row-name" style="color:${color}">${escapeHtml(entity.name)}</span>
         <span class="muted small">${detail}</span></span>
-        <span class="craft-row-price">${price != null ? formatCoinsHtml(price) : ""}</span>
+        <span class="craft-row-price">${
+          price != null
+            ? `${formatCoinsHtml(price)}${quantity > 1 ? `<span class="craft-row-total" title="Sell price × ${isMaterials ? "how many you have" : "how many you can make"}">${formatCoinsHtml(price * quantity)}${quantity >= MAX_COUNT && !isMaterials ? "+" : ""}</span>` : ""}`
+            : ""
+        }</span>
       </button>`;
     });
     const hiddenByLevels =

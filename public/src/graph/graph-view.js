@@ -471,12 +471,15 @@ export class GraphView {
     this.#flowEdges = edges;
     const frameIntervalMs =
       edges.length > PERFORMANCE_LIMITS.fullRateFlowEdges ? 50 : 0;
+    // A growing dash offset moves the dashes toward an edge's source. Crafting edges run product → ingredient, so
+    // that reads as materials flowing into what they make; graphs whose edges run the other way set flowToward.
+    const sign = this.#values.flowToward === "target" ? -1 : 1;
     let offset = 0,
       lastTime = performance.now();
     const tick = (time) => {
       this.#flowFrame = requestAnimationFrame(tick);
       if (time - lastTime < frameIntervalMs) return;
-      offset += (time - lastTime) * 0.03 * this.#values.flowSpeed;
+      offset += sign * (time - lastTime) * 0.03 * this.#values.flowSpeed;
       lastTime = time;
       this.#flowEdges?.style("line-dash-offset", offset);
     };

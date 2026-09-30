@@ -405,10 +405,12 @@ export const recipeDisciplines = (recipe) =>
 /**
  * Filter and sort list entries (`{ itemId, … }`).
  * @param {object[]} entries
- * @param {{ query?: string, discipline?: string, sort: "value" | "count" | "rarity" | "name",
+ * `profit` ranks by what the whole lot sells for: unit sell price × `quantityOf` (how many you can make, or own).
+ * @param {{ query?: string, discipline?: string, sort: "profit" | "value" | "count" | "rarity" | "name",
  *           nameOf: (id: number) => string, priceOf: (id: number) => number | null,
  *           rarityRankOf: (id: number) => number, countOf: (entry: object) => number,
- *           disciplinesOf?: (entry: object) => string[], isAllowed?: (entry: object) => boolean }} options
+ *           quantityOf?: (entry: object) => number, disciplinesOf?: (entry: object) => string[],
+ *           isAllowed?: (entry: object) => boolean }} options
  */
 export function filterAndSort(
   entries,
@@ -420,6 +422,7 @@ export function filterAndSort(
     priceOf,
     rarityRankOf,
     countOf,
+    quantityOf = countOf,
     disciplinesOf = () => [],
     isAllowed = () => true,
   },
@@ -432,7 +435,12 @@ export function filterAndSort(
       (!discipline || disciplinesOf(entry).includes(discipline)),
   );
   const byName = (a, b) => nameOf(a.itemId).localeCompare(nameOf(b.itemId));
+  const total = (entry) => {
+    const price = priceOf(entry.itemId);
+    return price == null ? -1 : price * quantityOf(entry);
+  };
   const compare = {
+    profit: (a, b) => total(b) - total(a),
     // Unpriced (untradeable) items after priced ones.
     value: (a, b) => (priceOf(b.itemId) ?? -1) - (priceOf(a.itemId) ?? -1),
     count: (a, b) => countOf(b) - countOf(a),

@@ -177,7 +177,7 @@ test("the lists: materials that lead somewhere, filtered and sorted", async () =
   const entries = [...craftable].map(([itemId, count]) => ({ itemId, count }));
   const options = {
     nameOf: (id) => names[id],
-    priceOf: (id) => ({ 1: 500, 2: 100 })[id] ?? null,
+    priceOf: (id) => ({ 1: 500, 2: 200 })[id] ?? null,
     rarityRankOf: (id) => (id === 1 ? 5 : 1),
     countOf: (entry) => entry.count,
   };
