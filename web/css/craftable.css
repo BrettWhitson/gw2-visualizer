@@ -1,0 +1,321 @@
+/* "What you can craft": a list beside a full-height graph. Builds on app.css (tokens, #cyWrap, #cy). */
+
+.craftable {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+}
+/* The graph reads left to right, so it keeps the full width: details dock below it, or beside it on wide screens. */
+.craft-graph {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+@media (min-width: 1400px) {
+  .craft-graph {
+    flex-direction: row;
+  }
+}
+
+/* ---------- list ---------- */
+.craft-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+}
+.craft-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+}
+.craft-tabs button {
+  flex: 1;
+  padding: 9px 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--muted);
+}
+.craft-tabs button[aria-selected="true"] {
+  color: var(--accent2);
+  border-bottom-color: var(--accent);
+}
+.craft-tabs .count {
+  font-size: 11px;
+  color: var(--muted);
+}
+.craft-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.craft-filters input[type="search"] {
+  width: 100%;
+}
+.craft-filter-row {
+  display: flex;
+  gap: 8px;
+}
+.craft-filter-row label {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.craft-filter-row select {
+  flex: 1;
+  min-width: 0;
+}
+.craft-filter-row select:disabled {
+  opacity: 0.5;
+}
+.craft-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.craft-data {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 10px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.craft-data[hidden] {
+  display: none;
+}
+.craft-results {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.craft-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+}
+.craft-row:hover,
+.craft-row:focus-visible {
+  background: var(--panel2);
+}
+.craft-row.current {
+  background: var(--panel2);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.craft-row img,
+.craft-row .no-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: 2px solid var(--line);
+  border-radius: 5px;
+}
+.craft-row-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.craft-row-text > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.craft-row-name {
+  font-weight: 600;
+}
+.craft-row-price {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 11.5px;
+}
+.craft-row-profit {
+  font-size: 11px;
+  font-weight: 600;
+}
+/* Priced at the headline buy order only (not checked against the order book). */
+.craft-row-profit.estimate {
+  opacity: 0.75;
+}
+.craft-route {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #b9a36b;
+  font-size: 11px;
+}
+.craft-profit,
+.craft-best {
+  margin: 8px 0;
+  padding: 8px 10px;
+  background: var(--panel2);
+  border-radius: 6px;
+}
+.craft-best ol {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.craft-best li {
+  margin-bottom: 4px;
+}
+.craft-best .craft-route {
+  white-space: normal;
+}
+.craft-route-link {
+  font-size: 12.5px;
+  text-align: left;
+}
+.craft-profit details {
+  margin-top: 4px;
+}
+.craft-more {
+  display: block;
+  margin: 8px auto;
+}
+.craft-none {
+  padding: 10px 12px;
+  margin: 0;
+}
+
+/* ---------- graph ---------- */
+.graph-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 15px;
+  pointer-events: none;
+}
+.graph-empty[hidden] {
+  display: none;
+}
+.graph-empty p {
+  max-width: 460px;
+  line-height: 1.5;
+}
+.graph-layout {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+}
+.graph-tools {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.graph-tools button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 16px;
+}
+/* Docked (not over the graph), so fitting the graph never hides nodes under it. */
+.craft-details {
+  flex: 0 0 auto;
+  max-height: 38%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+@media (min-width: 1400px) {
+  .craft-details {
+    flex: 0 0 320px;
+    max-height: none;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
+}
+.craft-details[hidden] {
+  display: none;
+}
+.craft-details p {
+  margin: 8px 0;
+}
+.craft-details-head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.craft-details-head img {
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--line);
+  border-radius: 5px;
+}
+.craft-details-head > div {
+  flex: 1;
+  min-width: 0;
+}
+.craft-details-close {
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  font-size: 18px;
+  line-height: 1;
+}
+.craft-ingredients {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+.craft-details .btnrow {
+  align-items: center;
+  gap: 12px;
+}
+.craft-tooltip {
+  position: fixed;
+  z-index: 60;
+  max-width: 280px;
+  padding: 7px 10px;
+  background: #0a0b0d;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  pointer-events: none;
+  font-size: 12.5px;
+}
+.craft-tooltip[hidden] {
+  display: none;
+}
+
+/* ---------- narrow screens: list above graph ---------- */
+@media (max-width: 760px) {
+  .craftable {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 45% 55%;
+  }
+  .craft-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}

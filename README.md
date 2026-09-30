@@ -11,7 +11,7 @@ Guild Wars 2 tools that run entirely in the browser and install as a PWA:
 - **Your account in the crafting explorer:** with a key connected, what you already own is used first, so costs and
   the shopping list show only what's left to buy, and missing crafting levels are flagged.
 
-**Live: [gw2visualizer.com](https://gw2visualizer.com)** · Current version: **0.10.0** · [Changelog](CHANGELOG.md) · [Next steps](#next-steps) · [Roadmap](#roadmap) · [Considerations](#considerations)
+**Live: [gw2visualizer.com](https://gw2visualizer.com)** · Current version: **0.11.0** · [Changelog](CHANGELOG.md) · [Next steps](#next-steps) · [Roadmap](#roadmap) · [Considerations](#considerations)
 
 ## Using it
 
@@ -72,14 +72,14 @@ and shareable URLs (`#item=19621&qty=2`). Reduced-motion and high-contrast prefe
 ### Mystic Forge recipes
 
 The official API only covers crafting-station recipes; Mystic Forge combinations (Gen 2/3 legendaries, Perfected
-Envoy armour, gifts, clovers…) have never been part of it. So `public/data/mystic-forge-recipes.js` ships ~2,100 of
+Envoy armour, gifts, clovers…) have never been part of it. So `web/data/mystic-forge-recipes.js` ships ~2,100 of
 them, read from the [Guild Wars 2 Wiki](https://wiki.guildwars2.com/)'s query API (structured data, not HTML).
 
 - API recipes are the default; Mystic Forge recipes show as alternates (right-click to cycle) where both exist.
 - Material promotions (T5 → T6 materials, lodestones and other tradeable materials that are normally bought) count
   as raw materials unless **Promotions** is on. The ✦ indicator marks only items the tree actually forges.
 - Generic wiki ingredients ("any Charm", "Exotic sword") appear as grey placeholder nodes.
-- Add your own recipes to `public/data/custom-recipes.json` in `/v2/recipes` shape.
+- Add your own recipes to `web/static/data/custom-recipes.json` in `/v2/recipes` shape.
 
 ### Network use
 
@@ -141,27 +141,26 @@ Ideas, roughly in order; none of this is promised.
 Larger architectural changes that have been weighed but not made. Each is worth revisiting when the trigger in
 *When* applies.
 
-**Moving to a web framework** (Svelte, Preact, Lit or similar, with Vite)
-- *For:* the panels, ribbon, popouts and options are hand-wired DOM that the app keeps in sync with settings
-  (`render` / `syncValues` / `refreshStatus`); a component model with reactive state would remove that plumbing and
-  make new UI cheaper. It would also bring TypeScript, hot reload and bundling almost for free.
-- *Against:* a build step and toolchain to maintain, a larger download, and a rewrite of the UI layer for no
-  visible change. The data, model and graph layers would carry over unchanged either way.
-- *Middle ground:* Lit web components, or TypeScript checking of the existing JSDoc (`jsconfig.json` is already
-  there), both without a bundler.
-- *When:* the Roadmap's extra visualizers (characters, achievements, account) start; several views sharing
-  components is where a framework pays for itself.
+**Moving to a web framework** (decided: Svelte 5 on Vite, in three phases)
+- *Why:* the panels, ribbon, popouts and options are hand-wired DOM that the app keeps in sync with settings
+  (`render` / `syncValues` / `refreshStatus`); a component model with reactive state removes that plumbing and makes
+  new visualizers cheaper. The data, model and graph layers carry over unchanged.
+- *Phase 1 (done):* Vite builds the site, with no framework and no visible change: hashed, bundled files, hot
+  reload, and Prism and Tether as ordinary packages.
+- *Next:* Phase 2 adds Svelte, reactive settings and a graph component, starting with the legend; Phase 3 moves
+  the pages over one at a time, crafting last.
 
-**Our own graph engines: Prism and Tether** (replacing Cytoscape)
+**Our own graph engines: Prism and Tether**
 - Both are their own open-source projects, free of anything GW2:
   [Prism](https://github.com/BrettWhitson/prism) and [Tether](https://github.com/BrettWhitson/tether). The app pins
-  a commit of each and vendors their source into `public/lib/` (`npm run vendor`); `src/render/prism-settings.js`
+  a commit of each as a package that Vite bundles (`npm run dev:local` uses the checkouts beside this repo
+  instead); `src/render/prism-settings.js`
   maps the app's settings and item states (owned, Mystic Forge, cheaper…) onto Prism's options and class rules.
-- **Prism** (`lib/prism/`) draws, animates and handles input: WebGL2 instanced drawing of nodes, edges and
+- **Prism** draws, animates and handles input: WebGL2 instanced drawing of nodes, edges and
   arrowheads, a label layer, springs for every motion, partial GPU uploads (a frame costs what moves), hit-testing,
-  pan / zoom / pinch, tiled PNG export. Prism is the default; Classic (Cytoscape) stays selectable under
-  Customize → Canvas → Renderer for now, and goes, with Cytoscape, once nobody needs it.
-- **Tether** (`lib/tether/`) decides where things go: tidy and radial tree seeds, a layered layout for the merged
+  pan / zoom / pinch, tiled PNG export. It replaced Cytoscape, which the app no longer uses. Browsers without
+  WebGL2 (hardware acceleration off, a blocklisted GPU) get a message on the graph pages instead.
+- **Tether** decides where things go: tidy and radial tree seeds, a layered layout for the merged
   view (ranks, crossing minimisation by barycentre sweeps and transposition, exact per-rank placement; it replaced
   dagre), the physics (a deterministic force simulation with a Barnes-Hut quadtree and a hashed collision grid,
   allocation-free per tick), an elastic net for dragging (`elastic.js`: a pull fades hop by hop and only
@@ -184,62 +183,65 @@ Larger architectural changes that have been weighed but not made. Each is worth 
 
 ## Development
 
-The app has no runtime dependencies and no build step: everything the browser loads lives in `public/` (ES modules in
-`public/src/`, vendored libraries in `public/lib/`). All tooling is Node.
+The app is plain ES modules with no runtime framework, built by [Vite](https://vite.dev/): the pages and their code
+live in `web/` (modules in `web/src/`), files that ship untouched in `web/static/`. Prism and Tether are pinned
+packages that Vite bundles. All tooling is Node.
 
 ```bash
-npm install            # dev tooling: ESLint, Prettier, and the pinned Cytoscape, Prism and Tether for vendoring
-npm start              # dev server on :8642 + open browser   (npm run serve: without opening)
-npm run verify         # syntax/import + vendored-version check, ESLint, Prettier check, unit tests
+npm install            # Vite, ESLint, Prettier, and the pinned Prism and Tether
+npm start              # Vite dev server on :8642 with hot reload + open browser   (npm run serve: without opening)
+npm run dev:local      # the same, but against the Prism and Tether checkouts in ../prism and ../tether
+npm run verify         # syntax/import check, ESLint, Prettier check, unit tests
 npm run format         # format JS and CSS with Prettier (default options)
-npm run build          # assemble the deployable site into _site/
-npm run snapshot       # build public/data/snapshot/ (what visitors download; ~150 API requests)
-npm run vendor         # copy the pinned Cytoscape, Prism and Tether into public/lib/
+npm run build          # build the deployable site into _site/ (hashed files + service worker)
+npm run preview        # serve _site/ on :8642, as it will be deployed
+npm run snapshot       # build web/static/data/snapshot/ (what visitors download; ~150 API requests)
 npm run update-forge   # re-read Mystic Forge recipes from the wiki (needs WIKI_CONTACT or REPOSITORY_URL)
-npm run icons          # regenerate public/icons/ from tools/generate-icons.mjs
+npm run icons          # regenerate web/static/icons/ from tools/generate-icons.mjs
 ```
 
 - Tests (`tests/`, Node's built-in `node:test`) cover tree building and cost roll-up, the Path planner, graph
   projection, search, data loading, caching and the snapshot path, price and wiki lookups, settings migrations, and
-  layout behaviour (flow direction, radial rings, forces, drag physics) against real headless Cytoscape.
-- The service worker is skipped on localhost so you always run fresh code; add `?sw=1` to test offline and install
-  behaviour locally.
+  layout behaviour (flow direction, radial rings, forces, drag physics) through Tether with the app's settings.
+- The service worker only exists in a build: under `npm run preview`, add `?sw=1` to test offline and install
+  behaviour locally (it is skipped on localhost otherwise). The build fills in its list of files to precache, and
+  fails if a page would carry an inline script, which the Content-Security-Policy blocks.
 
 ### Project layout
 
 ```
 README.md, CHANGELOG.md, LICENSE, THIRD_PARTY_NOTICES.md
-package.json               npm scripts; dev dependencies only (nothing ships from node_modules)
+package.json               npm scripts; dev dependencies only (Vite bundles what the pages import)
+vite.config.js             pages, static folder, dev CSP, service worker (vite-plugin-pwa, injectManifest)
 eslint.config.js, .prettierrc.json, .prettierignore, jsconfig.json, .editorconfig, .gitattributes, .gitignore
 .github/workflows/
   ci.yml                   verify + build on every push / pull request
   deploy-pages.yml         GitHub Pages: on push to main and daily, with a fresh data snapshot
   refresh-forge-data.yml   weekly wiki re-read → pull request
 tools/
-  dev-server.mjs           local server for public/ (correct MIME types, no caching)
-  build-site.mjs           public/ + LICENSE + notices → _site/
+  build-site.mjs           after `vite build`: LICENSE + notices + .nojekyll → _site/
   check.mjs                syntax + import check; generated data must stay unformatted
-  build-data-snapshot.mjs  GW2 API → public/data/snapshot/ (gzip + meta)
-  vendor-libs.mjs          node_modules → public/lib/ (+ VERSIONS.json)
-  update-mystic-forge.mjs  wiki → public/data/mystic-forge-recipes.js
-  generate-icons.mjs       public/icons/ (SVG + PNGs, no dependencies)
+  build-data-snapshot.mjs  GW2 API → web/static/data/snapshot/ (gzip + meta)
+  update-mystic-forge.mjs  wiki → web/data/mystic-forge-recipes.js
+  generate-icons.mjs       web/static/icons/ (SVG + PNGs, no dependencies)
 tests/                     node:test suites + helpers/fixtures.js
-public/                    the web app, served as-is
+web/                       the web app: Vite's root (pages, CSS and modules are bundled into _site/assets/)
   index.html               home page
   sandbox.html             engine sandbox: Prism and Tether on generated graphs (src/sandbox/, src/sandbox-main.js)
   crafting.html            crafting explorer markup (+ inline SVG icon sprite); controls declare data-setting /
                            data-command. Old /#item= links on the home page redirect here.
   characters.html          Characters page (API key, character list, armory)
-  manifest.webmanifest, sw.js, _headers, robots.txt
+  sw.js                    service worker (the build injects the list of files to precache)
   css/app.css              base + crafting styles (CSS variables mirror UI_COLORS in constants.js)
   css/pages.css, characters.css  the scrolling pages (home, characters)
-  icons/                   app icons (generated)
-  lib/                     vendored: Cytoscape.js (UMD global; the classic renderer), prism/ and tether/ (ES modules)
-  data/
-    mystic-forge-recipes.js  generated by `npm run update-forge`; don't edit (GFDL 1.3, not MIT)
-    LICENSE-GFDL-1.3.txt     licence text for the wiki-derived data
-    custom-recipes.json      your own recipes
-    snapshot/                generated by `npm run snapshot` (git-ignored)
+  data/mystic-forge-recipes.js  generated by `npm run update-forge`; don't edit (GFDL 1.3, not MIT); a lazy chunk
+  static/                  copied into _site/ untouched
+    manifest.webmanifest, _headers, robots.txt
+    icons/                 app icons (generated)
+    data/
+      LICENSE-GFDL-1.3.txt   licence text for the wiki-derived data
+      custom-recipes.json    your own recipes
+      snapshot/              generated by `npm run snapshot` (git-ignored)
   src/
     main.js, pwa.js        crafting entry point; service worker registration
     home-main.js, characters-main.js  the other pages' entry points
@@ -251,10 +253,9 @@ public/                    the web app, served as-is
     data/                  Gw2ApiClient, IndexedDbStore, GameData (+ core-data-sources: snapshot / API),
                            PriceBook, WikiSources, ItemSearchIndex, AccountClient + CharacterCatalogs
     model/                 TreeState, CraftTreeBuilder, PathPlanner, buildGraphModel, character armory
-    graph/                 the classic (Cytoscape) renderer: GraphView, GraphTransition, SmoothWheelZoom, stylesheet,
-                           layouts (adapter onto lib/tether/); NodeAppearance, PNG export (shared)
     render/                WebGLGraphView (Prism behind the pages' interface), prism-settings (settings and
-                           item states → Prism's options, theme and class rules), choose-graph-view
+                           item states → Prism's options, theme and class rules), NodeAppearance, PNG export,
+                           webgl-support
     ui/                    site chrome (shared header, footer, About), character view, Toolbar (+ ribbon-sections, RibbonPopout), OptionsPanel (Customize, Settings,
                            popouts), range steppers, Legend, SearchBox,
                            Tooltip, DetailsPanel, ShoppingListPanel, toasts, status bar / overlay / side panel
@@ -269,7 +270,7 @@ TreeState + GameData + PriceBook
                                      buy vs craft and which recipe; costs rolled up)
    → buildGraphModel()               GraphModel (tree or merged view, filters, ordering)
    → NodeAppearance                  element data (colour, label, classes)
-   → graph view .render()            Tether lays it out; Prism (or Classic) morphs from the previous graph
+   → graph view .render()            Tether lays it out; Prism morphs from the previous graph
    → Legend / DetailsPanel / ShoppingListPanel refresh
 ```
 
@@ -313,7 +314,7 @@ fallbacks when storage, the snapshot or the wiki is unavailable, and a pinned GW
   and switchable off in Settings. Browsers can't set a User-Agent, and the wiki's CORS rules reject the
   `Api-User-Agent` header, so those requests are anonymous. Everything is read-only.
 - **Licensing:** wiki contributor content is under the GNU FDL 1.3, so the derived data file carries that notice and
-  the full licence text ships with it (`public/data/LICENSE-GFDL-1.3.txt`); it is excluded from the MIT license.
+  the full licence text ships with it (`web/static/data/LICENSE-GFDL-1.3.txt`); it is excluded from the MIT license.
 
 ## License
 
@@ -325,6 +326,6 @@ Not covered by that license:
   associated logos, designs, and composite marks are trademarks or registered trademarks of NCSOFT Corporation. All
   other trademarks are the property of their respective owners. This is an unofficial fansite, not affiliated with,
   endorsed, sponsored or approved by ArenaNet or NCSOFT.
-- **`public/data/mystic-forge-recipes.js`**, derived from the [Guild Wars 2 Wiki](https://wiki.guildwars2.com/):
-  contributor content under the [GNU FDL 1.3](public/data/LICENSE-GFDL-1.3.txt).
-- **Bundled libraries** in `public/lib/` keep their own (MIT) licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- **`web/data/mystic-forge-recipes.js`**, derived from the [Guild Wars 2 Wiki](https://wiki.guildwars2.com/):
+  contributor content under the [GNU FDL 1.3](web/static/data/LICENSE-GFDL-1.3.txt).
+- **Bundled libraries** (Prism and Tether, bundled by Vite) keep their own (MIT) licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

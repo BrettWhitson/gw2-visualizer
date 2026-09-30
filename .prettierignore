@@ -1,7 +1,7 @@
 # Vendored, generated or built files keep their own formatting.
-public/lib/
-public/data/
+web/data/
+web/static/data/
 _site/
 node_modules/
 package-lock.json
-public/data/snapshot/
+web/static/data/snapshot/

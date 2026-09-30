@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <!-- Keep in sync with the other pages and _headers. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://render.guildwars2.com; connect-src 'self' https://api.guildwars2.com https://wiki.guildwars2.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'"
+    />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+
+    <title>What you can craft · GW2 Visualizer (unofficial fansite)</title>
+    <meta
+      name="description"
+      content="Unofficial fansite. See what your Guild Wars 2 account can craft right now from what it owns, and explore what each material can become."
+    />
+    <meta name="theme-color" content="#151a24" />
+    <meta name="color-scheme" content="dark" />
+
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="preconnect" href="https://api.guildwars2.com" crossorigin />
+    <link rel="preconnect" href="https://render.guildwars2.com" crossorigin />
+
+    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/craftable.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#craftList">Skip to the list</a>
+    <noscript
+      ><p class="noscript">
+        GW2 Visualizer needs JavaScript enabled.
+      </p></noscript
+    >
+
+    <header id="topbar"><div class="spacer"></div></header>
+
+    <main class="craftable">
+      <aside id="craftList" class="craft-list" aria-label="What you can craft">
+        <div class="craft-tabs" role="tablist" aria-label="Lists">
+          <button
+            type="button"
+            role="tab"
+            id="tabCraftable"
+            data-list="craftable"
+            aria-selected="true"
+            aria-controls="craftResults"
+            tabindex="0"
+          >
+            Craftable <span class="count" data-count="craftable"></span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tabMaterials"
+            data-list="materials"
+            aria-selected="false"
+            aria-controls="craftResults"
+            tabindex="-1"
+          >
+            Your materials <span class="count" data-count="materials"></span>
+          </button>
+        </div>
+        <div class="craft-filters">
+          <label for="craftSearch" class="sr-only">Filter by name</label>
+          <input
+            id="craftSearch"
+            type="search"
+            placeholder="Filter by name…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <div class="craft-filter-row">
+            <label
+              >Sort
+              <select id="craftSort">
+                <option value="profit">Most profitable</option>
+                <option value="value">Highest price</option>
+                <option value="count">Most you can make</option>
+                <option value="rarity">Rarity</option>
+                <option value="name">Name</option>
+              </select></label
+            >
+            <label
+              >Craft
+              <select id="craftDiscipline">
+                <option value="">Any discipline</option>
+              </select></label
+            >
+          </div>
+          <label
+            class="craft-check"
+            title="Leave out recipes no character has the crafting level for"
+            ><input id="craftLevels" type="checkbox" checked /> Only what my
+            characters can craft</label
+          >
+        </div>
+        <div id="craftData" class="craft-data" hidden></div>
+        <div
+          id="craftAnnouncer"
+          class="sr-only"
+          role="status"
+          aria-live="polite"
+        ></div>
+        <div
+          id="craftResults"
+          class="craft-results"
+          role="tabpanel"
+          aria-labelledby="tabCraftable"
+        ></div>
+      </aside>
+
+      <section class="craft-graph" aria-label="What it can become">
+        <div id="cyWrap">
+          <div
+            id="cy"
+            tabindex="0"
+            role="application"
+            aria-roledescription="craftable graph"
+            aria-label="What the selected item can become. Double-click a node to show what it can make in turn. With the keyboard: arrow keys move between items, Enter shows or hides what one makes, Home goes back to the start."
+            aria-describedby="graphAnnouncer"
+          ></div>
+          <div id="graphAnnouncer" class="sr-only" aria-live="polite"></div>
+          <div id="graphEmpty" class="graph-empty"></div>
+          <div class="graph-layout seg" role="group" aria-label="Layout">
+            <button
+              type="button"
+              data-layout="auto"
+              title="Columns, or rings when a level gets crowded"
+            >
+              Auto
+            </button>
+            <button
+              type="button"
+              data-layout="columns"
+              title="Left to right, one column per step"
+            >
+              Columns
+            </button>
+            <button
+              type="button"
+              data-layout="radial"
+              title="The item in the middle, each step on a wider ring"
+            >
+              Radial
+            </button>
+          </div>
+          <div class="graph-tools">
+            <button
+              type="button"
+              data-graph="fit"
+              title="Fit the graph"
+              aria-label="Fit the graph"
+            >
+              ⤢
+            </button>
+            <button
+              type="button"
+              data-graph="zoom-in"
+              title="Zoom in"
+              aria-label="Zoom in"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              data-graph="zoom-out"
+              title="Zoom out"
+              aria-label="Zoom out"
+            >
+              −
+            </button>
+          </div>
+        </div>
+        <aside
+          id="craftDetails"
+          class="craft-details"
+          aria-label="Details"
+          hidden
+        ></aside>
+      </section>
+    </main>
+
+    <footer id="status">
+      <span id="statusText" role="status" aria-live="polite"></span>
+    </footer>
+
+    <div id="craftTooltip" class="craft-tooltip" role="tooltip" hidden></div>
+
+    <script type="module" src="src/craftable-main.js"></script>
+  </body>
+</html>

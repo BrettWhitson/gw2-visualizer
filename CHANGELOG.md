@@ -1,7 +1,32 @@
 # Changelog
 
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
-`public/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
+`web/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
+
+## 0.11.0 — 2026-09-30
+
+- **Fixed: costs missing on a return visit.** With prices already saved in the browser and still fresh (always the
+  case with manual price updates, the default), the crafting page showed no costs until something else redrew it,
+  because loading the saved prices didn't count as prices arriving. Costs now appear straight away.
+- **A calmer, more neutral look**, the first step of the new design: neutral greys instead of blue-tinted ones, and
+  prices set in tabular figures with small gold, silver and copper coin dots, silver and copper quieter than gold.
+  The colours are design tokens in the stylesheet, and the graph takes its node and label colours from them.
+- **The site is now built with Vite** (phase 1 of moving to Svelte; nothing looks or works differently). Pages load
+  a handful of bundled, content-hashed files instead of about 80 separate modules: the crafting page drops from 82
+  requests and 408 KB to 9 requests and 285 KB (gzip, Cytoscape and the Mystic Forge data included). Hashed files are
+  cached for good, by the browser and by the service worker, whose list of files to keep offline now comes from the
+  build.
+- Development: `public/` is now `web/`, with the files that ship untouched in `web/static/`. `npm start` runs Vite
+  with hot reload, `npm run preview` serves the built site, and `npm run dev:local` runs against the Prism and Tether
+  checkouts beside the repo. Prism and Tether are pinned packages that Vite bundles, no longer copied into the repo.
+- **Cytoscape is gone.** Prism draws every graph; the Classic renderer and the Customize → Canvas → Renderer option are
+  removed (a saved Classic choice is simply dropped). With the Vite build, the crafting page now downloads 8 files and
+  143 KB (gzip, Mystic Forge data included), down from 82 files and 408 KB in 0.10.0. Browsers without WebGL2 (hardware acceleration off, a blocklisted GPU) now see a message saying so on
+  the graph pages, instead of the old renderer.
+- Development: Prism and Tether are now at 0.2.0 (pinned by release tag instead of commit), with a public API: one entry point each, schemas for every option,
+  theme colour and physics constant (checked, with warnings for bad values), events, plugins (node shapes, arrowheads,
+  edge routings, easings, layouts and forces), and TypeScript declarations. Nothing on the site changes. The engine
+  sandbox's Tuning tab now shows all 39 of Tether's constants, including the layout ones that were hardcoded before.
 
 ## 0.10.0 — 2026-09-30
 

@@ -2,16 +2,16 @@
 
 GW2 Visualizer's own source code is MIT licensed (see `LICENSE`). The components below keep their own terms.
 
-## Bundled libraries (`public/lib/`)
+## Bundled libraries
 
 | Library | Version | License | Copyright |
 |---|---|---|---|
-| [Cytoscape.js](https://js.cytoscape.org/) | 3.34.3 | MIT | © 2016–2026 The Cytoscape Consortium |
-| [Prism](https://github.com/BrettWhitson/prism) | commit in `public/lib/VERSIONS.json` | MIT | © 2026 Brett Whitson |
-| [Tether](https://github.com/BrettWhitson/tether) | commit in `public/lib/VERSIONS.json` | MIT | © 2026 Brett Whitson |
+| [Prism](https://github.com/BrettWhitson/prism) | commit pinned in `package.json` | MIT | © 2026 Brett Whitson |
+| [Tether](https://github.com/BrettWhitson/tether) | commit pinned in `package.json` | MIT | © 2026 Brett Whitson |
 
-Versions are pinned in `package.json` and copied into `public/lib/` by `npm run vendor` (recorded in
-`public/lib/VERSIONS.json`). Development-only tools (ESLint, Prettier, globals) are not shipped.
+Versions are pinned in `package.json`. Prism and Tether are bundled into the site by [Vite](https://vite.dev/) (MIT),
+which adds a few small helpers of its own. Development-only tools (Vite, ESLint, Prettier, globals) are not otherwise
+shipped.
 
 ### MIT License
 
@@ -37,13 +37,13 @@ Versions are pinned in `package.json` and copied into `public/lib/` by `npm run 
   Use is subject to ArenaNet's [Content Terms of Use](https://www.arena.net/en/legal/content-terms-of-use): this is an
   unofficial, non-commercial fansite made by an individual, labelled as such (including in the browser title), and it
   carries the required notice below.
-- **Guild Wars 2 Wiki.** Mystic Forge recipes in `public/data/mystic-forge-recipes.js` are derived from the
+- **Guild Wars 2 Wiki.** Mystic Forge recipes in `web/data/mystic-forge-recipes.js` are derived from the
   [Guild Wars 2 Wiki](https://wiki.guildwars2.com/) through its public query API (`api.php?action=ask`), with an
   identifying User-Agent, `maxlag` and rate limiting, at most weekly. When a visitor opens an item's details, the app
   also asks the wiki's query API which vendors sell it and which containers drop it (two small queries, cached for a
   week per browser, can be turned off in Settings); those results are shown with a link back to the wiki. Per the wiki's
   [copyrights page](https://wiki.guildwars2.com/wiki/Guild_Wars_2_Wiki:Copyrights), contributor content is available
-  under the **GNU Free Documentation License 1.3** — a copy is included at `public/data/LICENSE-GFDL-1.3.txt` — and content
+  under the **GNU Free Documentation License 1.3** — a copy is included at `web/static/data/LICENSE-GFDL-1.3.txt` — and content
   obtained from the game remains © ArenaNet LLC. This data file is not covered by the project's MIT license.
 
 © ArenaNet LLC. All rights reserved. NCSOFT, ArenaNet, Guild Wars, Guild Wars 2, GW2, Heart of Thorns, Path of Fire, End of Dragons, Secrets of the Obscure, Janthir Wilds, Visions of Eternity, and all associated logos, designs, and composite marks are trademarks or registered trademarks of NCSOFT Corporation. All other trademarks are the property of their respective owners.

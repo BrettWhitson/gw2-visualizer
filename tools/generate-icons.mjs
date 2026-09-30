@@ -13,7 +13,8 @@ import { fileURLToPath } from "node:url";
 const ICON_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
-  "public",
+  "web",
+  "static",
   "icons",
 );
 
@@ -270,7 +271,7 @@ function encodePng(size, scanlines) {
 
 mkdirSync(ICON_DIR, { recursive: true });
 writeFileSync(path.join(ICON_DIR, "icon.svg"), svgIcon());
-console.log("wrote public/icons/icon.svg");
+console.log("wrote web/static/icons/icon.svg");
 
 const OUTPUTS = [
   ["icon-192.png", 192, { fullBleed: false }],
@@ -284,5 +285,5 @@ for (const [name, size, options] of OUTPUTS) {
     path.join(ICON_DIR, name),
     encodePng(size, rasterize(size, options)),
   );
-  console.log(`wrote public/icons/${name}`);
+  console.log(`wrote web/static/icons/${name}`);
 }

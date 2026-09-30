@@ -1,13 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PriceBook } from "../public/src/data/price-book.js";
-import { RecentItems } from "../public/src/core/recent-items.js";
-import { ApiKeyStore } from "../public/src/core/api-key-store.js";
+import { PriceBook } from "../web/src/data/price-book.js";
+import { RecentItems } from "../web/src/core/recent-items.js";
+import { ApiKeyStore } from "../web/src/core/api-key-store.js";
 import {
   CUSTOMIZE_GROUPS,
   SETTINGS_GROUPS,
   PRESET_KINDS,
-} from "../public/src/config/settings-schema.js";
+} from "../web/src/config/settings-schema.js";
 
 /** API stand-in that counts price requests and answers after a tick. */
 function createFakePriceApi(prices) {
@@ -104,11 +104,11 @@ test("Customize and Settings panels split the options, and presets only touch Cu
 test("every ribbon control belongs to a section, so its section reset covers it", async () => {
   const { readFileSync } = await import("node:fs");
   const { RIBBON_SECTIONS, sectionResetKeys } =
-    await import("../public/src/ui/ribbon-sections.js");
+    await import("../web/src/ui/ribbon-sections.js");
   const { VIEW_OPTION_GROUPS } =
-    await import("../public/src/config/settings-schema.js");
+    await import("../web/src/config/settings-schema.js");
   const html = readFileSync(
-    new URL("../public/index.html", import.meta.url),
+    new URL("../web/index.html", import.meta.url),
     "utf8",
   );
   const ribbon = html.slice(

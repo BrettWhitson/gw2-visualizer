@@ -3,29 +3,31 @@ import globals from "globals";
 
 export default [
   {
-    ignores: ["public/lib/**", "public/data/**", "node_modules/**", "_site/**"],
+    ignores: ["web/static/**", "web/data/**", "node_modules/**", "_site/**"],
   },
   js.configs.recommended,
   {
-    files: ["public/src/**/*.js"],
+    files: ["web/src/**/*.js"],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: "module",
-      globals: {
-        ...globals.browser,
-        cytoscape: "readonly",
-      },
+      globals: { ...globals.browser },
     },
   },
   {
-    files: ["public/sw.js"],
+    files: ["web/sw.js"],
     languageOptions: {
       sourceType: "script",
       globals: { ...globals.serviceworker },
     },
   },
   {
-    files: ["tests/**/*.js", "tools/**/*.mjs", "eslint.config.js"],
+    files: [
+      "tests/**/*.js",
+      "tools/**/*.mjs",
+      "eslint.config.js",
+      "vite.config.js",
+    ],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: "module",
@@ -57,7 +59,7 @@ export default [
     },
   },
   // A service worker's top level is its own isolated global scope.
-  { files: ["public/sw.js"], rules: { "no-implicit-globals": "off" } },
+  { files: ["web/sw.js"], rules: { "no-implicit-globals": "off" } },
   // Command-line tools report to the console.
   { files: ["tools/**/*.mjs"], rules: { "no-console": "off" } },
 ];

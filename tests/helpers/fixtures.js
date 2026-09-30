@@ -7,7 +7,7 @@
  *   Hilt  (3) ← 1× Plank (6) + 50 coin
  *   Gift  (7) ← Mystic Forge: 1× Sword + 1× Gift (self-reference → cycle)
  */
-import { RARITY_COLORS } from "../../public/src/config/constants.js";
+import { RARITY_COLORS } from "../../web/src/config/constants.js";
 
 const item = (id, name, rarity = "Basic", extra = {}) => ({
   id,

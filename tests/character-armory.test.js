@@ -6,7 +6,7 @@ import {
   describeBags,
   parseRuneBonus,
   referencedIds,
-} from "../public/src/model/character-armory.js";
+} from "../web/src/model/character-armory.js";
 
 // Item shapes follow real /v2/items responses (Rune of the Dragonhunter, Exquisite Ruby Jewel, …).
 const DH_RUNE = {

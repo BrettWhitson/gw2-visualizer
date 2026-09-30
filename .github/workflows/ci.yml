@@ -1,9 +1,12 @@
+# Verify + build on main and beta, and on pull requests into main (the "verify" check main's ruleset requires).
+# Feature branches aren't run; they're checked once merged into beta.
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, beta]
   pull_request:
+    branches: [main]
 
 permissions:
   contents: read

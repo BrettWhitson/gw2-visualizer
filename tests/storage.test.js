@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { IndexedDbStore } from "../public/src/data/indexed-db-store.js";
-import { ApiKeyStore } from "../public/src/core/api-key-store.js";
-import { AccountSession } from "../public/src/data/account-session.js";
-import { runWithConcurrency } from "../public/src/utils/async.js";
+import { IndexedDbStore } from "../web/src/data/indexed-db-store.js";
+import { ApiKeyStore } from "../web/src/core/api-key-store.js";
+import { AccountSession } from "../web/src/data/account-session.js";
+import { runWithConcurrency } from "../web/src/utils/async.js";
 
 const KEY_A =
   "564F181A-F0FC-114A-A55D-3C1DCD45F3767AF3848F-AB29-4EBF-9594-F91E6A75E015";

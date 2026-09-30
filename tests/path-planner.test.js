@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PathPlanner } from "../public/src/model/path-planner.js";
+import { PathPlanner } from "../web/src/model/path-planner.js";
 
 // Item 1 is crafted from 2 × item 2 (or, alternatively, 1 × item 3 + 50 copper); item 2 is crafted from 3 × item 4.
 const RECIPES = {

@@ -7,8 +7,8 @@ import {
   itemLocations,
   ownedItemCounts,
   Storage,
-} from "../public/src/model/account-inventory.js";
-import { AccountSession } from "../public/src/data/account-session.js";
+} from "../web/src/model/account-inventory.js";
+import { AccountSession } from "../web/src/data/account-session.js";
 
 const KEY =
   "564F181A-F0FC-114A-A55D-3C1DCD45F3767AF3848F-AB29-4EBF-9594-F91E6A75E015";

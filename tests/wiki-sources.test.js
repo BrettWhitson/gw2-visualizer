@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { WikiSources } from "../public/src/data/wiki-sources.js";
+import { WikiSources } from "../web/src/data/wiki-sources.js";
 
 const memoryCache = () => {
   const store = new Map();

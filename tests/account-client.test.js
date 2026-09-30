@@ -4,8 +4,8 @@ import {
   AccountClient,
   CharacterCatalogs,
   looksLikeApiKey,
-} from "../public/src/data/account-client.js";
-import { redactAccessToken } from "../public/src/data/gw2-api-client.js";
+} from "../web/src/data/account-client.js";
+import { redactAccessToken } from "../web/src/data/gw2-api-client.js";
 
 const KEY =
   "564F181A-F0FC-114A-A55D-3C1DCD45F3767AF3848F-AB29-4EBF-9594-F91E6A75E015";

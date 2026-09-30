@@ -5,11 +5,11 @@ import {
   getDataUpdates,
   maxAgeFor,
   setDataUpdates,
-} from "../public/src/core/data-preferences.js";
-import { formatAge } from "../public/src/utils/format.js";
-import { PriceBook } from "../public/src/data/price-book.js";
-import { OrderBooks } from "../public/src/data/order-books.js";
-import { AccountSession } from "../public/src/data/account-session.js";
+} from "../web/src/core/data-preferences.js";
+import { formatAge } from "../web/src/utils/format.js";
+import { PriceBook } from "../web/src/data/price-book.js";
+import { OrderBooks } from "../web/src/data/order-books.js";
+import { AccountSession } from "../web/src/data/account-session.js";
 
 const KEY =
   "564F181A-F0FC-114A-A55D-3C1DCD45F3767AF3848F-AB29-4EBF-9594-F91E6A75E015";
@@ -90,8 +90,13 @@ test("prices are saved, restored on the next visit, and refetched only when stal
   });
   assert.equal(
     await manual.ensure([1, 2, 3]),
+    true,
+    "manual: saved prices are used as they are, and the caller hears they arrived (costs need them)",
+  );
+  assert.equal(
+    await manual.ensure([1, 2, 3]),
     false,
-    "manual: saved prices are used as they are",
+    "…but only once: nothing new the second time",
   );
   assert.equal(manual.getQuote(2).buy, 20);
   assert.equal(manual.getQuote(3), null, "untradeable is remembered too");
@@ -191,9 +196,13 @@ function sessionSetup({ remembered = true, maxAge = () => Infinity } = {}) {
   return { make, calls, cache, tabStorage, advance: (ms) => (now += ms) };
 }
 
-/** Snapshots are written after hashing the key, which takes a few turns: wait for a condition. */
-async function until(condition, turns = 500) {
-  for (let turn = 0; turn < turns && !condition(); turn++) await tick();
+/**
+ * Snapshots are written after hashing the key (real async crypto, slower on a busy CI runner): wait for a condition,
+ * by the clock rather than a count of turns. Uses setImmediate, which the tests' mocked setTimeout doesn't touch.
+ */
+async function until(condition, timeoutMs = 5000) {
+  const deadline = performance.now() + timeoutMs;
+  while (!condition() && performance.now() < deadline) await tick();
   assert.ok(condition(), "timed out waiting");
 }
 
