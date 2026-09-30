@@ -90,8 +90,13 @@ test("prices are saved, restored on the next visit, and refetched only when stal
   });
   assert.equal(
     await manual.ensure([1, 2, 3]),
+    true,
+    "manual: saved prices are used as they are, and the caller hears they arrived (costs need them)",
+  );
+  assert.equal(
+    await manual.ensure([1, 2, 3]),
     false,
-    "manual: saved prices are used as they are",
+    "…but only once: nothing new the second time",
   );
   assert.equal(manual.getQuote(2).buy, 20);
   assert.equal(manual.getQuote(3), null, "untradeable is remembered too");
