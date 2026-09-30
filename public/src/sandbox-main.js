@@ -1,5 +1,5 @@
 /**
- * Entry point for the engine sandbox: developer tools for Prism (src/render/) and Tether (src/layout/) on made-up
+ * Entry point for the engine sandbox: developer tools for Prism and Tether (public/lib/) on made-up
  * graphs. Tabs: the graph; the crafting page's layout and physics options; Tether's constants (tuning.js), live;
  * Prism's rendering options; automated probes and benchmarks; tools to poke the engines. Live engine stats stay
  * visible. Everything here is kept apart from the crafting page's settings (its own storage key).
@@ -12,11 +12,12 @@ import {
 } from "./config/settings-schema.js";
 import { UI_COLORS } from "./config/constants.js";
 import { createAccountSession } from "./data/site-account.js";
-import { LayoutGraph } from "./layout/layout-graph.js";
-import { runLayout } from "./layout/run-layout.js";
-import { PHYSICS_TUNING, TUNING_OPTIONS } from "./layout/tuning.js";
+import { LayoutGraph } from "../lib/tether/layout-graph.js";
+import { runLayout } from "../lib/tether/run-layout.js";
+import { PHYSICS_TUNING, TUNING_OPTIONS } from "../lib/tether/tuning.js";
 import { registerServiceWorker } from "./pwa.js";
 import { canDrawGraphs } from "./render/choose-graph-view.js";
+import { layoutSettings } from "./render/prism-settings.js";
 import { WebGLGraphView } from "./render/webgl-graph-view.js";
 import { GRAPH_SHAPES, generateGraph } from "./sandbox/generate-graph.js";
 import { hopColor, hopDistances, movementByHops } from "./sandbox/probes.js";
@@ -725,7 +726,7 @@ const TESTS = {
   async determinism() {
     const layoutOnce = () => {
       const layoutGraph = plainLayoutGraph();
-      runLayout(layoutGraph, settings.values, { tuning });
+      runLayout(layoutGraph, layoutSettings(settings.values), { tuning });
       return layoutGraph;
     };
     const a = layoutOnce(),
@@ -749,7 +750,7 @@ const TESTS = {
     for (let k = 0; k < 3; k++) {
       const layoutGraph = plainLayoutGraph();
       const started = performance.now();
-      runLayout(layoutGraph, settings.values, { tuning });
+      runLayout(layoutGraph, layoutSettings(settings.values), { tuning });
       times.push(performance.now() - started);
       await wait(0);
     }

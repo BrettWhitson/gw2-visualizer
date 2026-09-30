@@ -89,7 +89,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   animationEasing: "smooth",
   growNewTrees: true,
   canvasBackground: "gradient", // gradient | dots | grid | plain
-  // Prism (our own engine, src/render/) | classic (Cytoscape). A new key: the preview's "renderer" (stored as
+  // Prism (our own engine, lib/prism/) | classic (Cytoscape). A new key: the preview's "renderer" (stored as
   // "classic" by anyone who only tried it) is dropped as unknown, so everyone starts on Prism.
   graphRenderer: "prism",
   showLegend: true,

@@ -1,10 +1,15 @@
 // Layout regressions on plain data (no renderer): direction semantics, the force controls, radial rings, spacing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LayoutGraph } from "../public/src/layout/layout-graph.js";
-import { runLayout } from "../public/src/layout/run-layout.js";
+import { LayoutGraph } from "../public/lib/tether/layout-graph.js";
+import { runLayout as layOut } from "../public/lib/tether/run-layout.js";
+import { layoutSettings } from "../public/src/render/prism-settings.js";
 import { DEFAULT_SETTINGS } from "../public/src/config/settings-schema.js";
 import { stepRange } from "../public/src/ui/range-stepper.js";
+
+/** Tether's runLayout with the app's settings, the way the pages call it. */
+const runLayout = (graph, settings, context) =>
+  layOut(graph, layoutSettings(settings), context);
 
 // result ← a ← (a1, a2); result ← b ← b1. Edges run product → ingredient, as in the app.
 const ELEMENTS = [

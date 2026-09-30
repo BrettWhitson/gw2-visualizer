@@ -220,7 +220,7 @@ export class GraphView {
   }
 
   /**
-   * Looks for a page's own classes, in the renderer-neutral terms both views share (see render/style-resolver.js):
+   * Looks for a page's own classes, in the renderer-neutral terms both views share (see lib/prism/style.js):
    * { nodes: { className: { pattern, border, borderWidth, fillAlpha, aura } }, edges: { className: { color, width } } }
    */
   setClassStyles(rules) {

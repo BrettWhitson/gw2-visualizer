@@ -2,7 +2,7 @@ import { GraphView } from "../graph/graph-view.js";
 import { WebGLGraphView } from "./webgl-graph-view.js";
 
 /**
- * Which graph view a page gets: Prism (src/render/, the default) unless the Renderer setting asks for Classic or
+ * Which graph view a page gets: Prism (lib/prism/, the default) unless the Renderer setting asks for Classic or
  * the browser lacks WebGL2, then the Cytoscape-based GraphView. `?renderer=prism` (or the preview's `webgl`) or
  * `?renderer=classic` overrides the setting for one visit. Without Cytoscape (it failed to load) Prism is used
  * whatever the setting.

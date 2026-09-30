@@ -1,10 +1,11 @@
-import { LayoutGraph } from "../layout/layout-graph.js";
-import { runLayout as layOut } from "../layout/run-layout.js";
+import { LayoutGraph } from "../../lib/tether/layout-graph.js";
+import { runLayout as layOut } from "../../lib/tether/run-layout.js";
+import { layoutSettings } from "../render/prism-settings.js";
 import { isDirectionalLayout, usesComputedCurves } from "./layout-geometry.js";
 
 /**
  * The classic (Cytoscape) renderer's side of the layouts: it hands the graph to the renderer-free layouts in
- * ../layout/ and writes the positions back. Node sizes, with and without labels, come from Cytoscape's stylesheet.
+ * Tether (public/lib/tether/) and writes the positions back. Node sizes, with and without labels, come from Cytoscape's stylesheet.
  *
  * Returns the simulation wrapped for Cytoscape (syncFromGraph / apply), kept so dragging a node moves the others.
  * @param {import('cytoscape').Core} cy
@@ -35,7 +36,7 @@ export function runLayout(cy, s, context) {
       target: edge.data("target"),
     })),
   );
-  const simulation = layOut(graph, s, context);
+  const simulation = layOut(graph, layoutSettings(s), context);
   cy.batch(() =>
     nodes.forEach((node, i) => node.position({ x: graph.x[i], y: graph.y[i] })),
   );

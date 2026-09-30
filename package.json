@@ -28,6 +28,8 @@
     "cytoscape": "3.34.3",
     "eslint": "^10.0.0",
     "globals": "^17.12.0",
-    "prettier": "3.9.9"
+    "prettier": "3.9.9",
+    "prism": "github:BrettWhitson/prism#8ce47b0abd25216a55a9abf82b0d242e0a02b046",
+    "tether": "github:BrettWhitson/tether#f9a09ea925286008fa27b0212a4fe04f6d7a8b30"
   }
 }

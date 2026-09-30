@@ -1,58 +1,24 @@
+import { FORGE_BADGE_URI } from "../config/constants.js";
+import { GraphView as PrismView } from "../../lib/prism/graph-view.js";
 import {
-  FORGE_BADGE_URI,
-  LAYOUT_BASE,
-  PERFORMANCE_LIMITS,
-  UI_COLORS,
-  ZOOM_LIMITS,
-} from "../config/constants.js";
-import { ElasticNetwork } from "../layout/elastic.js";
-import { LayoutGraph } from "../layout/layout-graph.js";
-import { runLayout } from "../layout/run-layout.js";
-import { PHYSICS_TUNING } from "../layout/tuning.js";
-import {
-  isDirectionalLayout,
-  treeDirection,
-} from "../graph/layout-geometry.js";
-import { WebGLGraph } from "./webgl-graph.js";
-import {
-  resolveEdgeStyle,
-  resolveFlowAxis,
-  resolveLabelPosition,
-  resolveNodeStyle,
-  resolveRouting,
-} from "./style-resolver.js";
-import { planTransition } from "./transition-plan.js";
-import { labelBox, labelFont, layoutLabel } from "./labels.js";
-
-/** Graphs up to this size morph between renders; bigger ones snap (springs handle thousands, but not forever). */
-const MAX_ANIMATED_NODES = 5000;
+  gw2ClassRules,
+  prismClasses,
+  prismOptions,
+  prismTheme,
+} from "./prism-settings.js";
 
 /**
- * Prism behind the interface the pages use for GraphView (render, select, lineage, fit, export…), so a
- * page can switch renderers without other changes. Layouts come from ../layout/ (the same ones the classic renderer
- * uses), with room for each label as the engine draws it; everything drawn and animated is the engine's.
+ * Prism (public/lib/prism/, laid out and moved by Tether) behind the interface the pages use for GraphView (render,
+ * select, lineage, fit, export…), so a page can switch renderers without other changes. This adapter speaks the
+ * app's language: it maps the settings to Prism's options and theme, Cytoscape-style elements to Prism's nodes and
+ * edges, and the item states (owned, Mystic Forge, cheaper, cycle, collapsed) to Prism's class rules.
  */
 export class WebGLGraphView {
   #settings;
-  #handlers;
-  #canvasWrapper;
-  #classStyles = {};
-  /** What's drawn: id → { data, classes: Set }, and the edges with their ends. */
-  #nodes = new Map();
-  #edges = new Map();
-  /** child → parent in the graph on screen, so removed nodes can fold into their parents. */
-  #parentOf = new Map();
-  #outgoing = new Map();
-  #incoming = new Map();
-  #simulation = null;
-  #stopPhysics = null;
-  #hoverTimer = 0;
-  #pinnedNodeId = null;
-  #lineage = { nodeId: null, isPinned: false, dimmed: null };
-  #legendIds = null;
-  #flashIds = null;
-  #flashTimer = 0;
-  #pendingFit = false;
+  #view;
+  #pageRules = {};
+  /** What was last handed to Prism, so unchanged settings don't restyle everything. */
+  #sent = { options: "", theme: "", rules: "" };
 
   /**
    * @param {{ container: HTMLElement, canvasWrapper?: HTMLElement, settings: { values: object },
@@ -60,911 +26,235 @@ export class WebGLGraphView {
    */
   constructor({ container, canvasWrapper, settings, handlers }) {
     this.#settings = settings;
-    this.#handlers = handlers;
-    this.#canvasWrapper = canvasWrapper ?? null;
-    this.graph = new WebGLGraph(
+    const values = settings.values;
+    this.#view = new PrismView({
       container,
-      {
-        onNodeTap: (id, event) => handlers.onNodeTap?.(id, event),
-        onNodeDoubleTap: (id) => handlers.onNodeDoubleTap?.(id),
-        onNodeContextTap: (id) => handlers.onNodeContextTap?.(id),
-        onBackgroundTap: () => handlers.onBackgroundTap?.(),
-        onNodeHover: (id, event) =>
-          id
-            ? handlers.onNodeHoverStart?.(id, event)
-            : handlers.onNodeHoverEnd?.(),
-        onPointerMove: (event) => handlers.onPointerMove?.(event),
-        onViewportChange: () => this.#onViewportChange(),
-        onNodeDragStart: (id) => this.#dragStart(id),
-        onNodeDrag: (id, x, y) => this.#dragMove(id, x, y),
-        onNodeDragEnd: (id) => this.#dragEnd(id),
-      },
-      {
+      canvasWrapper,
+      options: prismOptions(values),
+      theme: prismTheme(values),
+      handlers,
+      rendererOptions: {
         // ?screenshot keeps frames readable for screenshots (a little slower).
         preserveDrawingBuffer: new URLSearchParams(
           globalThis.location?.search,
         ).has("screenshot"),
         badgeUrl: FORGE_BADGE_URI,
       },
-    );
+    });
+    this.#sent.options = JSON.stringify(prismOptions(values));
+    this.#sent.theme = JSON.stringify(prismTheme(values));
+    this.#syncClassRules();
     // The page's graph container is the accessible surface (role, description, keyboard, live announcements).
     for (const canvas of [this.graph.canvas, this.graph.labelCanvas])
       canvas.setAttribute("aria-hidden", "true");
-    this.graph.camera.minZoom = ZOOM_LIMITS.min;
-    this.graph.camera.maxZoom = ZOOM_LIMITS.max;
-    new ResizeObserver(() => {
-      if (this.#pendingFit && container.clientWidth) this.fit();
-    }).observe(container);
-    this.#applyOptions();
-    this.syncBackground();
   }
 
-  get #values() {
-    return this.#settings.values;
+  /** Prism's renderer (WebGLGraph), for developer tools. */
+  get graph() {
+    return this.#view.graph;
   }
 
   get rootNodeId() {
-    for (const [id, node] of this.#nodes)
-      if (node.classes.has("root")) return id;
-    return undefined;
+    return this.#view.rootNodeId;
   }
 
   /**
-   * Extra looks for a page's own classes, in renderer-neutral terms (see style-resolver.js):
-   * { nodes: { className: { pattern, border, borderWidth, fillAlpha, aura } }, edges: { className: { color, width, glow } } }
+   * Extra looks for a page's own classes, in Prism's terms (see public/lib/prism/style.js):
+   * { nodes: { className: { pattern, border, borderWidth, fillAlpha, aura, ring, badge } },
+   *   edges: { className: { color, width, glow, pattern } } }
    */
   setClassStyles(rules) {
-    this.#classStyles = rules ?? {};
-    this.#restyle();
+    this.#pageRules = rules ?? {};
+    this.#syncClassRules();
+  }
+
+  /** Hand Prism the options, theme and class rules for the current settings, each only when it changed. */
+  #sync(what, value, apply) {
+    const key = JSON.stringify(value);
+    if (key === this.#sent[what]) return;
+    this.#sent[what] = key;
+    apply(value);
+  }
+
+  #syncOptions() {
+    this.#sync("options", prismOptions(this.#settings.values), (options) =>
+      this.#view.setOptions(options),
+    );
+  }
+
+  #syncClassRules() {
+    const gw2 = gw2ClassRules(this.#settings.values);
+    const rules = {
+      nodes: { ...gw2.nodes, ...this.#pageRules.nodes },
+      edges: { ...gw2.edges, ...this.#pageRules.edges },
+    };
+    this.#sync("rules", rules, (value) => this.#view.setClassStyles(value));
   }
 
   // ---------------------------------------------------------------- rendering
 
-  /**
-   * Replace the graph, morphing from the previous one: survivors glide to their new places, new nodes grow out of
-   * their nearest surviving ancestor (level by level from the root for a new tree), removed ones fold into theirs.
-   * Same arguments as GraphView.render.
-   */
+  /** Same arguments as GraphView.render. */
   render({
     nodeElements,
     edgeElements,
-    nodesById,
     fit = false,
     anchorNodeId = null,
     grow = false,
   }) {
-    const values = this.#values;
-    const graph = this.graph;
-    this.#clearTimers();
-    this.#stopPhysics?.();
-    this.#lineage = { nodeId: null, isPinned: false, dimmed: null };
-    this.#legendIds = this.#flashIds = null;
-
-    const previous = new Map(
-      grow ? [] : graph.nodeIds().map((id) => [id, graph.positionOf(id)]),
-    );
-    const anchorScreen =
-      anchorNodeId && previous.has(anchorNodeId)
-        ? graph.screenPositionOf(anchorNodeId)
-        : null;
-    const parentOf = new Map(
-      edgeElements.map((e) => [e.data.target, e.data.source]),
-    );
-    const rootId = nodeElements[0]?.data.id;
-    const plan = planTransition({
-      previous,
-      nodeIds: nodeElements.map((e) => e.data.id),
-      parentOf,
-      previousParentOf: this.#parentOf,
-      rootId,
-    });
-    this.#parentOf = parentOf;
-
-    this.#nodes = new Map(
-      nodeElements.map((e) => [
-        e.data.id,
-        { data: e.data, classes: classSet(e.classes) },
-      ]),
-    );
-    this.#edges = new Map(
-      edgeElements.map((e) => [
-        e.data.id,
-        {
-          data: e.data,
-          classes: classSet(e.classes),
-          source: e.data.source,
-          target: e.data.target,
-        },
-      ]),
-    );
-    this.#indexEdges();
-
-    // Lay out, seeded with where things are now (the physics continues from there).
-    const styles = new Map(
-      nodeElements.map((e) => [e.data.id, this.#nodeStyle(e.data.id)]),
-    );
-    const layoutGraph = new LayoutGraph(
-      nodeElements.map((e) => {
-        const id = e.data.id;
-        const style = styles.get(id);
-        const start = plan.startOf(id) ?? { x: 0, y: 0 };
+    this.#syncOptions();
+    this.#view.render({
+      nodes: nodeElements.map(({ data, classes }) => {
+        const names = prismClasses(classes);
         return {
-          id,
-          w: style.size,
-          h: style.size,
-          ...this.#footprint(style),
-          x: start.x,
-          y: start.y,
-          root: this.#nodes.get(id).classes.has("root"),
+          id: data.id,
+          label: data.label,
+          color: data.color,
+          icon: data.icon,
+          classes: names,
+          root: names.includes("root"),
         };
       }),
-      edgeElements.map((e) => ({
-        source: e.data.source,
-        target: e.data.target,
+      edges: edgeElements.map(({ data, classes }) => ({
+        ...data,
+        classes: prismClasses(classes),
       })),
-    );
-    // Floating graphs can float into place: shown at their seed layout, then settled live (after setGraph, below).
-    const floatIn =
-      values.physicsMode === "floating" &&
-      this.#tuning.floatIn &&
-      values.animationsEnabled &&
-      nodeElements.length <= MAX_ANIMATED_NODES;
-    this.#simulation = runLayout(layoutGraph, values, {
-      tuning: this.#tuning,
-      settle: !floatIn,
+      fit,
+      anchorNodeId,
+      grow,
     });
-
-    const finalPositions = new Map();
-    const nodes = layoutGraph.ids.map((id, i) => {
-      const position = { x: layoutGraph.x[i], y: layoutGraph.y[i] };
-      finalPositions.set(id, position);
-      const style = styles.get(id);
-      return {
-        id,
-        ...position,
-        width: style.size,
-        height: style.size,
-        style,
-      };
-    });
-    const animate =
-      values.animationsEnabled &&
-      nodes.length <= MAX_ANIMATED_NODES &&
-      graph.width > 0;
-    const duration = values.animationDuration;
-    const stagger =
-      grow &&
-      values.growNewTrees &&
-      nodes.length <= PERFORMANCE_LIMITS.maxStaggeredNodes;
-    const depthOf = (id) => nodesById?.get(id)?.depth ?? 0;
-    const delays = new Map();
-    const spawnFrom = new Map();
-    for (const { id } of nodes) {
-      if (grow) spawnFrom.set(id, finalPositions.get(rootId));
-      else if (!previous.has(id)) spawnFrom.set(id, plan.startOf(id));
-      if (stagger)
-        delays.set(id, Math.min(depthOf(id) * duration * 0.18, duration * 1.4));
-    }
-    graph.setGraph(
-      {
-        nodes,
-        edges: [...this.#edges].map(([id]) => ({
-          id,
-          source: this.#edges.get(id).source,
-          target: this.#edges.get(id).target,
-          style: this.#edgeStyle(id),
-        })),
-        ...this.#routing(),
-      },
-      {
-        animate,
-        spawnFrom,
-        delays,
-        ghostTo: plan.ghostDestinations(finalPositions, anchorNodeId),
-      },
-    );
-    graph.setDimmed(null);
-    graph.setEmphasis(null);
-    graph.setEdgeEmphasis(null);
-    graph.setLabelFocus(null);
-
-    const view = this.#targetView({ fit, anchorNodeId, anchorScreen });
-    if (view) graph.moveCamera(view, { animate });
-    if (floatIn)
-      this.#runPhysics(
-        (simulation) => {
-          simulation.alpha = 1;
-          // Cool to the drag heat, and stop once still there (a node grabbed later only moves what's near it).
-          simulation.alphaTarget = this.#tuning.dragHeat;
-        },
-        {
-          fromScreen: false,
-          until: (simulation) =>
-            simulation.alpha - simulation.alphaTarget < 0.01 &&
-            simulation.motion < this.#tuning.stillness,
-        },
-      );
-  }
-
-  // ---------------------------------------------------------------- physics tuning
-
-  #tuning = { ...PHYSICS_TUNING };
-
-  /** Tether's constants (layout/tuning.js) for this view, e.g. from the sandbox. Applies to what's running too. */
-  setPhysicsTuning(tuning) {
-    this.#tuning = { ...PHYSICS_TUNING, ...tuning };
-    if (this.#simulation) Object.assign(this.#simulation.tuning, this.#tuning);
-  }
-
-  get physicsTuning() {
-    return { ...this.#tuning };
-  }
-
-  /** The layout's force simulation (for developer tools: its alpha, positions, tuning). */
-  get simulation() {
-    return this.#simulation;
-  }
-
-  /** The elastic net while a node is held and until it settles, or null (for developer tools). */
-  get elasticNet() {
-    return this.#drag;
-  }
-
-  /**
-   * Drag a node from code, the way a pointer drag does (the same physics, either mode): for developer tools and
-   * tests. Returns { move(x, y), end() } in world coordinates.
-   */
-  beginDrag(id) {
-    const start = this.graph.livePositionOf(id);
-    if (!start) return null;
-    this.#dragStart(id);
-    return {
-      move: (x, y) => {
-        this.graph.moveNodes([[id, x, y]]);
-        this.#dragMove(id, x, y);
-      },
-      end: () => this.#dragEnd(id),
-    };
-  }
-
-  /** Stop any live physics (a drag settling, Shake, Scatter, floating in). */
-  stopPhysics() {
-    this.#stopPhysics?.();
-  }
-
-  /** Remove everything: no elements, no running animation or physics. */
-  clear() {
-    this.#clearTimers();
-    this.#stopPhysics?.();
-    this.#simulation = null;
-    this.#lineage = { nodeId: null, isPinned: false, dimmed: null };
-    this.#nodes = new Map();
-    this.#edges = new Map();
-    this.#parentOf = new Map();
-    this.#indexEdges();
-    this.graph.setGraph({ nodes: [], edges: [] });
   }
 
   /** New labels, colours and classes without a re-layout (e.g. prices arrived). */
   updateInPlace(nodeUpdates, edgeUpdates) {
-    const nodeStyles = [],
-      edgeStyles = [];
-    for (const { id, data, classes } of nodeUpdates) {
-      const node = this.#nodes.get(id);
-      if (!node) continue;
-      node.data = { ...node.data, label: data.label, color: data.color };
-      node.classes = classSet(classes);
-      nodeStyles.push({ id, style: this.#nodeStyle(id) });
-    }
-    for (const { id, data } of edgeUpdates) {
-      const edge = this.#edges.get(id);
-      if (!edge) continue;
-      edge.data = { ...edge.data, ...data };
-      edgeStyles.push({ id, style: this.#edgeStyle(id) });
-    }
-    this.graph.updateStyles(nodeStyles, edgeStyles);
+    this.#view.updateInPlace(
+      nodeUpdates.map(({ id, data, classes }) => ({
+        id,
+        label: data.label,
+        color: data.color,
+        classes: prismClasses(classes),
+      })),
+      edgeUpdates.map(({ id, data }) => ({ id, ...data })),
+    );
   }
 
   /** A style-only setting changed. */
   applyStylesheet() {
-    this.#applyOptions();
-    this.#restyle();
-    this.#showPinnedLineage({ force: true });
-  }
-
-  #restyle() {
-    this.graph.updateStyles(
-      [...this.#nodes.keys()].map((id) => ({ id, style: this.#nodeStyle(id) })),
-      [...this.#edges.keys()].map((id) => ({ id, style: this.#edgeStyle(id) })),
+    this.#sync("theme", prismTheme(this.#settings.values), (theme) =>
+      this.#view.setTheme(theme),
     );
-    this.graph.setRouting(this.#routing());
+    this.#syncClassRules();
+    this.#syncOptions();
   }
 
-  #applyOptions() {
-    const s = this.#values;
-    this.graph.setOptions({
-      motion: {
-        enabled: s.animationsEnabled,
-        durationMs: s.animationDuration,
-        feel: s.animationEasing,
-      },
-      dimAlpha: s.dimOpacity,
-      flowSpeed: s.flowSpeed,
-      smoothZoom: s.smoothZoom,
-      zoomSpeed: s.zoomSpeed,
-      labels: {
-        position: resolveLabelPosition(s),
-        backdrop: s.labelBackdrop,
-        fadeZoom: s.labelFadeZoom,
-        maxWidth: LAYOUT_BASE.labelWidth * s.labelWrapScale,
-        overflow: s.labelOverflow,
-      },
-    });
+  clear() {
+    this.#view.clear();
   }
 
-  #routing() {
-    const s = this.#values;
-    return {
-      routing: resolveRouting(s),
-      flowAxis: resolveFlowAxis(s),
-      cornerRadius: s.edgeCornerRadius,
-      curvature: s.edgeCurvature ?? 1,
-    };
+  // ---------------------------------------------------------------- physics (Tether), for developer tools
+
+  setPhysicsTuning(tuning) {
+    this.#view.setPhysicsTuning(tuning);
   }
 
-  /**
-   * A node's footprint with its label (the box they make together), as the engine will draw it at zoom 1. The
-   * layouts leave this much room.
-   */
-  #footprint(style) {
-    const size = style.size;
-    if (!style.label) return { fullW: size, fullH: size };
-    const s = this.#values;
-    const font = labelFont(style.fontSize, style.bold);
-    const wrapWidth = LAYOUT_BASE.labelWidth * s.labelWrapScale;
-    const key = `${font}|${wrapWidth}|${s.labelOverflow}|${style.label}`;
-    let label = this.#labelSizes.get(key);
-    if (!label) {
-      const measure = (this.#measureContext ??= document
-        .createElement("canvas")
-        .getContext("2d"));
-      measure.font = font;
-      label = layoutLabel(
-        style.label,
-        { fontSize: style.fontSize, wrapWidth, overflow: s.labelOverflow },
-        (text) => measure.measureText(text).width,
-      );
-      if (this.#labelSizes.size > 20000) this.#labelSizes.clear();
-      this.#labelSizes.set(key, label);
-    }
-    const half = size / 2;
-    const box = labelBox(
-      resolveLabelPosition(s),
-      half,
-      half,
-      label.width,
-      label.height,
-    );
-    return {
-      fullW: Math.max(half, box.x2) - Math.min(-half, box.x1),
-      fullH: Math.max(half, box.y2) - Math.min(-half, box.y1),
-    };
+  get physicsTuning() {
+    return this.#view.physicsTuning;
   }
 
-  #labelSizes = new Map();
-  #measureContext = null;
-
-  #nodeStyle(id) {
-    const { data, classes } = this.#nodes.get(id);
-    const style = resolveNodeStyle(
-      classes,
-      data,
-      this.#values,
-      this.#classStyles,
-    );
-    style.icon = data.icon ?? null;
-    return style;
+  get simulation() {
+    return this.#view.simulation;
   }
 
-  #edgeStyle(id) {
-    const { data, classes } = this.#edges.get(id);
-    return resolveEdgeStyle(classes, data, this.#values, this.#classStyles);
+  get elasticNet() {
+    return this.#view.elasticNet;
   }
 
-  #indexEdges() {
-    this.#outgoing = new Map();
-    this.#incoming = new Map();
-    for (const [id, edge] of this.#edges) {
-      if (!this.#outgoing.has(edge.source)) this.#outgoing.set(edge.source, []);
-      this.#outgoing.get(edge.source).push(id);
-      if (!this.#incoming.has(edge.target)) this.#incoming.set(edge.target, []);
-      this.#incoming.get(edge.target).push(id);
-    }
+  get physicsRunning() {
+    return this.#view.physicsRunning;
   }
 
-  // ---------------------------------------------------------------- selection & highlights
+  beginDrag(id) {
+    return this.#view.beginDrag(id);
+  }
+
+  settle(options) {
+    return this.#view.settle(options);
+  }
+
+  stopPhysics() {
+    this.#view.stopPhysics();
+  }
+
+  // ---------------------------------------------------------------- selection, highlights, lineage
 
   select(nodeId) {
-    this.graph.select(nodeId || null);
-    this.#pinnedNodeId = nodeId || null;
-    if (!this.#lineage.nodeId || this.#lineage.isPinned)
-      this.#showPinnedLineage();
+    this.#view.select(nodeId);
   }
 
   hasNode(nodeId) {
-    return !!nodeId && this.#nodes.has(nodeId);
+    return this.#view.hasNode(nodeId);
   }
 
   nodeIds() {
-    return [...this.#nodes.keys()];
+    return this.#view.nodeIds();
   }
 
-  /** The selection flares briefly. */
   pulse(nodeId) {
-    if (this.#values.animationsEnabled) this.graph.pulse(nodeId);
+    this.#view.pulse(nodeId);
   }
 
   /** Make nodes glow for a moment (jumping to an ingredient from the side panel). */
-  flash(nodeIds, durationMs = 2200) {
-    clearTimeout(this.#flashTimer);
-    this.#flashIds = new Set(nodeIds);
-    this.#syncEmphasis();
-    this.#flashTimer = setTimeout(() => {
-      this.#flashIds = null;
-      this.#syncEmphasis();
-    }, durationMs);
+  flash(nodeIds, durationMs) {
+    this.#view.flash(nodeIds, durationMs);
   }
 
   /** Legend highlight: these nodes glow, everything else fades. Null or empty clears it. */
   setHighlightedNodes(nodeIds) {
-    this.#legendIds = nodeIds?.size ? new Set(nodeIds) : null;
-    this.#syncEmphasis();
-    this.#syncDimmed();
+    this.#view.setHighlightedNodes(nodeIds);
   }
 
-  #syncEmphasis() {
-    const colors = new Map();
-    for (const id of this.#legendIds ?? []) colors.set(id, UI_COLORS.highlight);
-    for (const id of this.#flashIds ?? []) colors.set(id, UI_COLORS.focus);
-    this.graph.setEmphasis(colors.size ? colors : null);
-  }
-
-  #syncDimmed() {
-    const dimmed = new Set(this.#lineage.dimmed ?? []);
-    if (this.#legendIds)
-      for (const id of this.#nodes.keys())
-        if (!this.#legendIds.has(id)) dimmed.add(id);
-    this.graph.setDimmed(dimmed.size ? dimmed : null);
-  }
-
-  // ---------------------------------------------------------------- hover lineage
-
-  /** Light the path to the root and/or the ingredients (per hover mode), after a short debounce. */
   showLineage(nodeId) {
-    clearTimeout(this.#hoverTimer);
-    this.#hoverTimer = setTimeout(
-      () => this.#applyLineage(nodeId),
-      PERFORMANCE_LIMITS.hoverDelayMs,
-    );
+    this.#view.showLineage(nodeId);
   }
 
-  /** Pointer left the node: back to the selection's lineage (if it's pinned). */
   clearLineage() {
-    clearTimeout(this.#hoverTimer);
-    if (this.#lineage.isPinned) return;
-    this.#removeLineage();
-    this.#showPinnedLineage();
+    this.#view.clearLineage();
   }
 
-  #removeLineage() {
-    this.#lineage = { nodeId: null, isPinned: false, dimmed: null };
-    this.graph.setEdgeEmphasis(null);
-    this.graph.setLabelFocus(null);
-    this.#syncDimmed();
-  }
-
-  #showPinnedLineage({ force = false } = {}) {
-    const nodeId = this.#pinnedNodeId;
-    const shouldPin =
-      this.#values.pinSelectionLineage && nodeId && this.hasNode(nodeId);
-    if (
-      !force &&
-      shouldPin &&
-      this.#lineage.isPinned &&
-      this.#lineage.nodeId === nodeId
-    )
-      return;
-    if (this.#lineage.isPinned || force) this.#removeLineage();
-    if (shouldPin && !this.#lineage.nodeId)
-      this.#applyLineage(nodeId, { isPinned: true });
-  }
-
-  /** Everything reachable from `start` along edges (forward) or against them, as node and edge id sets. */
-  #reach(start, forward) {
-    const nodes = new Set(),
-      edges = new Set();
-    const queue = [start];
-    while (queue.length) {
-      const id = queue.pop();
-      for (const edgeId of (forward ? this.#outgoing : this.#incoming).get(
-        id,
-      ) ?? []) {
-        edges.add(edgeId);
-        const edge = this.#edges.get(edgeId);
-        const next = forward ? edge.target : edge.source;
-        if (!nodes.has(next) && next !== start) {
-          nodes.add(next);
-          queue.push(next);
-        }
-      }
-    }
-    return { nodes, edges };
-  }
-
-  #applyLineage(nodeId, { isPinned = false } = {}) {
-    const s = this.#values,
-      mode = s.hoverMode;
-    if (mode === "none" || !this.#nodes.has(nodeId)) return;
-    const ingredients =
-      mode === "ancestors"
-        ? { nodes: new Set(), edges: new Set() }
-        : this.#reach(nodeId, true);
-    const ancestors =
-      mode === "subtree"
-        ? { nodes: new Set(), edges: new Set() }
-        : this.#reach(nodeId, false);
-    // Flow runs from ingredient to product: toward an edge's source here, toward its target where edges run the other way.
-    const flow = s.animateFlow ? (s.flowToward === "target" ? 1 : -1) : 0;
-    const emphasis = new Map();
-    for (const id of ingredients.edges)
-      emphasis.set(id, { color: s.lineageDownColor, boost: 0.8, flow });
-    for (const id of ancestors.edges)
-      emphasis.set(id, { color: s.lineageUpColor, boost: 1.4, flow });
-    let dimmed = null;
-    if (!isPinned) {
-      dimmed = new Set();
-      for (const id of this.#nodes.keys())
-        if (
-          id !== nodeId &&
-          !ingredients.nodes.has(id) &&
-          !ancestors.nodes.has(id)
-        )
-          dimmed.add(id);
-    }
-    this.#lineage = { nodeId, isPinned, dimmed };
-    this.graph.setEdgeEmphasis(emphasis);
-    // Keep names readable around the node even when labels have faded out.
-    const focus = new Set([nodeId, ...ancestors.nodes]);
-    for (const edgeId of this.#outgoing.get(nodeId) ?? [])
-      focus.add(this.#edges.get(edgeId).target);
-    this.graph.setLabelFocus(focus);
-    this.#syncDimmed();
-  }
-
-  // ---------------------------------------------------------------- viewport
+  // ---------------------------------------------------------------- viewport and export
 
   fit() {
-    if (!this.graph.width || !this.graph.height) {
-      this.#pendingFit = true;
-      return;
-    }
-    this.#pendingFit = false;
-    this.graph.fitView({
-      animate: this.#values.animationsEnabled,
-      maxZoom: ZOOM_LIMITS.maxFitZoom,
-    });
+    this.#view.fit();
   }
 
   zoomBy(factor) {
-    this.graph.zoomBy(factor, { animate: this.#values.animationsEnabled });
+    this.#view.zoomBy(factor);
   }
 
   centerOnRoot() {
-    const rootId = this.rootNodeId;
-    if (!rootId) return;
-    this.graph.centerOn(rootId, {
-      zoom: Math.max(this.graph.cameraTarget.zoom, 0.8),
-      animate: this.#values.animationsEnabled,
-    });
+    this.#view.centerOnRoot();
   }
 
-  /** Pan (not zoom) just enough to bring a node on screen, e.g. during keyboard navigation. */
   revealNode(nodeId) {
-    this.graph.reveal(nodeId, { animate: this.#values.animationsEnabled });
+    this.#view.revealNode(nodeId);
   }
 
-  /** Fit some nodes (and optionally their neighbours) into view. */
-  focusOn(nodeIds, { padding = 60, includeNeighbours = false } = {}) {
-    const ids = new Set([...nodeIds].filter((id) => this.#nodes.has(id)));
-    if (!ids.size) return;
-    if (includeNeighbours)
-      for (const id of [...ids]) {
-        for (const edgeId of this.#outgoing.get(id) ?? [])
-          ids.add(this.#edges.get(edgeId).target);
-        for (const edgeId of this.#incoming.get(id) ?? [])
-          ids.add(this.#edges.get(edgeId).source);
-      }
-    this.graph.fitView({
-      ids,
-      padding,
-      maxZoom: 2,
-      animate: this.#values.animationsEnabled,
-    });
+  focusOn(nodeIds, options) {
+    this.#view.focusOn(nodeIds, options);
   }
 
   resize() {
-    this.graph.resize();
+    this.#view.resize();
   }
 
-  /** The dots / grid background follows pan and zoom, so the canvas feels like one surface. */
   syncBackground() {
-    const wrapper = this.#canvasWrapper;
-    if (!wrapper) return;
-    const background = this.#values.canvasBackground;
-    wrapper.dataset.bg = background;
-    if (background !== "dots" && background !== "grid") {
-      wrapper.style.backgroundSize = "";
-      wrapper.style.backgroundPosition = "";
-      return;
-    }
-    const camera = this.graph.camera;
-    let cellSize = 26 * camera.zoom;
-    if (!(cellSize > 0) || !Number.isFinite(cellSize)) cellSize = 26;
-    while (cellSize < 12) cellSize *= 2;
-    while (cellSize > 90) cellSize /= 2;
-    wrapper.style.backgroundSize = `${cellSize}px ${cellSize}px`;
-    wrapper.style.backgroundPosition = `${camera.panX}px ${camera.panY}px`;
+    this.#view.syncBackground();
   }
 
-  #onViewportChange() {
-    if (!this.#viewportFrame)
-      this.#viewportFrame = requestAnimationFrame(() => {
-        this.#viewportFrame = 0;
-        this.syncBackground();
-      });
-    this.#handlers.onViewportChange?.();
+  toPngDataUri(options) {
+    return this.#view.toPngDataUri(options);
   }
 
-  #viewportFrame = 0;
-
-  /** Where the camera should go after a render: keep the anchor still, or fit (smart: never microscopic). */
-  #targetView({ fit, anchorNodeId, anchorScreen }) {
-    const graph = this.graph;
-    if (!graph.width || !graph.height) {
-      if (fit) this.#pendingFit = true;
-      return null;
-    }
-    if (anchorScreen && graph.hasNode(anchorNodeId)) {
-      const position = graph.positionOf(anchorNodeId);
-      const { zoom } = graph.cameraTarget;
-      return {
-        zoom,
-        panX: anchorScreen.x - position.x * zoom,
-        panY: anchorScreen.y - position.y * zoom,
-      };
-    }
-    if (!fit) return null;
-    let view = graph.viewFor(undefined, { maxZoom: ZOOM_LIMITS.maxFitZoom });
-    const rootId = this.rootNodeId;
-    if (fit === "smart" && view.zoom < 0.3 && this.#nodes.size > 80 && rootId) {
-      // Too big to read when fitted: open on the root, near the edge the tree grows away from.
-      const s = this.#values;
-      const zoom = 0.6;
-      const root = graph.positionOf(rootId);
-      const growth = isDirectionalLayout(s) ? treeDirection(s.direction) : null;
-      const fractionX = growth === "LR" ? 0.12 : growth === "RL" ? 0.88 : 0.5;
-      const fractionY = growth === "TB" ? 0.15 : growth === "BT" ? 0.85 : 0.5;
-      view = {
-        zoom,
-        panX: graph.width * fractionX - root.x * zoom,
-        panY: graph.height * fractionY - root.y * zoom,
-      };
-    }
-    return view;
-  }
-
-  // ---------------------------------------------------------------- dragging
-
-  /**
-   * Grabbing a node reheats the layout's force simulation with the node held under the pointer, so its neighbours
-   * follow and others make room; after release it cools down and settles.
-   */
-  /**
-   * Grabbing a node, in the chosen physics mode:
-   *  - elastic: the graph is an elastic net around where it rests (Tether's elastic.js). The held node's neighbours
-   *    follow, theirs less, fading with every link; what isn't connected, or is far enough away, stays still. Letting
-   *    go keeps the pulled shape. Link force sets how far a pull reaches, center force how firmly nodes hold on.
-   *  - floating: the whole graph is live (Tether's force simulation, like Obsidian's graph view): the held node
-   *    drags its neighbours, the rest sways and makes room, and it all settles again after you let go.
-   */
-  #dragStart(id) {
-    this.#stopPhysics?.();
-    if (this.#values.physicsMode === "floating") {
-      this.#runPhysics((simulation) => {
-        simulation.reheat(this.#tuning.dragHeat);
-        // What's on screen is rest: only what the drag changes moves anything.
-        simulation.holdRest();
-        simulation.fix(id, this.graph.livePositionOf(id));
-      });
-      return;
-    }
-    const graph = this.graph;
-    const ids = graph.nodeIds();
-    const index = new Map(ids.map((nodeId, i) => [nodeId, i]));
-    const x = new Float64Array(ids.length),
-      y = new Float64Array(ids.length);
-    ids.forEach((nodeId, i) => {
-      const p = graph.livePositionOf(nodeId);
-      x[i] = p.x;
-      y[i] = p.y;
-    });
-    const sources = [],
-      targets = [];
-    for (const edge of this.#edges.values()) {
-      const s = index.get(edge.source),
-        t = index.get(edge.target);
-      if (s == null || t == null || s === t) continue;
-      sources.push(s);
-      targets.push(t);
-    }
-    const s = this.#values,
-      t = this.#tuning;
-    const net = new ElasticNetwork(
-      { ids, x, y, sources, targets },
-      {
-        stiffness:
-          t.elasticStiffnessBase + t.elasticStiffnessPerLink * s.linkForce,
-        anchor: t.elasticAnchorBase + t.elasticAnchorPerCenter * s.centerForce,
-        damping: t.elasticDamping,
-        // Trees hold their levels more firmly than their place along them.
-        alongAxis: isDirectionalLayout(s) ? resolveFlowAxis(s) : null,
-        alongHold: t.elasticAlongHold,
-        wake: t.elasticWake,
-        rest: t.elasticRest,
-      },
-    );
-    net.grab(id, graph.livePositionOf(id));
-    this.#drag = net;
-    this.#dragIds = ids;
-    this.#driveDrag();
-  }
-
-  #dragMove(id, x, y) {
-    if (this.#values.physicsMode === "floating") {
-      this.#simulation?.fix(id, { x, y });
-      return;
-    }
-    this.#drag?.move(id, { x, y });
-    this.#driveDrag();
-  }
-
-  /**
-   * Step the elastic net every frame while anything in it moves, and stop when it's still (a node held still costs
-   * nothing); moving the held node, or letting go, starts it again. Once it's let go and still, it's done.
-   */
-  #driveDrag() {
-    const net = this.#drag;
-    if (!net || this.#stopPhysics) return;
-    const graph = this.graph,
-      ids = this.#dragIds;
-    const stop = graph.addTicker(() => {
-      const moving = net.step();
-      if (net.changed.length)
-        graph.moveNodes(net.changed.map((i) => [ids[i], net.x[i], net.y[i]]));
-      if (moving) return true;
-      this.#stopPhysics = null;
-      if (!net.held.includes(1)) this.#drag = null;
-      return false;
-    });
-    this.#stopPhysics = () => {
-      stop();
-      this.#drag = this.#stopPhysics = null;
-    };
-  }
-
-  #dragIds = [];
-
-  /** The elastic net while a node is held (and until it settles). */
-  #drag = null;
-
-  /**
-   * Shake the physics and watch it settle: optionally scatter every node by up to `scatter` world units (the same way
-   * each time), heat the simulation to `heat` (0..1) and let it cool, animated. Returns false when the layout has no
-   * simulation (fewer than two nodes).
-   */
-  settle({ heat = 0.6, scatter = 0 } = {}) {
-    return this.#runPhysics((simulation) => {
-      if (scatter)
-        for (let i = 0; i < simulation.count; i++) {
-          simulation.x[i] += (unitNoise(i * 2) * 2 - 1) * scatter;
-          simulation.y[i] += (unitNoise(i * 2 + 1) * 2 - 1) * scatter;
-        }
-      simulation.alphaTarget = 0;
-      simulation.alpha = Math.max(simulation.alpha, heat);
-    });
-  }
-
-  /** Is the physics running live (a drag, or settle())? */
-  get physicsRunning() {
-    return !!this.#stopPhysics;
-  }
-
-  /**
-   * Run the simulation live, after `prepare(simulation)`, until it cools. It starts from what's on screen (a
-   * transition may still be settling), or with `fromScreen: false` from the simulation's own positions (a new
-   * layout's seed, floating into place).
-   */
-  #runPhysics(prepare, { fromScreen = true, until = null } = {}) {
-    const simulation = this.#simulation;
-    if (!simulation) return false;
-    this.#stopPhysics?.();
-    if (fromScreen)
-      simulation.setPositions((nodeId) => this.graph.livePositionOf(nodeId));
-    prepare(simulation);
-    const ids = simulation.ids;
-    const entries = ids.map((nodeId) => [nodeId, 0, 0]);
-    const stop = this.graph.addTicker(() => {
-      simulation.tick();
-      for (let i = 0; i < ids.length; i++) {
-        entries[i][1] = simulation.x[i];
-        entries[i][2] = simulation.y[i];
-      }
-      this.graph.moveNodes(entries);
-      const done = until ? until(simulation) : !simulation.isActive;
-      if (!done) return true;
-      if (until) simulation.alpha = simulation.alphaTarget = 0;
-      this.#stopPhysics = null;
-      return false;
-    });
-    this.#stopPhysics = () => {
-      stop();
-      this.#stopPhysics = null;
-    };
-    return true;
-  }
-
-  #dragEnd(id) {
-    if (this.#values.physicsMode === "floating") {
-      this.#simulation?.release(id);
-      this.#simulation?.reheat(0); // cool down from here
-      return;
-    }
-    this.#drag?.release(id);
-    this.#driveDrag();
-  }
-
-  // ---------------------------------------------------------------- export
-
-  /** The whole graph as a PNG data URI, every label drawn. */
-  toPngDataUri({ scale, backgroundColor }) {
-    return this.graph
-      .renderToCanvas({ scale, background: backgroundColor })
-      .toDataURL("image/png");
-  }
-
-  /** Model-space box around everything drawn. */
   boundingBox() {
-    const { x1, y1, x2, y2 } = this.graph.bounds();
-    return { x1, y1, x2, y2, w: x2 - x1, h: y2 - y1 };
+    return this.#view.boundingBox();
   }
-
-  #clearTimers() {
-    clearTimeout(this.#hoverTimer);
-    clearTimeout(this.#flashTimer);
-  }
-}
-
-/** A repeatable pseudo-random number in [0, 1) for an integer. */
-function unitNoise(n) {
-  const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
-  return x - Math.floor(x);
-}
-
-function classSet(classes) {
-  if (!classes) return new Set();
-  return new Set(
-    (Array.isArray(classes) ? classes : String(classes).split(" ")).filter(
-      Boolean,
-    ),
-  );
 }

@@ -2,7 +2,7 @@
  * Lab page (not deployed): the same synthetic graphs drawn by our WebGL renderer and by Cytoscape in the app's
  * configurations, timed on first frame and on a scripted zoom/pan.
  */
-import { WebGLGraph } from "../render/webgl-graph.js";
+import { WebGLGraph } from "../../lib/prism/render/webgl-graph.js";
 import { buildStylesheet } from "../graph/stylesheet.js";
 import { DEFAULT_SETTINGS } from "../config/settings-schema.js";
 import { RARITY_COLORS } from "../config/constants.js";
