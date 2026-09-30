@@ -1,12 +1,14 @@
-/* Engine sandbox: controls beside a full-height graph. Builds on app.css (tokens, #cyWrap, #cy, options panel). */
+/* Engine sandbox: a tabbed panel of developer tools beside a full-height graph. Builds on app.css (tokens, #cyWrap,
+   #cy, the options panel). */
 
 .sandbox {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
 }
 .sb-panel {
+  display: flex;
+  flex-direction: column;
   min-height: 0;
-  overflow-y: auto;
   background: var(--panel);
   border-right: 1px solid var(--line);
 }
@@ -17,27 +19,36 @@
   min-height: 0;
 }
 
-/* ---------- sandbox's own groups (styled like the options panel's) ---------- */
-.sb-group {
+/* ---------- tabs ---------- */
+.sb-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 6px 6px 0;
   border-bottom: 1px solid var(--line);
 }
-.sb-group summary {
-  padding: 9px 12px;
-  cursor: pointer;
-  font-weight: 600;
-  color: var(--accent2);
-  list-style: none;
-}
-.sb-group summary::-webkit-details-marker {
-  display: none;
-}
-.sb-group summary::before {
-  content: "▸ ";
+.sb-tabs button {
+  flex: 1 1 auto;
+  padding: 6px 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
   color: var(--muted);
+  font-size: 12px;
 }
-.sb-group[open] summary::before {
-  content: "▾ ";
+.sb-tabs button[aria-selected="true"] {
+  color: var(--accent2);
+  border-bottom-color: var(--accent2);
 }
+.sb-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-top: 8px;
+}
+
+/* ---------- controls ---------- */
 .sb-body {
   display: grid;
   gap: 8px;
@@ -49,15 +60,15 @@
   align-items: center;
   gap: 8px;
 }
-.sb-row select,
-.sb-row input[type="number"] {
+.sb-row select {
   grid-column: 2 / span 2;
   min-width: 0;
 }
 .sb-row input[type="number"] {
-  grid-column: 2;
+  min-width: 0;
 }
-.sb-row output {
+.sb-row output,
+.sb-tuning-value {
   min-width: 3.5em;
   text-align: right;
   color: var(--muted);
@@ -69,21 +80,130 @@
   align-items: flex-start;
 }
 .sb-buttons {
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 6px;
 }
 .sb-hint {
   margin: 0;
-  padding: 0 12px 12px;
+  padding: 0 12px 10px;
+}
+.sb-sub {
+  margin: 6px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent2);
+}
+.sb-json {
+  width: 100%;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.sb-file-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel2);
+  cursor: pointer;
+}
+.sb-file-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
-/* ---------- live stats ---------- */
+/* ---------- tuning ---------- */
+.sb-tuning-group {
+  border-top: 1px solid var(--line);
+}
+.sb-tuning-group summary {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--accent2);
+}
+.sb-tuning-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 12px;
+}
+.sb-tuning-row.modified label {
+  color: var(--accent2);
+}
+.sb-tuning-row button {
+  padding: 0 6px;
+  font-size: 11px;
+}
+
+/* ---------- results ---------- */
+.sb-results {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+.sb-result {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--panel2);
+}
+.sb-result h4 {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 6px;
+  font-size: 12px;
+}
+.sb-result .pass {
+  color: #7ac46b;
+}
+.sb-result .fail {
+  color: var(--danger);
+}
+.sb-result table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+.sb-result th,
+.sb-result td {
+  padding: 2px 4px;
+  text-align: right;
+}
+.sb-result th:first-child,
+.sb-result td:first-child {
+  text-align: left;
+}
+.sb-result p {
+  margin: 4px 0 0;
+}
+
+/* ---------- live stats (always visible) ---------- */
+.sb-live {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--line);
+  padding: 4px 12px 8px;
+  max-height: 40%;
+  overflow-y: auto;
+}
 .sb-stats {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 3px 12px;
-  margin: 0;
-  padding: 0 12px 12px;
+  gap: 2px 12px;
+  margin: 4px 0 0;
   font-variant-numeric: tabular-nums;
+  font-size: 12px;
 }
 .sb-stats dt {
   color: var(--muted);
@@ -100,10 +220,25 @@
 }
 
 /* ---------- stage ---------- */
+.sb-tools {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sb-tools button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 16px;
+}
 .sb-tooltip {
   position: absolute;
   z-index: 5;
-  max-width: 260px;
+  max-width: 280px;
   padding: 5px 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -124,27 +259,10 @@
 @media (max-width: 700px) {
   .sandbox {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 45%) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 50%) minmax(0, 1fr);
   }
   .sb-panel {
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }
-}
-
-/* Zoom / fit, over the graph's corner (the same look as on What you can craft). */
-.sb-tools {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  z-index: 4;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.sb-tools button {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  font-size: 16px;
 }

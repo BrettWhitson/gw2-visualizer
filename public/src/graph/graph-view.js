@@ -872,12 +872,8 @@ export class GraphView {
     let draggedId = null;
     cy.on("grab", "node", (event) => {
       const simulation = this.#simulation;
-      if (
-        !this.#values.dragPhysics ||
-        !simulation ||
-        event.target.hasClass("ghost")
-      )
-        return;
+      // Classic always floats (Prism has the elastic mode too).
+      if (!simulation || event.target.hasClass("ghost")) return;
       this.#finishAnimations();
       simulation.syncFromGraph(); // pick up any manual moves since the last layout
       draggedId = event.target.id();

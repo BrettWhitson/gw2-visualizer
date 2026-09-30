@@ -5,13 +5,21 @@ import { DEPTH_COLORS, RARITY_COLORS } from "../config/constants.js";
  * left out. Pure.
  *
  * @param {ReturnType<typeof import('./generate-graph.js').generateGraph>} graph
- * @param {{ collapsed?: Set<string>, colorBy?: "rarity" | "depth", states?: boolean, icons?: string[] }} options
+ * @param {{ collapsed?: Set<string>, colorBy?: "rarity" | "depth", states?: boolean, icons?: string[],
+ *           colors?: Map<string, string> }} options
  *   states: mark some items owned, a better buy or a Mystic Forge result, so those looks show;
- *   icons: image URLs handed out to items (the same item always gets the same one)
+ *   icons: image URLs handed out to items (the same item always gets the same one); colors: per-item colours that
+ *   win over colorBy (e.g. by links from a probed item)
  */
 export function sandboxElements(
   graph,
-  { collapsed = new Set(), colorBy = "rarity", states = true, icons = [] } = {},
+  {
+    collapsed = new Set(),
+    colorBy = "rarity",
+    states = true,
+    icons = [],
+    colors = null,
+  } = {},
 ) {
   const byId = new Map(graph.nodes.map((node) => [node.id, node]));
   const children = new Map();
@@ -35,9 +43,10 @@ export function sandboxElements(
   }
 
   const colorOf = (node) =>
-    colorBy === "depth"
+    colors?.get(node.id) ??
+    (colorBy === "depth"
       ? DEPTH_COLORS[node.depth % DEPTH_COLORS.length]
-      : RARITY_COLORS[node.rarity];
+      : RARITY_COLORS[node.rarity]);
   const forgeIds = new Set();
   const nodeElements = [...shown].map((id) => {
     const node = byId.get(id);

@@ -54,8 +54,8 @@ import {
 
 const LAYOUT_KEY = "gw2ct.craftableLayout";
 const LAYOUT_SETTINGS = {
-  columns: { direction: "RL", layoutEngine: "layered" },
-  radial: { direction: "radial", layoutEngine: "layered" },
+  columns: { direction: "RL" },
+  radial: { direction: "radial" },
 };
 
 /**

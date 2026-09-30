@@ -198,18 +198,34 @@ test('saved depth "All" (99) maps to the unlimited slider step', async () => {
   assert.equal(new SettingsStore().values.maxDepth, UNLIMITED_DEPTH);
 });
 
-test("the old concentric engine becomes the radial direction", async () => {
+test("old layout engines become the two layouts: concentric → radial, force-directed → radial and floating", async () => {
+  const { SettingsStore } =
+    await import("../public/src/core/settings-store.js");
   installFakeLocalStorage({
     "gw2ct.settings.v2": JSON.stringify({
       layoutEngine: "concentric",
       direction: "LR",
+      dagreRanker: "longest-path",
+      treeAlignment: "UL",
+      dragPhysics: false,
     }),
   });
-  const { SettingsStore } =
-    await import("../public/src/core/settings-store.js");
-  const store = new SettingsStore();
-  assert.equal(store.values.layoutEngine, "layered");
+  let store = new SettingsStore();
   assert.equal(store.values.direction, "radial");
+  assert.equal(store.values.physicsMode, "elastic");
+  for (const gone of [
+    "layoutEngine",
+    "dagreRanker",
+    "treeAlignment",
+    "dragPhysics",
+  ])
+    assert.ok(!(gone in store.values), `${gone} is gone`);
+  installFakeLocalStorage({
+    "gw2ct.settings.v2": JSON.stringify({ layoutEngine: "force" }),
+  });
+  store = new SettingsStore();
+  assert.equal(store.values.direction, "radial");
+  assert.equal(store.values.physicsMode, "floating");
 });
 
 test("saved density and spacing settings become equivalent forces", async () => {

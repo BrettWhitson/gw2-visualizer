@@ -86,3 +86,39 @@ test("sandbox elements: colour by rarity or depth, and icons stick to an item's 
   );
   assert.ok(byRarity.nodeElements.every((e) => icons.includes(e.data.icon)));
 });
+
+test("probes: links from an item, and how far each group moved", async () => {
+  const { hopDistances, movementByHops, hopColor } =
+    await import("../public/src/sandbox/probes.js");
+  const edges = [
+    { source: "a", target: "b" },
+    { source: "b", target: "c" },
+    { source: "d", target: "c" }, // direction doesn't matter
+  ];
+  const hops = hopDistances(edges, "a");
+  assert.deepEqual(Object.fromEntries(hops), { a: 0, b: 1, c: 2, d: 3 });
+  const before = new Map([
+    ["a", { x: 0, y: 0 }],
+    ["b", { x: 0, y: 0 }],
+    ["c", { x: 0, y: 0 }],
+    ["z", { x: 0, y: 0 }],
+  ]);
+  const after = new Map([
+    ["a", { x: 8, y: 0 }],
+    ["b", { x: 3, y: 4 }],
+    ["c", { x: 0.1, y: 0 }],
+    ["z", { x: 0, y: 0 }],
+  ]);
+  const rows = movementByHops(before, after, hops);
+  assert.deepEqual(
+    rows.map((row) => [row.hops, row.moved, row.max]),
+    [
+      [0, 1, 8],
+      [1, 1, 5],
+      [2, 0, 0.1],
+      ["unlinked", 0, 0],
+    ],
+  );
+  assert.equal(hopColor(0), "#ffffff");
+  assert.equal(hopColor(undefined), "#4a5263");
+});

@@ -61,7 +61,7 @@ function computeBands({ preOrder, childrenOf }, breadthOf, siblingGap) {
 
 /**
  * Layered tree layout in O(n): each subtree gets a band as wide as its children need, parents centre over their
- * children (or sit over the first / last with alignment "…L" / "…R"), and every depth gets its own rank. Crossing
+ * children, and every depth gets its own rank. Crossing
  * minimisation is pointless for trees (they have none), so this replaces the general layered layout for tree view.
  * @param {import('./layout-graph.js').LayoutGraph} graph
  * @returns {boolean} false when there's no root to lay out
@@ -72,7 +72,6 @@ export function tidyTreeLayout(
     direction,
     siblingGap,
     levelGap,
-    alignment = "",
     breadthLabelShare = 1,
     extentLabelShare = 1,
   },
@@ -123,11 +122,7 @@ export function tidyTreeLayout(
     });
     const across = !children.length
       ? bandStart + band.get(i) / 2
-      : alignment.endsWith("L")
-        ? first
-        : alignment.endsWith("R")
-          ? last
-          : (first + last) / 2;
+      : (first + last) / 2;
     const along = levelCenters[tree.depthOf.get(i)];
     placeAlong(graph, i, direction, along, across);
   }

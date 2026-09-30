@@ -117,7 +117,7 @@ test("layered: levels sit about one link distance apart", () => {
 
 test("link strength pulls links toward the link distance (stronger = closer)", () => {
   const edgeError = (linkForce) => {
-    const p = layout({ layoutEngine: "force", linkDistance: 150, linkForce });
+    const p = layout({ direction: "radial", linkDistance: 150, linkForce });
     const lengths = ELEMENTS.filter((e) => e.data.source).map((e) =>
       Math.hypot(
         p[e.data.source].x - p[e.data.target].x,
@@ -137,7 +137,12 @@ test("link strength pulls links toward the link distance (stronger = closer)", (
 
 test("dragging a node pulls its neighbours along (live physics)", () => {
   const graph = graphOf(ELEMENTS);
-  const settings = { ...DEFAULT_SETTINGS, layoutEngine: "force" };
+  // Floating on a tree: levels hold the vertical, so a sideways drag shows the pull clearly.
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    direction: "TB",
+    physicsMode: "floating",
+  };
   const simulation = runLayout(graph, settings, {
     hasPreviousPositions: false,
   });
@@ -209,15 +214,14 @@ test("radial rings are evenly spaced by link distance, even when outer rings are
     );
 });
 
-test("force layout: deterministic, and a stronger center force gathers it tighter", () => {
-  const loose = layout({ layoutEngine: "force", centerForce: 0 });
-  assert.deepEqual(
-    layout({ layoutEngine: "force", centerForce: 0 }),
-    loose,
-    "same input, same layout",
-  );
-  const tight = layout({ layoutEngine: "force", centerForce: 1 });
-  assert.ok(width(tight) < width(loose));
+test("both layouts, both physics modes: the same input always gives the same layout", () => {
+  for (const direction of ["TB", "radial"])
+    for (const physicsMode of ["elastic", "floating"])
+      assert.deepEqual(
+        layout({ direction, physicsMode }),
+        layout({ direction, physicsMode }),
+        `${direction}, ${physicsMode}`,
+      );
 });
 
 test("−/+ steps land exactly on the slider's grid and stop at its ends", () => {
@@ -305,7 +309,7 @@ test("waking the physics (a drag, a tap) doesn't slide the graph", () => {
   for (const overrides of [
     { direction: "TB" },
     { viewMode: "merged", direction: "LR" },
-    { layoutEngine: "force" },
+    { direction: "radial", physicsMode: "floating" },
   ]) {
     const near = drift(overrides, 0),
       far = drift(overrides, 3000);
@@ -313,7 +317,71 @@ test("waking the physics (a drag, a tap) doesn't slide the graph", () => {
       Math.abs(far - near) < 1,
       `${JSON.stringify(overrides)}: ${far.toFixed(1)} far away vs ${near.toFixed(1)} at the origin`,
     );
-    // Nor does it slide on its own (uneven link pulls and the approximate repulsion used to push it along).
-    assert.ok(Math.abs(far) < 2, `${JSON.stringify(overrides)}: ${far}`);
+    // Nor does it slide on its own (uneven link pulls and the approximate repulsion used to push it along). Radial
+    // pins the result in the middle, and its rings pull on the rest from there: a little more give.
+    const allowed = overrides.direction === "radial" ? 5 : 2;
+    assert.ok(Math.abs(far) < allowed, `${JSON.stringify(overrides)}: ${far}`);
+  }
+});
+
+test("floating: grabbing a node moves nothing by itself, and a small nudge stays near it", () => {
+  // result → 3 products → 6 ingredients each.
+  const elements = [{ data: { id: "r" }, classes: "root" }];
+  for (let a = 0; a < 3; a++) {
+    elements.push(
+      { data: { id: `a${a}` } },
+      { data: { id: `r>a${a}`, source: "r", target: `a${a}` } },
+    );
+    for (let b = 0; b < 6; b++)
+      elements.push(
+        { data: { id: `a${a}b${b}` } },
+        { data: { id: `a${a}>b${b}`, source: `a${a}`, target: `a${a}b${b}` } },
+      );
+  }
+  const grab = (direction, nudge) => {
+    const graph = graphOf(elements, { w: 60, h: 40 });
+    const simulation = runLayout(graph, {
+      ...DEFAULT_SETTINGS,
+      direction,
+      physicsMode: "floating",
+    });
+    const before = new Map(graph.positions());
+    // What the view does on a floating drag: start from what's on screen, heat up, hold that as rest, fix the node.
+    simulation.setPositions((id) => graph.positionOf(id));
+    simulation.reheat(simulation.tuning.dragHeat);
+    simulation.holdRest();
+    const leaf = simulation.indexById.get("a0b0");
+    simulation.fix("a0b0", {
+      x: simulation.x[leaf] + nudge,
+      y: simulation.y[leaf],
+    });
+    for (let i = 0; i < 90; i++) simulation.tick();
+    return new Map(
+      simulation.ids.map((id, i) => [
+        id,
+        Math.hypot(
+          simulation.x[i] - before.get(id).x,
+          simulation.y[i] - before.get(id).y,
+        ),
+      ]),
+    );
+  };
+  for (const direction of ["TB", "radial"]) {
+    const held = grab(direction, 0);
+    assert.ok(
+      Math.max(...held.values()) < 1e-6,
+      `${direction}: grabbing alone moved something ${Math.max(...held.values())}`,
+    );
+    const nudged = grab(direction, 8);
+    const elsewhere = [...nudged].filter(([id]) => !id.startsWith("a0"));
+    const most = Math.max(...elsewhere.map(([, d]) => d));
+    assert.ok(
+      most < 8,
+      `${direction}: other branches moved up to ${most.toFixed(1)}`,
+    );
+    assert.ok(
+      nudged.get("a0") > 0.1,
+      `${direction}: the leaf's product responds`,
+    );
   }
 });

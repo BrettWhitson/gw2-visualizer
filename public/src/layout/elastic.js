@@ -14,18 +14,17 @@
  * coasts to a stop.
  */
 
-const WAKE = 0.05; // world units a node must be displaced before it disturbs its neighbours
-const REST = 0.01; // below this speed and force, a node has settled
-
 export class ElasticNetwork {
   /**
    * @param {{ ids: string[], x: ArrayLike<number>, y: ArrayLike<number>, sources: number[], targets: number[] }} graph
    *   positions now (they become the rest positions); links as index pairs
    * @param {{ stiffness?: number, anchor?: number, damping?: number, alongAxis?: "x" | "y" | null,
-   *           alongHold?: number }} options
+   *           alongHold?: number, wake?: number, rest?: number }} options
    *   stiffness: how firmly links keep their shape; anchor: how firmly nodes hold their rest positions (together they
    *   set how far a pull travels: per hop along a chain, roughly stiffness / (stiffness + anchor)); damping: 0..1,
-   *   how much speed is lost per step; alongAxis / alongHold: layered layouts hold their levels this much more firmly
+   *   how much speed is lost per step; alongAxis / alongHold: layered layouts hold their levels this much more firmly;
+   *   wake: how far (world units) a node must be displaced before it disturbs its neighbours; rest: below this speed
+   *   and force a node has settled
    */
   constructor(
     { ids, x, y, sources, targets },
@@ -35,6 +34,8 @@ export class ElasticNetwork {
       damping = 0.35,
       alongAxis = null,
       alongHold = 2,
+      wake = 0.05,
+      rest = 0.01,
     } = {},
   ) {
     const count = (this.count = ids.length);
@@ -48,6 +49,8 @@ export class ElasticNetwork {
     this.vy = new Float64Array(count);
     this.held = new Uint8Array(count);
     this.stiffness = stiffness;
+    this.wake = wake;
+    this.rest = rest;
     this.damping = damping;
     this.anchorX = anchor * (alongAxis === "x" ? alongHold : 1);
     this.anchorY = anchor * (alongAxis === "y" ? alongHold : 1);
@@ -166,11 +169,14 @@ export class ElasticNetwork {
       // A node that's out of place and still moving disturbs its neighbours; one at rest doesn't (it would wake them
       // every step for nothing, and the net would never go still).
       const speed = Math.abs(this.vx[i]) + Math.abs(this.vy[i]);
-      if (speed > REST && Math.hypot(x[i] - restX[i], y[i] - restY[i]) > WAKE)
+      if (
+        speed > this.rest &&
+        Math.hypot(x[i] - restX[i], y[i] - restY[i]) > this.wake
+      )
         this.#wakeNeighbours(i);
       const settled =
-        Math.abs(this.vx[i]) + Math.abs(this.vy[i]) < REST &&
-        Math.abs(forceX[i]) + Math.abs(forceY[i]) < REST;
+        Math.abs(this.vx[i]) + Math.abs(this.vy[i]) < this.rest &&
+        Math.abs(forceX[i]) + Math.abs(forceY[i]) < this.rest;
       if (settled) this.awake[i] = 0;
       else stillActive.push(i);
     }

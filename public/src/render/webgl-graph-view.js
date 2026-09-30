@@ -8,6 +8,7 @@ import {
 import { ElasticNetwork } from "../layout/elastic.js";
 import { LayoutGraph } from "../layout/layout-graph.js";
 import { runLayout } from "../layout/run-layout.js";
+import { PHYSICS_TUNING } from "../layout/tuning.js";
 import {
   isDirectionalLayout,
   treeDirection,
@@ -75,10 +76,7 @@ export class WebGLGraphView {
         onPointerMove: (event) => handlers.onPointerMove?.(event),
         onViewportChange: () => this.#onViewportChange(),
         onNodeDragStart: (id) => this.#dragStart(id),
-        onNodeDrag: (id, x, y) => {
-          this.#drag?.move(id, { x, y });
-          this.#driveDrag();
-        },
+        onNodeDrag: (id, x, y) => this.#dragMove(id, x, y),
         onNodeDragEnd: (id) => this.#dragEnd(id),
       },
       {
@@ -205,8 +203,15 @@ export class WebGLGraphView {
         target: e.data.target,
       })),
     );
+    // Floating graphs can float into place: shown at their seed layout, then settled live (after setGraph, below).
+    const floatIn =
+      values.physicsMode === "floating" &&
+      this.#tuning.floatIn &&
+      values.animationsEnabled &&
+      nodeElements.length <= MAX_ANIMATED_NODES;
     this.#simulation = runLayout(layoutGraph, values, {
-      hasPreviousPositions: previous.size > 0,
+      tuning: this.#tuning,
+      settle: !floatIn,
     });
 
     const finalPositions = new Map();
@@ -265,6 +270,66 @@ export class WebGLGraphView {
 
     const view = this.#targetView({ fit, anchorNodeId, anchorScreen });
     if (view) graph.moveCamera(view, { animate });
+    if (floatIn)
+      this.#runPhysics(
+        (simulation) => {
+          simulation.alpha = 1;
+          // Cool to the drag heat, and stop once still there (a node grabbed later only moves what's near it).
+          simulation.alphaTarget = this.#tuning.dragHeat;
+        },
+        {
+          fromScreen: false,
+          until: (simulation) =>
+            simulation.alpha - simulation.alphaTarget < 0.01 &&
+            simulation.motion < this.#tuning.stillness,
+        },
+      );
+  }
+
+  // ---------------------------------------------------------------- physics tuning
+
+  #tuning = { ...PHYSICS_TUNING };
+
+  /** Tether's constants (layout/tuning.js) for this view, e.g. from the sandbox. Applies to what's running too. */
+  setPhysicsTuning(tuning) {
+    this.#tuning = { ...PHYSICS_TUNING, ...tuning };
+    if (this.#simulation) Object.assign(this.#simulation.tuning, this.#tuning);
+  }
+
+  get physicsTuning() {
+    return { ...this.#tuning };
+  }
+
+  /** The layout's force simulation (for developer tools: its alpha, positions, tuning). */
+  get simulation() {
+    return this.#simulation;
+  }
+
+  /** The elastic net while a node is held and until it settles, or null (for developer tools). */
+  get elasticNet() {
+    return this.#drag;
+  }
+
+  /**
+   * Drag a node from code, the way a pointer drag does (the same physics, either mode): for developer tools and
+   * tests. Returns { move(x, y), end() } in world coordinates.
+   */
+  beginDrag(id) {
+    const start = this.graph.livePositionOf(id);
+    if (!start) return null;
+    this.#dragStart(id);
+    return {
+      move: (x, y) => {
+        this.graph.moveNodes([[id, x, y]]);
+        this.#dragMove(id, x, y);
+      },
+      end: () => this.#dragEnd(id),
+    };
+  }
+
+  /** Stop any live physics (a drag settling, Shake, Scatter, floating in). */
+  stopPhysics() {
+    this.#stopPhysics?.();
   }
 
   /** Remove everything: no elements, no running animation or physics. */
@@ -705,14 +770,24 @@ export class WebGLGraphView {
    * follow and others make room; after release it cools down and settles.
    */
   /**
-   * Grabbing a node pulls the graph like an elastic net (Tether's elastic.js): its neighbours follow, theirs less,
-   * fading with every hop; what isn't connected, or is far enough away, stays exactly still. Letting go leaves it
-   * where it was dropped and the net settles around it. Link force sets how far a pull reaches, center force how
-   * firmly nodes hold their place.
+   * Grabbing a node, in the chosen physics mode:
+   *  - elastic: the graph is an elastic net around where it rests (Tether's elastic.js). The held node's neighbours
+   *    follow, theirs less, fading with every link; what isn't connected, or is far enough away, stays still. Letting
+   *    go keeps the pulled shape. Link force sets how far a pull reaches, center force how firmly nodes hold on.
+   *  - floating: the whole graph is live (Tether's force simulation, like Obsidian's graph view): the held node
+   *    drags its neighbours, the rest sways and makes room, and it all settles again after you let go.
    */
   #dragStart(id) {
-    if (!this.#values.dragPhysics) return;
     this.#stopPhysics?.();
+    if (this.#values.physicsMode === "floating") {
+      this.#runPhysics((simulation) => {
+        simulation.reheat(this.#tuning.dragHeat);
+        // What's on screen is rest: only what the drag changes moves anything.
+        simulation.holdRest();
+        simulation.fix(id, this.graph.livePositionOf(id));
+      });
+      return;
+    }
     const graph = this.graph;
     const ids = graph.nodeIds();
     const index = new Map(ids.map((nodeId, i) => [nodeId, i]));
@@ -732,19 +807,34 @@ export class WebGLGraphView {
       sources.push(s);
       targets.push(t);
     }
-    const s = this.#values;
+    const s = this.#values,
+      t = this.#tuning;
     const net = new ElasticNetwork(
       { ids, x, y, sources, targets },
       {
-        stiffness: 0.3 + s.linkForce,
-        anchor: 0.05 + s.centerForce * 0.5,
-        // Layered layouts hold their levels more firmly than their place along them.
+        stiffness:
+          t.elasticStiffnessBase + t.elasticStiffnessPerLink * s.linkForce,
+        anchor: t.elasticAnchorBase + t.elasticAnchorPerCenter * s.centerForce,
+        damping: t.elasticDamping,
+        // Trees hold their levels more firmly than their place along them.
         alongAxis: isDirectionalLayout(s) ? resolveFlowAxis(s) : null,
+        alongHold: t.elasticAlongHold,
+        wake: t.elasticWake,
+        rest: t.elasticRest,
       },
     );
     net.grab(id, graph.livePositionOf(id));
     this.#drag = net;
     this.#dragIds = ids;
+    this.#driveDrag();
+  }
+
+  #dragMove(id, x, y) {
+    if (this.#values.physicsMode === "floating") {
+      this.#simulation?.fix(id, { x, y });
+      return;
+    }
+    this.#drag?.move(id, { x, y });
     this.#driveDrag();
   }
 
@@ -799,13 +889,17 @@ export class WebGLGraphView {
     return !!this.#stopPhysics;
   }
 
-  /** Run the simulation live from what's on screen, after `prepare(simulation)`, until it cools. */
-  #runPhysics(prepare) {
+  /**
+   * Run the simulation live, after `prepare(simulation)`, until it cools. It starts from what's on screen (a
+   * transition may still be settling), or with `fromScreen: false` from the simulation's own positions (a new
+   * layout's seed, floating into place).
+   */
+  #runPhysics(prepare, { fromScreen = true, until = null } = {}) {
     const simulation = this.#simulation;
     if (!simulation) return false;
     this.#stopPhysics?.();
-    // Start from what's on screen (a transition may still be settling).
-    simulation.setPositions((nodeId) => this.graph.livePositionOf(nodeId));
+    if (fromScreen)
+      simulation.setPositions((nodeId) => this.graph.livePositionOf(nodeId));
     prepare(simulation);
     const ids = simulation.ids;
     const entries = ids.map((nodeId) => [nodeId, 0, 0]);
@@ -816,7 +910,9 @@ export class WebGLGraphView {
         entries[i][2] = simulation.y[i];
       }
       this.graph.moveNodes(entries);
-      if (simulation.isActive) return true;
+      const done = until ? until(simulation) : !simulation.isActive;
+      if (!done) return true;
+      if (until) simulation.alpha = simulation.alphaTarget = 0;
       this.#stopPhysics = null;
       return false;
     });
@@ -828,8 +924,11 @@ export class WebGLGraphView {
   }
 
   #dragEnd(id) {
-    // With physics the net settles around the dropped node; without, it just stays where it was dropped (the next
-    // layout starts from what's on screen either way).
+    if (this.#values.physicsMode === "floating") {
+      this.#simulation?.release(id);
+      this.#simulation?.reheat(0); // cool down from here
+      return;
+    }
     this.#drag?.release(id);
     this.#driveDrag();
   }

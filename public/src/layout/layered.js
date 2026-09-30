@@ -5,22 +5,21 @@ import { placeAlong } from "./trees.js";
  * several parents. Our replacement for dagre, in five steps:
  *
  *  1. cycles: edges that close a cycle (found depth-first from the root) are treated as reversed;
- *  2. ranks: every edge goes down at least one rank ("ranker", below);
+ *  2. ranks: every edge goes down at least one rank, and each node sits between its parents and children so edges
+ *     stay short (a local optimum of the total edge length, like network simplex);
  *  3. long edges get a chain of dummy nodes, one per rank they cross, so they can bend around nodes;
  *  4. order within each rank: barycentre sweeps down and up, keeping the order with the fewest crossings, then
  *     swapping neighbours while that removes crossings. The starting order is the graph's own (depth-first,
  *     children in edge order), so ingredient sorting carries over;
- *  5. coordinates: each rank is placed as close as possible to where its neighbours pull it (median, or the first /
- *     last neighbour for "…L" / "…R" alignments), keeping every pair at least its separation apart. Each placement is
- *     an exact weighted isotonic regression (pool adjacent violators); dummies weigh more, so long edges run straight.
+ *  5. coordinates: each rank is placed as close as possible to the median of its neighbours on the rank just placed,
+ *     keeping every pair at least its separation apart. Each placement is an exact weighted isotonic regression (pool
+ *     adjacent violators); dummies weigh more, so long edges run straight.
  *
- * Rankers: "network-simplex" keeps edges short (each node settles between its parents and children); "tight-tree"
- * puts every node as close to the root as it can go; "longest-path" puts it as close to the raw materials as it can
- * go (all raw materials on the last rank). Deterministic: ties are broken by index.
+ * Deterministic: ties are broken by index.
  *
  * @param {import('./layout-graph.js').LayoutGraph} graph  positions are written to graph.x / graph.y
  * @param {{ direction: 'TB'|'BT'|'LR'|'RL', nodeSep: number, rankSep: number, edgeSep?: number,
- *           ranker?: string, align?: string, widthLabelShare?: number, heightLabelShare?: number }} options
+ *           widthLabelShare?: number, heightLabelShare?: number }} options
  *   direction: root → ingredients
  * @returns {{ ranks: number[][], crossings: number }} for tests and diagnostics (dummies included, as indexes ≥ count)
  */
@@ -31,8 +30,6 @@ export function layeredLayout(
     nodeSep = 24,
     rankSep = 50,
     edgeSep = 6,
-    ranker = "network-simplex",
-    align = "",
     widthLabelShare = 1,
     heightLabelShare = 1,
   },
@@ -49,7 +46,7 @@ export function layeredLayout(
   }
 
   const { order: dfsOrder, edges } = acyclicEdges(graph);
-  const rank = assignRanks(n, edges, dfsOrder, ranker);
+  const rank = assignRanks(n, edges, dfsOrder);
 
   // Dummies: node indexes n, n+1, … along every edge that spans more than one rank.
   const down = []; // node → nodes on the next rank
@@ -109,17 +106,10 @@ export function layeredLayout(
       across[i] = cursor;
     });
   }
-  const preferUp = align.startsWith("U"),
-    preferDown = align.startsWith("D");
-  const pick = align.endsWith("L")
-    ? (values) => values[0]
-    : align.endsWith("R")
-      ? (values) => values[values.length - 1]
-      : median;
   const weightOf = (i) => (isDummy(i) ? 8 : 1);
   for (let round = 0; round < 6; round++) {
-    // Down sweeps follow parents, up sweeps follow children; an alignment favours one side.
-    const downward = preferUp ? true : preferDown ? false : round % 2 === 0;
+    // Down sweeps follow parents, up sweeps follow children.
+    const downward = round % 2 === 0;
     const order = downward
       ? ranks.map((_, r) => r)
       : ranks.map((_, r) => rankCount - 1 - r);
@@ -128,7 +118,7 @@ export function layeredLayout(
       const desired = members.map((i) => {
         const neighbours = downward ? up[i] : down[i];
         if (!neighbours.length) return across[i];
-        return pick(neighbours.map((j) => across[j]).sort((a, b) => a - b));
+        return median(neighbours.map((j) => across[j]).sort((a, b) => a - b));
       });
       placeRank(members, desired, separation, weightOf, across);
     }
@@ -205,8 +195,8 @@ function dedupe(edges) {
   });
 }
 
-/** Ranks such that every edge goes down ≥ 1 rank, lowest rank 0. See layeredLayout for the rankers. */
-function assignRanks(n, edges, order, ranker) {
+/** Ranks such that every edge goes down ≥ 1 rank and edges stay short; lowest rank 0. */
+function assignRanks(n, edges, order) {
   const parents = Array.from({ length: n }, () => []);
   const children = Array.from({ length: n }, () => []);
   for (const [s, t] of edges) {
@@ -218,22 +208,6 @@ function assignRanks(n, edges, order, ranker) {
   // As close to the root as possible: one below the deepest parent.
   for (const i of topological)
     for (const p of parents[i]) rank[i] = Math.max(rank[i], rank[p] + 1);
-  if (ranker === "tight-tree") return rank;
-
-  // As close to the raw materials as possible: one above the highest child.
-  const height = new Int32Array(n);
-  for (let k = topological.length - 1; k >= 0; k--) {
-    const i = topological[k];
-    for (const c of children[i]) height[i] = Math.max(height[i], height[c] + 1);
-  }
-  const maxRank = largest(rank);
-  if (ranker === "longest-path") {
-    for (let i = 0; i < n; i++)
-      rank[i] =
-        parents[i].length || children[i].length ? maxRank - height[i] : 0;
-    normalise(rank);
-    return rank;
-  }
 
   // Short edges: move each node to the median of where its neighbours want it, within the ranks its parents and
   // children allow, until nothing moves (a local optimum of the total edge length, like network simplex).

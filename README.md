@@ -50,16 +50,18 @@ their own edges; drag the side panel's edge to resize it.
 that section's full options (for example every force, or all node, edge and canvas styling), and ↺ resets the
 section. The **Customize** panel has everything in one place.
 
-**Direction** describes the crafting flow, raw materials → result: *left → right* puts the raw materials on the left
-and the finished item on the right; *upward* (the default) puts the result on top; *radial* puts it in the centre
-with each level on a ring around it.
+**Layout**: a directional tree, or radial. For a tree, the direction is the crafting flow, raw materials → result:
+*left → right* puts the raw materials on the left and the finished item on the right; *upward* (the default) puts
+the result on top. *Radial* puts the result in the centre with each level on a ring around it.
 
-**Forces** work like Obsidian's graph view, in every direction: *center* pulls everything toward the middle,
-*repel* pushes nodes apart, *link strength* is how strongly links pull toward the *link distance* (the length they
-settle at). Every layout runs the same simulation with one extra pull: toward each node's level (layered) or ring
-(radial); *center* also sets how firmly nodes keep to it, from loose and organic (0) to crisp (1). Force-directed
-has no structure at all. Nodes and labels never overlap, results are deterministic, and **dragging a node** pulls
-its neighbours along and pushes others aside until the graph settles (turn off in Settings → Interaction).
+**Physics** has two modes. *Elastic* (the default): the graph holds its layout, and dragging an item pulls the items
+linked to it, they pull theirs, fading with every link; let go and it keeps the shape you pulled it into. *Floating*:
+the whole graph is a live simulation, like Obsidian's graph view: it floats into place, and sways and settles around
+an item you drag. The **forces** work like Obsidian's too, in every direction: *center* pulls everything toward the
+middle, *repel* pushes nodes apart, *link strength* is how strongly links pull toward the *link distance* (the length
+they settle at), plus a pull toward each node's level (tree) or ring (radial); *center* also sets how firmly nodes
+keep to it, from loose and organic (0) to crisp (1). When dragging, link strength sets how far a pull carries and
+center how firmly items hold their place. Results are deterministic.
 
 **Path.** *Craft all* crafts every ingredient with its default recipe. *Cheapest* picks, for every item, the lowest
 cost of buying it or crafting it with any of its recipes, all the way down, using trading post prices (ingredients

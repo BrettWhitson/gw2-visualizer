@@ -433,10 +433,14 @@
               </div>
             </div>
             <div class="rctl">
-              <label class="rlabel" for="rbEngine">Engine</label>
-              <select id="rbEngine" data-setting="layoutEngine">
-                <option value="layered">Layered</option>
-                <option value="force">Force-directed</option>
+              <label class="rlabel" for="rbPhysics">Physics</label>
+              <select
+                id="rbPhysics"
+                data-setting="physicsMode"
+                title="Elastic: dragging an item pulls the items linked to it, less with every link. Floating: the whole graph sways and settles around what you move."
+              >
+                <option value="elastic">Elastic</option>
+                <option value="floating">Floating</option>
               </select>
             </div>
             <div class="rcaption-row">

@@ -31,28 +31,15 @@ const EDGES = [
 ];
 const depthOf = (g, id) => Math.round(g.positionOf(id).y); // TB: rank along y
 
-test("layered: every edge runs down at least one rank, whatever the ranker", () => {
-  for (const ranker of ["network-simplex", "tight-tree", "longest-path"]) {
-    const g = graph(IDS, EDGES);
-    layeredLayout(g, { direction: "TB", ranker, rankSep: 50 });
-    for (const edge of EDGES) {
-      const [s, t] = edge.split(">");
-      assert.ok(depthOf(g, t) > depthOf(g, s), `${ranker}: ${edge}`);
-    }
+test("layered: every edge runs down at least one rank, and edges stay short", () => {
+  const g = graph(IDS, EDGES);
+  layeredLayout(g, { direction: "TB", rankSep: 50 });
+  for (const edge of EDGES) {
+    const [s, t] = edge.split(">");
+    assert.ok(depthOf(g, t) > depthOf(g, s), edge);
   }
-});
-
-test("layered rankers: longest-path puts raw materials on the last rank, the others keep edges short", () => {
-  const long = graph(IDS, EDGES);
-  layeredLayout(long, { direction: "TB", ranker: "longest-path" });
-  const last = Math.max(...IDS.map((id) => depthOf(long, id)));
-  for (const raw of ["ecto", "ore", "dust"])
-    assert.equal(depthOf(long, raw), last, `${raw} on the last rank`);
-
-  const short = graph(IDS, EDGES);
-  layeredLayout(short, { direction: "TB", ranker: "network-simplex" });
-  // dust only hangs off gift, so it sits right under it rather than down with the deepest raw materials.
-  assert.ok(depthOf(short, "dust") < depthOf(long, "dust"));
+  // dust only hangs off gift, so it sits right under it rather than down with the deepest raw material (ore).
+  assert.ok(depthOf(g, "dust") < depthOf(g, "ore"));
 });
 
 test("layered: cycles don't stop it, and the same graph always gives the same layout", () => {

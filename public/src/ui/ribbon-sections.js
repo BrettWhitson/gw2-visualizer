@@ -25,7 +25,7 @@ export const RIBBON_SECTIONS = {
   },
   layout: {
     title: "Layout",
-    keys: ["direction", "layoutEngine"],
+    keys: ["direction", "physicsMode"],
     groups: ["layout"],
   },
   forces: {

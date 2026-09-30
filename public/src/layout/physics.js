@@ -8,7 +8,6 @@
  *  - distance: the length links settle at
  *
  * Plus a structure force for the layout, and collision so nodes (and their labels) don't overlap:
- *  - "free":    no structure (the Force-directed engine);
  *  - "layered": each node is pulled toward the line for its level, `distance` apart along the flow axis;
  *  - "radial":  the result is pinned in the centre; each node is pulled toward the ring for its depth.
  * Center also sets how firmly nodes hold their level or ring (0 loose, 1 crisp).
@@ -19,28 +18,21 @@
  * Works on plain arrays (see layout-graph.js) and allocates nothing per tick beyond its first.
  */
 
-/** Slider value → simulation strength. */
-const SCALE = { repel: 70, center: 0.03, link: 0.9, structure: 1.1 };
-const VELOCITY_DECAY = 0.4;
-const BARNES_HUT_THETA = 0.9;
-const ALPHA_MIN = 0.001;
-/** Minimum clear space between the footprints on neighbouring levels. */
-const LEVEL_GAP = 24;
-const MAX_TREE_DEPTH = 24;
+import { PHYSICS_TUNING, ticksFor } from "./tuning.js";
 
-/** Ticks to settle a fresh layout: fewer for big graphs (repel is O(n log n) per tick). */
-export function ticksFor(nodeCount) {
-  return nodeCount < 300 ? 300 : nodeCount < 1000 ? 200 : 120;
-}
+export { ticksFor };
+
+const MAX_TREE_DEPTH = 24;
 
 export class ForceSimulation {
   alpha = 1;
   alphaTarget = 0;
+  motion = Infinity;
 
   /**
    * @param {import('./layout-graph.js').LayoutGraph} graph  current positions are the starting point; ghosts sit out
-   * @param {{ mode: 'free' | 'layered' | 'radial', axis?: 'x' | 'y', center: number, repel: number, link: number,
-   *           distance: number, depthById?: Map<string, number>, rootId?: string,
+   * @param {{ mode: 'layered' | 'radial', axis?: 'x' | 'y', center: number, repel: number, link: number,
+   *           distance: number, depthById?: Map<string, number>, rootId?: string, tuning?: object,
    *           sizeOf?: (graphIndex: number) => { w: number, h: number } }} options
    *   axis: layered only, the flow axis levels are spread along
    *   depthById / rootId: radial rings
@@ -48,6 +40,8 @@ export class ForceSimulation {
    */
   constructor(graph, options) {
     this.options = options;
+    /** The constants (tuning.js), editable while it runs. */
+    this.tuning = { ...PHYSICS_TUNING, ...options.tuning };
     /** Graph index of each simulated node. */
     this.members = [];
     for (let i = 0; i < graph.count; i++)
@@ -129,16 +123,38 @@ export class ForceSimulation {
   #tree;
   #grid;
 
+  /** A node pinned for good (the radial centre), or -1: a real anchor, whose forces aren't cancelled. */
+  get #anchor() {
+    return this.options.mode === "radial" && this.root != null ? this.root : -1;
+  }
+
   /** Settle synchronously (a fresh layout). */
-  run(ticks = ticksFor(this.count)) {
-    const decay = 1 - Math.pow(ALPHA_MIN, 1 / ticks);
+  run(ticks = ticksFor(this.count, this.tuning)) {
+    const decay = 1 - Math.pow(this.tuning.alphaMin, 1 / ticks);
     for (let i = 0; i < ticks; i++) this.tick(decay);
     return this;
   }
 
   /** Still moving? (the live, animated mode stops when this turns false) */
   get isActive() {
-    return this.alpha > ALPHA_MIN * 5 || this.alphaTarget > 0;
+    return this.alpha > this.tuning.alphaMin * 5 || this.alphaTarget > 0;
+  }
+
+  /**
+   * Bring the graph truly to rest at `heat` (floating graphs: the drag heat), so waking it at that heat later only
+   * moves what's disturbed. Cooling alone freezes the graph once its forces get too weak to move anything, before it
+   * has reached balance; waking it then sends everything toward the balance it never reached. Ends cold (alpha 0).
+   */
+  equilibrate(heat = this.tuning.dragHeat) {
+    this.alpha = this.alphaTarget = heat;
+    const deadline = performance.now() + this.tuning.settleBudgetMs;
+    for (let k = 0; k < this.tuning.settleTicks; k++) {
+      this.tick(0);
+      if (this.motion < this.tuning.stillness) break;
+      if (k % 16 === 15 && performance.now() > deadline) break;
+    }
+    this.alpha = this.alphaTarget = 0;
+    return this;
   }
 
   /** Warm up again (a node was grabbed) and stay warm while `alphaTarget` > 0. */
@@ -175,6 +191,7 @@ export class ForceSimulation {
     });
     this.#takeCenter();
     this.#anchorStructure();
+    this.#rest = null; // a new position: whatever was held as rest no longer applies
   }
 
   /**
@@ -223,15 +240,19 @@ export class ForceSimulation {
   }
 
   /** One step. `decay` sets how fast alpha moves toward alphaTarget (≈300 ticks to settle by default). */
-  tick(decay = 0.0228) {
-    const { center, repel, link } = this.options;
+  tick(decay = this.tuning.cooling) {
+    const t = this.tuning;
     const alpha = this.alpha;
-    this.#links(link * SCALE.link * alpha);
-    this.#repel(repel * SCALE.repel * alpha);
-    if (this.options.mode !== "radial")
-      this.#center(center * SCALE.center * alpha);
-    this.#structure(alpha);
+    this.#applyForces(alpha);
     const { x, y, vx, vy, fx, fy } = this;
+    const rest = this.#rest;
+    if (rest)
+      // Take away what was already pushing each node at rest (it scales with the heat, like the forces).
+      for (let i = 0; i < this.count; i++) {
+        vx[i] -= rest.x[i] * alpha;
+        vy[i] -= rest.y[i] * alpha;
+      }
+    let motion = 0;
     for (let i = 0; i < this.count; i++) {
       if (!Number.isNaN(fx[i])) {
         x[i] = fx[i];
@@ -239,21 +260,79 @@ export class ForceSimulation {
         vx[i] = vy[i] = 0;
         continue;
       }
-      vx[i] *= 1 - VELOCITY_DECAY;
-      vy[i] *= 1 - VELOCITY_DECAY;
+      vx[i] *= 1 - t.velocityDecay;
+      vy[i] *= 1 - t.velocityDecay;
       x[i] += vx[i];
       y[i] += vy[i];
+      const speed = Math.abs(vx[i]) + Math.abs(vy[i]);
+      if (speed > motion) motion = speed;
     }
+    /** The fastest free node's speed this tick (world units): how far from rest the graph is. */
+    this.motion = motion;
     this.#collide();
+    if (rest?.collideX)
+      for (let i = 0; i < this.count; i++) {
+        vx[i] -= rest.collideX[i];
+        vy[i] -= rest.collideY[i];
+      }
     this.alpha += (this.alphaTarget - this.alpha) * decay;
   }
+
+  /** The four forces and the structure pull, into the velocities, at `alpha`. */
+  #applyForces(alpha) {
+    const { center, repel, link } = this.options;
+    const t = this.tuning;
+    this.#links(link * t.linkScale * alpha);
+    this.#repel(repel * t.repelScale * alpha);
+    if (this.options.mode !== "radial")
+      this.#center(center * t.centerScale * alpha);
+    this.#structure(alpha);
+  }
+
+  /**
+   * Treat where things are now as rest: record the push every node already feels here, and subtract it from then on
+   * (until setPositions). A big graph never reaches perfect balance (the Barnes-Hut approximation leaves a little
+   * noise), and without this, waking it for a drag let every node act on those leftovers: the whole graph drifted.
+   * With it, only what the drag changes moves anything, spreading through the forces like a ripple.
+   */
+  holdRest() {
+    const { vx, vy } = this;
+    const savedX = Float64Array.from(vx),
+      savedY = Float64Array.from(vy);
+    vx.fill(0);
+    vy.fill(0);
+    // At the heat it'll run at (the link pass isn't exactly proportional to the heat), stored per unit of heat.
+    const heat = this.alpha || 1;
+    this.#applyForces(heat);
+    const rest = {
+      x: vx.map((v) => v / heat),
+      y: vy.map((v) => v / heat),
+    };
+    if (this.options.softCollisions) {
+      vx.fill(0);
+      vy.fill(0);
+      this.#collide(); // soft: only touches velocities
+      rest.collideX = Float64Array.from(vx);
+      rest.collideY = Float64Array.from(vy);
+    }
+    vx.set(savedX);
+    vy.set(savedY);
+    this.#rest = rest;
+  }
+
+  /** Stop treating a position as rest (the forces act in full again). */
+  releaseRest() {
+    this.#rest = null;
+  }
+
+  #rest = null;
 
   /**
    * Collision passes on their own, until nothing overlaps (or the budget runs out). One pass per tick can leave a
    * dense stack overlapping: each push can create a new overlap further along.
    */
   resolveOverlaps(maxPasses = 50) {
-    if (this.options.mode !== "layered") return; // free and radial: per-tick collision, rings kept exact
+    if (this.options.mode !== "layered") return; // radial: per-tick collision, rings kept exact
     for (let pass = 0; pass < maxPasses; pass++) if (!this.#collide()) break;
     this.#separateLevels();
   }
@@ -264,13 +343,13 @@ export class ForceSimulation {
   /**
    * Springs toward the link distance; the busier end of a link moves less. That weighting means a link's two pulls
    * aren't equal and opposite, so on their own they'd push the whole graph along a little every tick (it slid after
-   * every drag); the net push from links between free nodes is taken back out, evenly. Pulls from a held node are a
-   * real outside force and stay.
+   * every drag); the net push is taken back out, spread evenly over every node.
    */
   #links(strength) {
     if (!strength) return;
     const { x, y, vx, vy, fx, degree, linkSources, linkTargets, restLength } =
       this;
+    const anchor = this.#anchor;
     let netX = 0,
       netY = 0;
     for (let e = 0; e < linkSources.length; e++) {
@@ -286,16 +365,16 @@ export class ForceSimulation {
       vy[t] -= dy * pull * bias;
       vx[s] += dx * pull * (1 - bias);
       vy[s] += dy * pull * (1 - bias);
-      if (Number.isNaN(fx[s]) && Number.isNaN(fx[t])) {
+      if (s !== anchor && t !== anchor) {
         netX += dx * pull * (1 - 2 * bias);
         netY += dy * pull * (1 - 2 * bias);
       }
     }
-    let free = 0;
-    for (let i = 0; i < this.count; i++) if (Number.isNaN(fx[i])) free++;
-    if (!free) return;
-    netX /= free;
-    netY /= free;
+    // Spread over every node, held ones included: holding a node must not change what's cancelled, or the moment you
+    // grab one the rest of the graph starts sliding. The radial centre is different: it's pinned for good, a real
+    // anchor, and its pulls stay.
+    netX /= this.count;
+    netY /= this.count;
     for (let i = 0; i < this.count; i++)
       if (Number.isNaN(fx[i])) {
         vx[i] -= netX;
@@ -315,9 +394,8 @@ export class ForceSimulation {
   /** Levels (layered) or rings (radial). Center sets how firmly nodes hold them. */
   #structure(alpha) {
     const mode = this.options.mode;
-    if (mode === "free") return;
     const strength =
-      SCALE.structure * (0.15 + 4.25 * this.options.center) * alpha; // 0 loose, default 0.2 → ×1, 1 crisp
+      this.tuning.structureScale * (0.15 + 4.25 * this.options.center) * alpha; // 0 loose, default 0.2 → ×1, 1 crisp
     const { x, y, vx, vy, structureTarget: target } = this;
     if (mode === "layered") {
       const along = this.options.axis === "x" ? x : y;
@@ -364,7 +442,7 @@ export class ForceSimulation {
         levelAt[rank - 1] +
         Math.max(
           this.options.distance,
-          extent[rank - 1] + extent[rank] + LEVEL_GAP,
+          extent[rank - 1] + extent[rank] + this.tuning.levelGap,
         );
     const rootLevel = levelAt[rankOf.get(rounded[this.root ?? 0])];
     for (let i = 0; i < this.count; i++) {
@@ -416,11 +494,11 @@ export class ForceSimulation {
     const { x, y, vx, vy, fx } = this;
     const tree = this.#tree;
     let netX = 0,
-      netY = 0,
-      free = 0;
+      netY = 0;
     tree.build(x, y, this.count);
     const { mass, cx, cy, size, index, child, internal, stack } = tree;
-    const theta2 = BARNES_HUT_THETA * BARNES_HUT_THETA;
+    const anchor = this.#anchor;
+    const theta2 = this.tuning.theta * this.tuning.theta;
     for (let i = 0; i < this.count; i++) {
       const xi = x[i],
         yi = y[i];
@@ -453,15 +531,14 @@ export class ForceSimulation {
       }
       vx[i] -= forceX;
       vy[i] -= forceY;
-      if (Number.isNaN(fx[i])) {
+      if (i !== anchor) {
         netX += forceX;
         netY += forceY;
-        free++;
       }
     }
-    if (!free) return;
-    netX /= free;
-    netY /= free;
+    // Over every node, held ones included (see #links).
+    netX /= this.count;
+    netY /= this.count;
     for (let i = 0; i < this.count; i++)
       if (Number.isNaN(fx[i])) {
         vx[i] += netX;
@@ -471,12 +548,16 @@ export class ForceSimulation {
 
   /**
    * Keep node boxes (with labels) apart: overlapping pairs are pushed apart along the axis where they overlap least.
+   * Normally the boxes are moved apart outright (crisp layouts); with `softCollisions` (Floating) the push goes into
+   * their velocities instead. Hard pushes at a floating graph's heat never let it rest: links pull a node into its
+   * neighbour, the push teleports it back, again and again, and whole rows jitter.
    * In layered layouts, nodes on the same level are pushed only across the flow: along it, the level pull would undo
    * the push next tick, and dense stacks of siblings never separated. A uniform grid finds the neighbours in O(n).
    * Returns whether any pair that can move overlapped.
    */
   #collide() {
-    const { x, y, halfW, halfH, fx, structureTarget } = this;
+    const { x, y, vx, vy, halfW, halfH, fx, structureTarget } = this;
+    const soft = this.options.softCollisions ? this.tuning.softCollision : 0;
     const layeredAxis =
       this.options.mode === "layered" ? this.options.axis : null;
     let overlapped = false;
@@ -505,6 +586,22 @@ export class ForceSimulation {
               layeredAxis && structureTarget[i] === structureTarget[j]
                 ? layeredAxis === "y" // same level, flow along y → spread along x
                 : overlapX < overlapY;
+            if (soft) {
+              // Floating: overlaps push on velocities, so the graph stays one smooth motion and can come to rest. Each
+              // side always gets half: a held node doesn't hand its half to its neighbour (that made it a wall that
+              // shoved whole rows along the moment it was grabbed); it just doesn't use it.
+              const push = 0.5 * soft;
+              if (pushAlongX) {
+                const sign = x[j] > x[i] || (x[j] === x[i] && j > i) ? 1 : -1;
+                vx[i] -= sign * overlapX * push;
+                vx[j] += sign * overlapX * push;
+              } else {
+                const sign = y[j] > y[i] || (y[j] === y[i] && j > i) ? 1 : -1;
+                vy[i] -= sign * overlapY * push;
+                vy[j] += sign * overlapY * push;
+              }
+              continue;
+            }
             if (pushAlongX) {
               const sign = x[j] > x[i] || (x[j] === x[i] && j > i) ? 1 : -1;
               x[i] -= sign * overlapX * share;
@@ -530,7 +627,10 @@ export function simulateForces(graph, options) {
   const simulation = new ForceSimulation(graph, options);
   if (simulation.count < 2) return null;
   simulation.run(options.ticks);
-  simulation.resolveOverlaps();
+  if (options.equilibrate) simulation.equilibrate();
+  // The polish separates any overlaps left on crowded levels, but leaves the graph a little off balance: skipped
+  // when the graph is going to float (a live simulation should start at rest, or everything drifts when woken).
+  if (options.polish !== false) simulation.resolveOverlaps();
   simulation.writeTo(graph);
   simulation.alpha = 0; // settled
   return simulation;

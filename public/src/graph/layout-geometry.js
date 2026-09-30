@@ -1,8 +1,8 @@
 /** Small geometry predicates shared by the stylesheet, layouts and viewport logic. */
 
-/** Layered / breadth-first layouts laid out along a direction (not radial or force-directed). */
+/** Directional trees (as opposed to the radial layout). */
 export function isDirectionalLayout(settings) {
-  return settings.direction !== "radial" && settings.layoutEngine !== "force";
+  return settings.direction !== "radial";
 }
 
 /**
