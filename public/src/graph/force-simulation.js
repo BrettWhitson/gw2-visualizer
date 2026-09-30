@@ -23,6 +23,8 @@ const SCALE = { repel: 70, center: 0.03, link: 0.9, structure: 1.1 };
 const VELOCITY_DECAY = 0.4;
 const BARNES_HUT_THETA = 0.9;
 const ALPHA_MIN = 0.001;
+/** Minimum clear space between the footprints on neighbouring levels. */
+const LEVEL_GAP = 24;
 
 /** Ticks to settle a fresh layout: fewer for big graphs (repel is O(n log n) per tick). */
 export function ticksFor(nodeCount) {
@@ -228,19 +230,68 @@ export class ForceSimulation {
   }
 
   /**
-   * Levels come from the seed layout's positions along the flow axis (ranked), respaced `distance` apart relative
-   * to the result's level.
+   * Levels come from the seed layout's positions along the flow axis (ranked), relative to the result's level. They
+   * are `distance` apart, or further when the nodes and labels on two neighbouring levels need more room along the
+   * flow (labels beside nodes in left-right layouts): otherwise neighbouring levels collide and can only make room by
+   * stacking everything into one tall column.
    */
   #setUpLevels() {
-    const along = this.options.axis === "x" ? this.x : this.y;
+    const horizontal = this.options.axis === "x";
+    const along = horizontal ? this.x : this.y;
+    const half = horizontal ? this.halfW : this.halfH;
     const rounded = Array.from(along, (value) => Math.round(value));
     const ranks = [...new Set(rounded)].sort((a, b) => a - b);
     const rankOf = new Map(ranks.map((value, rank) => [value, rank]));
-    const rootRank = rankOf.get(rounded[this.root ?? 0]);
+    const extent = new Float64Array(ranks.length); // widest half-footprint on each level
     for (let i = 0; i < this.count; i++) {
-      this.structureTarget[i] =
-        (rankOf.get(rounded[i]) - rootRank) * this.options.distance;
+      const rank = rankOf.get(rounded[i]);
+      extent[rank] = Math.max(extent[rank], half[i]);
+    }
+    const levelAt = new Float64Array(ranks.length);
+    for (let rank = 1; rank < ranks.length; rank++)
+      levelAt[rank] =
+        levelAt[rank - 1] +
+        Math.max(
+          this.options.distance,
+          extent[rank - 1] + extent[rank] + LEVEL_GAP,
+        );
+    const rootLevel = levelAt[rankOf.get(rounded[this.root ?? 0])];
+    for (let i = 0; i < this.count; i++) {
+      this.structureTarget[i] = levelAt[rankOf.get(rounded[i])] - rootLevel;
       along[i] = this.structureTarget[i]; // start on the level
+    }
+  }
+
+  /**
+   * Layered only: on each level, push nodes apart across the flow, in their current order, until none overlap;
+   * then shift the level back so it stays centred where it was. Exact where collision passes converge slowly (a
+   * column of a hundred siblings).
+   */
+  #separateLevels() {
+    const horizontal = this.options.axis === "x";
+    const across = horizontal ? this.y : this.x;
+    const half = horizontal ? this.halfH : this.halfW;
+    const levels = new Map();
+    for (let i = 0; i < this.count; i++) {
+      const level = this.structureTarget[i];
+      if (!levels.has(level)) levels.set(level, []);
+      levels.get(level).push(i);
+    }
+    for (const members of levels.values()) {
+      if (members.length < 2) continue;
+      members.sort((a, b) => across[a] - across[b] || a - b);
+      const before =
+        members.reduce((sum, i) => sum + across[i], 0) / members.length;
+      for (let k = 1; k < members.length; k++) {
+        const previous = members[k - 1],
+          current = members[k];
+        const minimum = across[previous] + half[previous] + half[current];
+        if (across[current] < minimum) across[current] = minimum;
+      }
+      const shift =
+        before -
+        members.reduce((sum, i) => sum + across[i], 0) / members.length;
+      for (const i of members) across[i] += shift;
     }
   }
 
@@ -272,10 +323,14 @@ export class ForceSimulation {
 
   /**
    * Keep node boxes (with labels) apart: overlapping pairs are pushed apart along the axis where they overlap least.
-   * A uniform grid finds the neighbours in O(n).
+   * Layered layouts push only across the flow: along it, the level pull would undo the push next tick, and dense
+   * stacks of siblings never separated. A uniform grid finds the neighbours in O(n). Returns whether any overlapped.
    */
   #collide() {
     const { x, y, halfW, halfH, fx } = this;
+    const layeredAxis =
+      this.options.mode === "layered" ? this.options.axis : null;
+    let overlapped = false;
     let cell = 1;
     for (let i = 0; i < this.count; i++)
       cell = Math.max(cell, halfW[i] * 2, halfH[i] * 2);
@@ -296,11 +351,15 @@ export class ForceSimulation {
             const overlapX = halfW[i] + halfW[j] - Math.abs(x[j] - x[i]),
               overlapY = halfH[i] + halfH[j] - Math.abs(y[j] - y[i]);
             if (overlapX <= 0 || overlapY <= 0) continue;
+            overlapped = true;
             const iFixed = !Number.isNaN(fx[i]),
               jFixed = !Number.isNaN(fx[j]);
             if (iFixed && jFixed) continue;
             const share = iFixed ? 0 : jFixed ? 1 : 0.5; // how much of the push i takes
-            if (overlapX < overlapY) {
+            const pushAlongX = layeredAxis
+              ? layeredAxis === "y" // flow along y → spread along x
+              : overlapX < overlapY;
+            if (pushAlongX) {
               const sign = x[j] > x[i] || (x[j] === x[i] && j > i) ? 1 : -1;
               x[i] -= sign * overlapX * share;
               x[j] += sign * overlapX * (1 - share);
@@ -312,6 +371,16 @@ export class ForceSimulation {
           }
         }
     }
+    return overlapped;
+  }
+
+  /**
+   * Collision passes on their own, until nothing overlaps (or the budget runs out). One pass per tick can leave a
+   * dense stack overlapping: each push can create a new overlap further along.
+   */
+  resolveOverlaps(maxPasses = 50) {
+    for (let pass = 0; pass < maxPasses; pass++) if (!this.#collide()) break;
+    if (this.options.mode === "layered") this.#separateLevels();
   }
 }
 
@@ -320,6 +389,7 @@ export function simulateForces(cy, options) {
   if (cy.nodes().length < 2) return null;
   const simulation = new ForceSimulation(cy, options);
   simulation.run(options.ticks);
+  simulation.resolveOverlaps();
   simulation.apply();
   simulation.alpha = 0; // settled
   return simulation;
