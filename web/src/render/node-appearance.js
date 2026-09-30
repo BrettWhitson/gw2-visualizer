@@ -1,12 +1,19 @@
 import {
   DEPTH_COLORS,
   SOURCE_COLORS,
+  SOURCE_LABELS,
+  UI_COLORS,
   DISCIPLINE_COLORS,
   COST_HEAT_COLORS,
   FORGE_BADGE_URI,
   EntityKind,
 } from "../config/constants.js";
-import { formatQuantity, formatCoinsText, mixColors } from "../utils/format.js";
+import {
+  formatQuantity,
+  formatCoinsRuns,
+  formatCoinsText,
+  mixColors,
+} from "../utils/format.js";
 import {
   isForgeResult,
   getSourceCategory,
@@ -83,11 +90,35 @@ export class NodeAppearance {
       color: this.color(node, rootCost),
     };
     if (entity.icon) data.icon = entity.icon;
+    if (this.settings.values.nodeLook === "card")
+      Object.assign(data, this.cardData(node, entity.name));
     if (isForgeResult(node))
       data.bgs = entity.icon
         ? [entity.icon, FORGE_BADGE_URI]
         : [FORGE_BADGE_URI];
     return data;
+  }
+
+  /**
+   * What an item card shows (Prism's nodeLook "card"): the name as its title; quantity and where it comes from; its
+   * cost in coins; and what's owned, as a tag.
+   * @param {import('../types.js').GraphNode} node  @param {string} name
+   */
+  cardData(node, name) {
+    const category = getSourceCategory(node);
+    const subtitle = [
+      `×${formatQuantity(node.kind, node.entityId, node.quantity)} `,
+      { mark: SOURCE_COLORS[category] },
+      ` ${SOURCE_LABELS[category]}`,
+    ];
+    if (node.isCollapsed) subtitle.push(" ▸");
+    const card = { cardTitle: name, subtitle };
+    if (node.kind === EntityKind.item && node.effectiveCost)
+      card.value = formatCoinsRuns(node.effectiveCost, UI_COLORS);
+    if (node.isOwnedEnough) card.tag = "✓ owned";
+    else if (node.ownedQuantity)
+      card.tag = `have ${formatQuantity(node.kind, node.entityId, node.ownedQuantity)}`;
+    return card;
   }
 
   /**

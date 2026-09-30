@@ -173,3 +173,15 @@ test("classes: hiddenKids becomes Prism's collapsed; strings and arrays both wor
   assert.deepEqual(prismClasses(["mf"]), ["mf"]);
   assert.deepEqual(prismClasses(undefined), []);
 });
+
+test("cards: Items as and Card links reach Prism, and card colours follow the tokens", () => {
+  const options = prismOptions(
+    settings({ nodeLook: "card", cardConnectors: "both" }),
+  );
+  assert.equal(options.nodeLook, "card");
+  assert.equal(options.cardConnectors, "both");
+  assert.equal(prismOptions(settings()).nodeLook, "icon", "icons by default");
+  const theme = tokenTheme();
+  assert.equal(theme.cardText, UI_COLORS.text);
+  assert.equal(theme.portFill, UI_COLORS.canvas);
+});

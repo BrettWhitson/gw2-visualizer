@@ -123,7 +123,7 @@ export class WebGLGraphView {
         const names = prismClasses(classes);
         return {
           id: data.id,
-          label: data.label,
+          ...cardFields(data),
           color: data.color,
           icon: data.icon,
           classes: names,
@@ -145,7 +145,7 @@ export class WebGLGraphView {
     this.#view.updateInPlace(
       nodeUpdates.map(({ id, data, classes }) => ({
         id,
-        label: data.label,
+        ...cardFields(data),
         color: data.color,
         classes: prismClasses(classes),
       })),
@@ -275,4 +275,18 @@ export class WebGLGraphView {
   boundingBox() {
     return this.#view.boundingBox();
   }
+}
+
+/**
+ * A node's text for Prism: its label, or for an item card (NodeAppearance.cardData) the name as the title with the
+ * subtitle, value and tag.
+ */
+function cardFields(data) {
+  if (data.cardTitle == null) return { label: data.label };
+  return {
+    label: data.cardTitle,
+    subtitle: data.subtitle,
+    value: data.value ?? "",
+    tag: data.tag ?? "",
+  };
 }

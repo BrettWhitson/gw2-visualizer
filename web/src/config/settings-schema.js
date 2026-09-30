@@ -36,6 +36,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   preferMysticForge: false,
   // nodes
   nodeColorMode: "rarity", // rarity | source | discipline | depth | cost
+  nodeLook: "icon", // icon | card (Prism draws items as wide cards with their text inside)
+  cardConnectors: "dots", // dots | arrows | both: where edges meet a card
   nodeShape: "round-rectangle",
   nodeSizeScale: 1,
   rootSizeScale: 1.35,
@@ -364,6 +366,29 @@ export const CUSTOMIZE_GROUPS = [
           ["discipline", "Discipline"],
           ["depth", "Tier / depth"],
           ["cost", "Cost heatmap"],
+        ],
+      },
+      {
+        key: "nodeLook",
+        label: "Items as",
+        type: "select",
+        redraw: Redraw.relayout,
+        hint: "Icons: square item icons with their name beside them. Cards: wide cards with the name, quantity, source, cost and what you own inside.",
+        choices: [
+          ["icon", "Icons"],
+          ["card", "Cards"],
+        ],
+      },
+      {
+        key: "cardConnectors",
+        label: "Card links",
+        type: "select",
+        redraw: Redraw.restyle,
+        hint: "Where lines meet a card: port dots, arrowheads, or both.",
+        choices: [
+          ["dots", "Dots"],
+          ["arrows", "Arrows"],
+          ["both", "Both"],
         ],
       },
       {

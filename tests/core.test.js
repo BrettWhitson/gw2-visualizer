@@ -348,3 +348,23 @@ test("settings announce changes: set, setMany, presets and resets, with unsubscr
     "choosing a visit-only value on purpose saves it",
   );
 });
+
+test("coins as card runs: each amount then its coin dot, silver and copper muted", async () => {
+  const { formatCoinsRuns } = await import("../web/src/utils/format.js");
+  const colors = { gold: "#g", silver: "#s", copper: "#c", muted: "#m" };
+  assert.deepEqual(formatCoinsRuns(1_234_505, colors), [
+    "123",
+    { dot: "#g" },
+    " ",
+    { text: "45", color: "#m" },
+    { dot: "#s" },
+    " ",
+    { text: "5", color: "#m" },
+    { dot: "#c" },
+  ]);
+  assert.deepEqual(formatCoinsRuns(7, colors), [
+    { text: "7", color: "#m" },
+    { dot: "#c" },
+  ]);
+  assert.equal(formatCoinsRuns(-150, colors)[0], "−");
+});

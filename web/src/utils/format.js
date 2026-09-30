@@ -29,6 +29,27 @@ export function formatCoinsHtml(copper) {
   return `<span class="coin">${negative ? "−" : ""}${parts.join(" ")}</span>`;
 }
 
+/**
+ * Coins as text runs for a graph card (Prism's `value`): each amount followed by a coin dot, gold in full and silver
+ * and copper in the muted colour, like the page's coin typography.
+ * @param {number} copper
+ * @param {{ gold: string, silver: string, copper: string, muted: string }} colors
+ */
+export function formatCoinsRuns(copper, colors) {
+  const { gold, silver, copper: cu, negative } = splitCoins(copper);
+  const runs = negative ? ["−"] : [];
+  const unit = (amount, dot, color) => {
+    if (runs.length > (negative ? 1 : 0)) runs.push(" ");
+    runs.push(color ? { text: String(amount), color } : String(amount), {
+      dot,
+    });
+  };
+  if (gold) unit(formatNumber(gold), colors.gold);
+  if (gold || silver) unit(silver, colors.silver, colors.muted);
+  unit(cu, colors.copper, colors.muted);
+  return runs;
+}
+
 /** Plain-text coins, used inside graph labels. */
 export function formatCoinsText(copper) {
   const { gold, silver, copper: cu, negative } = splitCoins(copper);
