@@ -430,7 +430,11 @@ test("steps opened only to follow a route show just the route", async () => {
     focus: new Set(["r/2"]),
     highlight: new Set(["r/2"]),
   });
-  assert.equal(graph.nodesById.get("r/2/1"), undefined, "the sword isn't on the route");
+  assert.equal(
+    graph.nodesById.get("r/2/1"),
+    undefined,
+    "the sword isn't on the route",
+  );
   assert.equal(
     graph.nodesById.get("r/2/more")?.quantity,
     1,
