@@ -197,3 +197,34 @@ test("forget drops the account and the key", async () => {
   assert.equal(session.ownedItems.size, 0);
   assert.equal(remembered(), null);
 });
+
+test("a failed switch to another key keeps the connected account", async () => {
+  const { session, remembered } = setup();
+  await session.connect(KEY, { remember: true });
+  assert.equal(await session.connect("typo"), false);
+  assert.equal(session.status, "ready", "still connected");
+  assert.match(session.error, /doesn't look like/);
+  assert.equal(session.accountName, "Test.1234");
+  assert.equal(remembered(), KEY);
+});
+
+test("a stored key rejected on refresh is forgotten with its account", async () => {
+  const rejected = Object.assign(new Error("HTTP 401"), { status: 401 });
+  const failWith = {};
+  const { session, remembered } = setup({ failWith });
+  await session.connect(KEY, { remember: true });
+  failWith.tokenInfo = rejected; // the key is revoked in the meantime
+  await session.refresh();
+  assert.equal(session.status, "error");
+  assert.equal(session.accountName, null);
+  assert.equal(remembered(), null);
+});
+
+test("forgetting during a connect wins: nothing is stored or shown", async () => {
+  const { session, remembered } = setup();
+  const connecting = session.connect(KEY, { remember: true });
+  session.forget();
+  assert.equal(await connecting, false);
+  assert.equal(session.status, "none");
+  assert.equal(remembered(), null);
+});

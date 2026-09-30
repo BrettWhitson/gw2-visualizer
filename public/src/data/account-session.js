@@ -15,7 +15,8 @@ const isRejection = (error) => [400, 401, 403].includes(error?.status);
  * account holds. Loaded once per page; `refresh()` reloads it (the API itself caches account data for a few minutes).
  *
  * Dispatches "change" whenever `status` or the data changes. `status`: "none" (no key) | "connecting" | "ready" |
- * "error" (`error` says why; a rejected key is forgotten).
+ * "error" (`error` says why; a rejected saved key is forgotten). A failed attempt to switch keys keeps the account
+ * that was connected: `status` goes back to "ready" with `error` set.
  */
 export class AccountSession extends EventTarget {
   status = "none";
@@ -65,9 +66,11 @@ export class AccountSession extends EventTarget {
   /** @returns {Promise<boolean>} whether the account loaded */
   async connect(rawKey, { remember = false, saved = false } = {}) {
     const key = rawKey.trim();
+    const wasReady = this.status === "ready";
     if (!looksLikeApiKey(key)) {
       this.#fail(
         "That doesn't look like a GW2 API key: it should be 72 characters of letters, digits and hyphens.",
+        { keepAccount: wasReady },
       );
       return false;
     }
@@ -113,23 +116,25 @@ export class AccountSession extends EventTarget {
       return true;
     } catch (error) {
       if (token !== this.#loadToken) return false;
-      if (isRejection(error)) {
-        if (saved) this.keys.clear();
-        this.#fail(
-          "The API rejected this key. It may have been deleted, or mistyped.",
-        );
-      } else {
-        this.#fail(
-          `Couldn't reach the Guild Wars 2 API (${error.message}). Try again in a moment.`,
-        );
-      }
+      const rejected = isRejection(error);
+      if (rejected && saved) this.keys.clear();
+      this.#fail(
+        rejected
+          ? "The API rejected this key. It may have been deleted, or mistyped."
+          : `Couldn't reach the Guild Wars 2 API (${error.message}). Try again in a moment.`,
+        // The connected account stays, unless it's this very key that was rejected.
+        { keepAccount: wasReady && !(rejected && saved) },
+      );
       return false;
     }
   }
 
   refresh() {
     return this.key
-      ? this.connect(this.key, { remember: this.keys.isRemembered() })
+      ? this.connect(this.key, {
+          remember: this.keys.isRemembered(),
+          saved: true,
+        })
       : Promise.resolve(false);
   }
 
@@ -141,7 +146,11 @@ export class AccountSession extends EventTarget {
     this.#set({ status: "none", error: "" });
   }
 
-  #fail(error) {
+  #fail(error, { keepAccount = false } = {}) {
+    if (keepAccount) {
+      this.#set({ status: "ready", error });
+      return;
+    }
     this.#clearData();
     this.#set({ status: "error", error });
   }

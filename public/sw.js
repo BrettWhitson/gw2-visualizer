@@ -89,7 +89,7 @@ function navigationCacheKey(url) {
   const name = url.pathname
     .split("/")
     .pop()
-    .replace(/.html$/, "");
+    .replace(/\.html$/, "");
   const page = `${name}.html`;
   return name && SHELL_URLS.includes(page) ? page : "index.html";
 }

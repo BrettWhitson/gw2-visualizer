@@ -61,11 +61,7 @@ export class AccountMenu {
           : ">Connect account"
       }</button>`;
     }
-    if (this.dialog.open) {
-      if (status === "ready") this.dialog.close();
-      else if (status === "error") this.#showError(this.session.error);
-      this.#setBusy(status === "connecting");
-    }
+    if (this.dialog.open) this.#setBusy(status === "connecting");
   }
 
   #bind() {
@@ -82,8 +78,10 @@ export class AccountMenu {
       }
       if (pop && !pop.hidden && !this.slot.contains(event.target))
         pop.hidden = true;
-      if (action === "connect") this.openDialog();
-      else if (action === "refresh") this.session.refresh();
+      if (action === "connect") {
+        if (pop) pop.hidden = true;
+        this.openDialog();
+      } else if (action === "refresh") this.session.refresh();
       else if (action === "forget") this.session.forget();
       else if (action === "close-dialog") this.dialog.close();
     });
@@ -94,14 +92,21 @@ export class AccountMenu {
         this.slot.querySelector('[data-account="toggle"]')?.focus();
       }
     });
-    this.dialog.querySelector("form").addEventListener("submit", (event) => {
-      event.preventDefault();
-      const form = event.target;
-      this.#showError("");
-      this.session.connect(form.elements.apiKey.value, {
-        remember: form.elements.remember.checked,
+    this.dialog
+      .querySelector("form")
+      .addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const form = event.target;
+        this.#showError("");
+        const connected = await this.session.connect(
+          form.elements.apiKey.value,
+          {
+            remember: form.elements.remember.checked,
+          },
+        );
+        if (connected) this.dialog.close();
+        else this.#showError(this.session.error);
       });
-    });
   }
 
   #showError(message) {
@@ -126,8 +131,8 @@ function dialogHtml() {
       Grant what you want to use here:</p>
     <ul class="small">${permissions}</ul>
     <form class="key-form" autocomplete="off">
-      <label for="apiKey" class="sr-only">API key</label>
-      <input id="apiKey" name="apiKey" type="password" spellcheck="false" placeholder="XXXXXXXX-XXXX-…" autocomplete="off" required>
+      <label for="accountApiKey" class="sr-only">API key</label>
+      <input id="accountApiKey" name="apiKey" type="password" spellcheck="false" placeholder="XXXXXXXX-XXXX-…" autocomplete="off" required>
       <label class="remember"><input name="remember" type="checkbox"> Remember in this browser</label>
       <button type="submit" class="primary">Connect</button>
     </form>

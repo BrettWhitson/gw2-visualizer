@@ -15,7 +15,8 @@ import { craftingRequirement } from "./account-inventory.js";
  * With a connected account and "Use what I own" on, owned items are used first, top-down: an ingredient you hold
  * is taken from stock before its own recipe is considered, so only the rest is bought or crafted, and an ingredient
  * you hold enough of isn't expanded at all. Stock is shared across the whole tree (first come, first served, in
- * recipe order), and the root itself is always crafted. Buy-or-craft decisions (Path) are made on prices alone.
+ * recipe order), and the root itself is always crafted. Collapsing a branch releases what its hidden ingredients
+ * would have taken, so later branches may use it. Buy-or-craft decisions (Path) are made on prices alone.
  */
 export class CraftTreeBuilder {
   /** @type {PathPlanner} buy-or-craft decisions for the current Path mode (rebuilt on every build) */
@@ -212,7 +213,7 @@ export class CraftTreeBuilder {
     const used = Math.min(have, node.quantity);
     this.#stock.set(node.entityId, have - used);
     node.ownedQuantity = used;
-    node.isOwnedEnough = used === node.quantity;
+    node.isOwnedEnough = used > 0 && used === node.quantity;
   }
 
   /**
