@@ -1,13 +1,19 @@
 import js from "@eslint/js";
 import globals from "globals";
+import svelte from "eslint-plugin-svelte";
 
 export default [
   {
     ignores: ["web/static/**", "web/data/**", "node_modules/**", "_site/**"],
   },
   js.configs.recommended,
+  // Svelte's rules for components and rune modules only (applied everywhere, they trip over the service worker).
+  ...svelte.configs.recommended.map((config) => ({
+    ...config,
+    files: config.files ?? ["**/*.svelte", "**/*.svelte.js"],
+  })),
   {
-    files: ["web/src/**/*.js"],
+    files: ["web/src/**/*.js", "web/src/**/*.svelte"],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: "module",
@@ -62,4 +68,12 @@ export default [
   { files: ["web/sw.js"], rules: { "no-implicit-globals": "off" } },
   // Command-line tools report to the console.
   { files: ["tools/**/*.mjs"], rules: { "no-console": "off" } },
+  {
+    files: ["**/*.svelte", "**/*.svelte.js"],
+    rules: {
+      // `let { … } = $props()` is the idiom; the Svelte-aware version knows props are reassigned from outside.
+      "prefer-const": "off",
+      "svelte/prefer-const": ["error", { destructuring: "all" }],
+    },
+  },
 ];

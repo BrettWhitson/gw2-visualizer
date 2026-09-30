@@ -32,7 +32,7 @@ import { Tooltip } from "./ui/tooltip.js";
 import { DetailsPanel } from "./ui/details-panel.js";
 import { ShoppingListPanel } from "./ui/shopping-list-panel.js";
 import { SearchBox } from "./ui/search-box.js";
-import { Legend } from "./ui/legend.js";
+import { createLegend } from "./ui/legend-island.js";
 import { OptionsPanel } from "./ui/options-panel.js";
 import { Toolbar } from "./ui/toolbar.js";
 import { RibbonPopout } from "./ui/ribbon-popout.js";
@@ -134,7 +134,7 @@ export class CraftingTreeApp {
       context,
       panelActions,
     );
-    this.legend = new Legend($("#legend"), context, {
+    this.legend = createLegend($("#legend"), context, {
       onSelectionChange: (nodeIds, entries) =>
         this.#onLegendSelectionChange(nodeIds, entries),
       onFocusRequest: (nodeIds) => this.graphView.focusOn(nodeIds),
@@ -234,10 +234,10 @@ export class CraftingTreeApp {
     this.toolbar.sync();
     // Phones start with the graph uncovered: toolbar and panel collapsed (for this visit only; the handles open them).
     if (globalThis.matchMedia?.("(max-width: 700px)").matches)
-      Object.assign(this.settings.values, {
-        ribbonCollapsed: true,
-        sidebarOpen: false,
-      });
+      this.settings.setMany(
+        { ribbonCollapsed: true, sidebarOpen: false },
+        { persist: false },
+      );
     this.sidePanel.setWidth(this.settings.values.sidebarWidth);
     this.sidePanel.setOpen(this.settings.values.sidebarOpen);
     this.#applyRibbonState();
@@ -399,7 +399,6 @@ export class CraftingTreeApp {
         this.#render({ anchorNodeId: this.#anchorNodeId() });
       else if (redraw === Redraw.restyle) this.graphView.applyStylesheet();
     }
-    this.legend.update(this.graph.nodesById, this.tree?.effectiveCost || 0);
   }
 
   /** @param {'layout' | 'style'} kind */
@@ -421,7 +420,6 @@ export class CraftingTreeApp {
     this.graphView.syncBackground();
     this.graphView.applyStylesheet();
     if (this.treeState.hasRoot) this.#render({ fit: true });
-    else this.legend.update(this.graph.nodesById, 0);
   }
 
   /** A ribbon section's ↺: its controls and popout options back to defaults (Presets: both to Standard). */

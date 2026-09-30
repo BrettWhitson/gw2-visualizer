@@ -162,6 +162,11 @@ export class WebGLGraphView {
     this.#view.clear();
   }
 
+  /** Stop everything and remove the canvases (a component unmounting). */
+  destroy() {
+    this.#view.destroy();
+  }
+
   // ---------------------------------------------------------------- physics (Tether), for developer tools
 
   setPhysicsTuning(tuning) {

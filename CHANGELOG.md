@@ -3,6 +3,17 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `web/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
+## Unreleased
+
+- **Fixed: on phones, the toolbar and side panel stayed collapsed on later visits.** They start collapsed on a small
+  screen for that visit only, but the next change to any setting used to save that too.
+- The legend is the site's first Svelte component (phase 2 of the move to Svelte). It looks and works as before, and
+  now follows setting changes on its own.
+- Development: Svelte 5, with `svelte-check`, ESLint and Prettier covering `.svelte` files in `npm run verify`.
+  Settings announce their changes (`SettingsStore.onChange`), `settings.svelte.js` mirrors them as Svelte state,
+  `islands.js` mounts a component inside a page that isn't Svelte yet, and `GraphCanvas.svelte` hosts Prism for the
+  pages that move over next.
+
 ## 0.11.0 — 2026-09-30
 
 - **Fixed: costs missing on a return visit.** With prices already saved in the browser and still fresh (always the
