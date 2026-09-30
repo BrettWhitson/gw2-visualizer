@@ -7,6 +7,8 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 
 - **Fixed: on phones, the toolbar and side panel stayed collapsed on later visits.** They start collapsed on a small
   screen for that visit only, but the next change to any setting used to save that too.
+- The Characters page is now a Svelte app (phase 3 of the move to Svelte, first page). It looks and works as before:
+  the list, each character's armory, the view choices (focus and scroll kept when they redraw) and the gear tooltips.
 - The legend is the site's first Svelte component (phase 2 of the move to Svelte). It looks and works as before, and
   now follows setting changes on its own.
 - Development: Svelte 5, with `svelte-check`, ESLint and Prettier covering `.svelte` files in `npm run verify`.
