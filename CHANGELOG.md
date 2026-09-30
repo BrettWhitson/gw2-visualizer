@@ -23,6 +23,10 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 - **Tether, the app's own layout and physics.** Both renderers now lay graphs out with the app's own engine. The
   Merged view's layered layout replaces dagre, and Prism no longer needs Cytoscape at all (it's still loaded for
   Classic).
+- Touching or dragging a node no longer slides the whole graph away: the physics now centres on the graph itself
+  rather than a fixed point, and cancels the small push its uneven link pulls and approximate repulsion used to give
+  the graph every step. On touch screens a tap has to move 10 px before it counts as a drag, so tapping never wakes
+  the physics.
 - **Performance.** Measured in Chrome on the development machine (60 Hz display):
   - _Drawing:_ Prism holds 60 fps at 1,000, 3,000 and 10,000 items while panning and zooming, using under 1 ms of CPU
     per frame; its first frame at 10,000 items takes about 90 ms. Classic, for comparison: 0.4 s / 1 s / 8.6 s for

@@ -2,7 +2,7 @@
  * Tether's physics: a force simulation behind every layout, in the spirit of Obsidian's graph view. Four forces,
  * one slider each, all acting in every direction:
  *
- *  - center:   pulls nodes toward the middle (keeps the graph compact)
+ *  - center:   pulls nodes toward the graph's own middle (keeps it compact without moving it)
  *  - repel:    pushes nodes away from each other (Barnes-Hut, O(n log n))
  *  - link:     how strongly links pull their ends toward the link distance (0 = links don't pull at all)
  *  - distance: the length links settle at
@@ -121,6 +121,7 @@ export class ForceSimulation {
           ),
         );
 
+    this.#takeCenter();
     this.#tree = new Quadtree(count);
     this.#grid = new CollisionGrid(count);
   }
@@ -172,6 +173,43 @@ export class ForceSimulation {
       this.y[i] = p.y;
       this.vx[i] = this.vy[i] = 0;
     });
+    this.#takeCenter();
+    this.#anchorStructure();
+  }
+
+  /**
+   * Levels and rings go where the graph now is: layered levels keep their spacing but shift with the nodes along
+   * the flow; the radial result stays pinned where it is. Otherwise waking the physics on a graph that has moved
+   * (or never sat at the origin) would drag it back.
+   */
+  #anchorStructure() {
+    const mode = this.options.mode;
+    if (mode === "radial" && this.root != null) {
+      this.fx[this.root] = this.x[this.root];
+      this.fy[this.root] = this.y[this.root];
+    } else if (mode === "layered" && this.count) {
+      const along = this.options.axis === "x" ? this.x : this.y;
+      let shift = 0;
+      for (let i = 0; i < this.count; i++)
+        shift += along[i] - this.structureTarget[i];
+      shift /= this.count;
+      for (let i = 0; i < this.count; i++) this.structureTarget[i] += shift;
+    }
+  }
+
+  /**
+   * The point center pulls toward: the middle of the nodes as they are now. Pulling toward the world origin instead
+   * slid the whole graph over whenever the physics woke up (a drag), since layouts don't sit around the origin.
+   */
+  #takeCenter() {
+    let sumX = 0,
+      sumY = 0;
+    for (let i = 0; i < this.count; i++) {
+      sumX += this.x[i];
+      sumY += this.y[i];
+    }
+    this.centerX = this.count ? sumX / this.count : 0;
+    this.centerY = this.count ? sumY / this.count : 0;
   }
 
   /** Copy positions into the graph's arrays (the simulated nodes only). */
@@ -223,9 +261,18 @@ export class ForceSimulation {
   // ---------------------------------------------------------------- forces
 
   /** Springs toward the link distance; the busier end of a link moves less. */
+  /**
+   * Springs toward the link distance; the busier end of a link moves less. That weighting means a link's two pulls
+   * aren't equal and opposite, so on their own they'd push the whole graph along a little every tick (it slid after
+   * every drag); the net push from links between free nodes is taken back out, evenly. Pulls from a held node are a
+   * real outside force and stay.
+   */
   #links(strength) {
     if (!strength) return;
-    const { x, y, vx, vy, degree, linkSources, linkTargets, restLength } = this;
+    const { x, y, vx, vy, fx, degree, linkSources, linkTargets, restLength } =
+      this;
+    let netX = 0,
+      netY = 0;
     for (let e = 0; e < linkSources.length; e++) {
       const distance = restLength[e];
       const s = linkSources[e],
@@ -239,14 +286,29 @@ export class ForceSimulation {
       vy[t] -= dy * pull * bias;
       vx[s] += dx * pull * (1 - bias);
       vy[s] += dy * pull * (1 - bias);
+      if (Number.isNaN(fx[s]) && Number.isNaN(fx[t])) {
+        netX += dx * pull * (1 - 2 * bias);
+        netY += dy * pull * (1 - 2 * bias);
+      }
     }
+    let free = 0;
+    for (let i = 0; i < this.count; i++) if (Number.isNaN(fx[i])) free++;
+    if (!free) return;
+    netX /= free;
+    netY /= free;
+    for (let i = 0; i < this.count; i++)
+      if (Number.isNaN(fx[i])) {
+        vx[i] -= netX;
+        vy[i] -= netY;
+      }
   }
 
   #center(strength) {
     if (!strength) return;
+    const { centerX, centerY } = this;
     for (let i = 0; i < this.count; i++) {
-      this.vx[i] -= this.x[i] * strength;
-      this.vy[i] -= this.y[i] * strength;
+      this.vx[i] -= (this.x[i] - centerX) * strength;
+      this.vy[i] -= (this.y[i] - centerY) * strength;
     }
   }
 
@@ -264,12 +326,17 @@ export class ForceSimulation {
         velocity[i] += (target[i] - along[i]) * strength;
       return;
     }
+    // Rings around the result, wherever it is (pinned, or held under the pointer).
+    const originX = this.root != null ? x[this.root] : 0,
+      originY = this.root != null ? y[this.root] : 0;
     for (let i = 0; i < this.count; i++) {
       if (i === this.root) continue;
-      const r = Math.sqrt(x[i] * x[i] + y[i] * y[i]) || 0.01;
+      const dx = x[i] - originX,
+        dy = y[i] - originY;
+      const r = Math.sqrt(dx * dx + dy * dy) || 0.01;
       const k = ((target[i] - r) / r) * strength;
-      vx[i] += x[i] * k;
-      vy[i] += y[i] * k;
+      vx[i] += dx * k;
+      vy[i] += dy * k;
     }
   }
 
@@ -339,11 +406,18 @@ export class ForceSimulation {
     }
   }
 
-  /** Many-body repulsion, approximated with a Barnes-Hut quadtree. */
+  /**
+   * Many-body repulsion, approximated with a Barnes-Hut quadtree. The approximation isn't exactly symmetric (a far
+   * group pushes you as one, you push its members one by one), so the net push on the free nodes is taken back out,
+   * evenly: the graph spreads without drifting.
+   */
   #repel(strength) {
     if (!strength) return;
-    const { x, y, vx, vy } = this;
+    const { x, y, vx, vy, fx } = this;
     const tree = this.#tree;
+    let netX = 0,
+      netY = 0,
+      free = 0;
     tree.build(x, y, this.count);
     const { mass, cx, cy, size, index, child, internal, stack } = tree;
     const theta2 = BARNES_HUT_THETA * BARNES_HUT_THETA;
@@ -379,7 +453,20 @@ export class ForceSimulation {
       }
       vx[i] -= forceX;
       vy[i] -= forceY;
+      if (Number.isNaN(fx[i])) {
+        netX += forceX;
+        netY += forceY;
+        free++;
+      }
     }
+    if (!free) return;
+    netX /= free;
+    netY /= free;
+    for (let i = 0; i < this.count; i++)
+      if (Number.isNaN(fx[i])) {
+        vx[i] += netX;
+        vy[i] += netY;
+      }
   }
 
   /**

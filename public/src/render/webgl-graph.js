@@ -49,7 +49,8 @@ const ATLAS_SIZE = 2048; // 1024 icons
 const LABEL_RENDER_SCALE = 2; // label bitmaps are drawn at 2× and scaled down
 const DOUBLE_TAP_MS = 300;
 const LONG_PRESS_MS = 550;
-const DRAG_THRESHOLD_PX = 4;
+/** How far a press must move before it's a drag: fingers wobble more than mice, and a tap must stay a tap. */
+const DRAG_THRESHOLD_PX = { mouse: 4, pen: 6, touch: 10 };
 const GLIDE_FRICTION_S = 0.28; // time constant for the camera's glide after a flick
 const FLICK_WINDOW_MS = 90; // pan moves this recent set the glide's speed
 const FLICK_MIN_SPEED = 120; // px/s; slower than this, letting go just stops
@@ -1708,7 +1709,8 @@ export class WebGLGraph {
         current.x - gesture.start?.x,
         current.y - gesture.start?.y,
       );
-      if (gesture.kind === "node" && moved > DRAG_THRESHOLD_PX) {
+      const threshold = DRAG_THRESHOLD_PX[event.pointerType] ?? 4;
+      if (gesture.kind === "node" && moved > threshold) {
         clearTimeout(longPress);
         if (this.#input.draggable && gesture.record.style.events !== false) {
           gesture.kind = "drag";
@@ -1733,7 +1735,7 @@ export class WebGLGraph {
       } else if (gesture.kind === "pan") {
         const dx = current.x - previous.x,
           dy = current.y - previous.y;
-        if (moved > DRAG_THRESHOLD_PX) gesture.moved = true;
+        if (moved > threshold) gesture.moved = true;
         this.camera.panBy(dx, dy);
         const now = performance.now();
         samples.push({ at: now, dx, dy });

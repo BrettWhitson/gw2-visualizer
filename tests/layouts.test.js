@@ -280,3 +280,40 @@ test("left-right layouts with wide nodes: levels make room, and nothing overlaps
     "levels are at least a node's width apart, not the 120 px link distance",
   );
 });
+
+test("waking the physics (a drag, a tap) doesn't slide the graph", () => {
+  // Layouts don't centre on the origin; when the physics wakes up it must not care where the graph sits. (It used
+  // to pull toward (0, 0), so a tap slid a graph lying far from it across the screen.)
+  const drift = (overrides, offset) => {
+    const graph = graphOf(ELEMENTS);
+    const simulation = runLayout(
+      graph,
+      { ...DEFAULT_SETTINGS, ...overrides },
+      { hasPreviousPositions: false },
+    );
+    simulation.setPositions((id) => {
+      const p = graph.positionOf(id);
+      return { x: p.x + offset, y: p.y + offset / 2 };
+    });
+    const middle = () =>
+      simulation.x.reduce((sum, x) => sum + x, 0) / simulation.count;
+    const before = middle();
+    simulation.reheat(0.3);
+    for (let i = 0; i < 120; i++) simulation.tick();
+    return middle() - before;
+  };
+  for (const overrides of [
+    { direction: "TB" },
+    { viewMode: "merged", direction: "LR" },
+    { layoutEngine: "force" },
+  ]) {
+    const near = drift(overrides, 0),
+      far = drift(overrides, 3000);
+    assert.ok(
+      Math.abs(far - near) < 1,
+      `${JSON.stringify(overrides)}: ${far.toFixed(1)} far away vs ${near.toFixed(1)} at the origin`,
+    );
+    // Nor does it slide on its own (uneven link pulls and the approximate repulsion used to push it along).
+    assert.ok(Math.abs(far) < 2, `${JSON.stringify(overrides)}: ${far}`);
+  }
+});

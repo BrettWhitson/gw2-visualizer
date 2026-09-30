@@ -109,6 +109,8 @@ function start() {
     },
   );
   panel.render();
+  if (["localhost", "127.0.0.1"].includes(location.hostname))
+    globalThis.gw2Sandbox = { view, settings }; // console access while developing
   bindGraphControls();
   bindPlay();
   setInterval(showStats, 250);
