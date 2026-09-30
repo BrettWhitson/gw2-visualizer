@@ -169,8 +169,9 @@ Larger architectural changes that have been weighed but not made. Each is worth 
   Customize → Canvas → Renderer for now, and goes, with Cytoscape, once nobody needs it.
 - **Tether** (`src/layout/`) decides where things go: tidy and radial tree seeds, a layered layout for the merged
   view (ranks, crossing minimisation by barycentre sweeps and transposition, exact per-rank placement; it replaced
-  dagre), and the physics (a deterministic force simulation with a Barnes-Hut quadtree and a hashed collision grid,
-  allocation-free per tick). Both renderers use it. d3-force would bring a well-tested core but still need the
+  dagre), the physics (a deterministic force simulation with a Barnes-Hut quadtree and a hashed collision grid,
+  allocation-free per tick), and an elastic net for dragging (`elastic.js`: a pull fades hop by hop and only
+  disturbed nodes are simulated). Both renderers use it. d3-force would bring a well-tested core but still need the
   structure and collision forces; ELK's layered algorithm is the heavyweight alternative if crossings need to go
   lower.
 - Moving the physics to a Web Worker (or WebAssembly) keeps the page responsive on very large trees; see Next steps.

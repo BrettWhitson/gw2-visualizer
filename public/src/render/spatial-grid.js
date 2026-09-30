@@ -37,6 +37,52 @@ export class SpatialGrid {
       }
   }
 
+  /**
+   * Move box number `index` to `box` in place (a few nodes moved: cheaper than rebuilding the grid). Cells stay in
+   * index order, so hit() still finds the topmost of overlapping boxes.
+   */
+  move(index, box) {
+    const old = this.boxes[index];
+    if (old)
+      this.#forEachCell(old, (key) => {
+        const cell = this.cells.get(key);
+        const at = cell?.indexOf(index) ?? -1;
+        if (at >= 0) cell.splice(at, 1);
+        if (cell && !cell.length) this.cells.delete(key);
+      });
+    this.boxes[index] = box;
+    this.#forEachCell(box, (key) => {
+      const cell = this.cells.get(key);
+      if (!cell) {
+        this.cells.set(key, [index]);
+        return;
+      }
+      let low = 0,
+        high = cell.length;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        if (cell[middle] < index) low = middle + 1;
+        else high = middle;
+      }
+      cell.splice(low, 0, index);
+    });
+  }
+
+  #forEachCell(box, visit) {
+    const size = this.cellSize;
+    for (
+      let cx = Math.floor(box.x1 / size);
+      cx <= Math.floor(box.x2 / size);
+      cx++
+    )
+      for (
+        let cy = Math.floor(box.y1 / size);
+        cy <= Math.floor(box.y2 / size);
+        cy++
+      )
+        visit(this.#key(cx, cy));
+  }
+
   /** Indexes of the boxes overlapping `area`, each once. */
   query(area) {
     const size = this.cellSize;

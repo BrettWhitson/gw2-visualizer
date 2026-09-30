@@ -5,6 +5,7 @@ import {
   UI_COLORS,
   ZOOM_LIMITS,
 } from "../config/constants.js";
+import { ElasticNetwork } from "../layout/elastic.js";
 import { LayoutGraph } from "../layout/layout-graph.js";
 import { runLayout } from "../layout/run-layout.js";
 import {
@@ -74,7 +75,10 @@ export class WebGLGraphView {
         onPointerMove: (event) => handlers.onPointerMove?.(event),
         onViewportChange: () => this.#onViewportChange(),
         onNodeDragStart: (id) => this.#dragStart(id),
-        onNodeDrag: (id, x, y) => this.#simulation?.fix(id, { x, y }),
+        onNodeDrag: (id, x, y) => {
+          this.#drag?.move(id, { x, y });
+          this.#driveDrag();
+        },
         onNodeDragEnd: (id) => this.#dragEnd(id),
       },
       {
@@ -700,13 +704,78 @@ export class WebGLGraphView {
    * Grabbing a node reheats the layout's force simulation with the node held under the pointer, so its neighbours
    * follow and others make room; after release it cools down and settles.
    */
+  /**
+   * Grabbing a node pulls the graph like an elastic net (Tether's elastic.js): its neighbours follow, theirs less,
+   * fading with every hop; what isn't connected, or is far enough away, stays exactly still. Letting go leaves it
+   * where it was dropped and the net settles around it. Link force sets how far a pull reaches, center force how
+   * firmly nodes hold their place.
+   */
   #dragStart(id) {
     if (!this.#values.dragPhysics) return;
-    this.#runPhysics((simulation) => {
-      simulation.fix(id, this.graph.livePositionOf(id));
-      simulation.reheat(0.3);
+    this.#stopPhysics?.();
+    const graph = this.graph;
+    const ids = graph.nodeIds();
+    const index = new Map(ids.map((nodeId, i) => [nodeId, i]));
+    const x = new Float64Array(ids.length),
+      y = new Float64Array(ids.length);
+    ids.forEach((nodeId, i) => {
+      const p = graph.livePositionOf(nodeId);
+      x[i] = p.x;
+      y[i] = p.y;
     });
+    const sources = [],
+      targets = [];
+    for (const edge of this.#edges.values()) {
+      const s = index.get(edge.source),
+        t = index.get(edge.target);
+      if (s == null || t == null || s === t) continue;
+      sources.push(s);
+      targets.push(t);
+    }
+    const s = this.#values;
+    const net = new ElasticNetwork(
+      { ids, x, y, sources, targets },
+      {
+        stiffness: 0.3 + s.linkForce,
+        anchor: 0.05 + s.centerForce * 0.5,
+        // Layered layouts hold their levels more firmly than their place along them.
+        alongAxis: isDirectionalLayout(s) ? resolveFlowAxis(s) : null,
+      },
+    );
+    net.grab(id, graph.livePositionOf(id));
+    this.#drag = net;
+    this.#dragIds = ids;
+    this.#driveDrag();
   }
+
+  /**
+   * Step the elastic net every frame while anything in it moves, and stop when it's still (a node held still costs
+   * nothing); moving the held node, or letting go, starts it again. Once it's let go and still, it's done.
+   */
+  #driveDrag() {
+    const net = this.#drag;
+    if (!net || this.#stopPhysics) return;
+    const graph = this.graph,
+      ids = this.#dragIds;
+    const stop = graph.addTicker(() => {
+      const moving = net.step();
+      if (net.changed.length)
+        graph.moveNodes(net.changed.map((i) => [ids[i], net.x[i], net.y[i]]));
+      if (moving) return true;
+      this.#stopPhysics = null;
+      if (!net.held.includes(1)) this.#drag = null;
+      return false;
+    });
+    this.#stopPhysics = () => {
+      stop();
+      this.#drag = this.#stopPhysics = null;
+    };
+  }
+
+  #dragIds = [];
+
+  /** The elastic net while a node is held (and until it settles). */
+  #drag = null;
 
   /**
    * Shake the physics and watch it settle: optionally scatter every node by up to `scatter` world units (the same way
@@ -759,12 +828,10 @@ export class WebGLGraphView {
   }
 
   #dragEnd(id) {
-    const simulation = this.#simulation;
-    if (simulation && this.#values.dragPhysics && this.#stopPhysics) {
-      simulation.release(id);
-      simulation.reheat(0); // cool down from here
-    }
-    // Otherwise the node just stays where it was dropped (the next layout starts from what's on screen).
+    // With physics the net settles around the dropped node; without, it just stays where it was dropped (the next
+    // layout starts from what's on screen either way).
+    this.#drag?.release(id);
+    this.#driveDrag();
   }
 
   // ---------------------------------------------------------------- export

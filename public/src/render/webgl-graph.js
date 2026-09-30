@@ -281,6 +281,7 @@ export class WebGLGraph {
         record.scale.snap(record.scale.target);
       }
       next.set(input.id, record);
+      record.gridIndex = nodes.length;
       nodes.push(record);
       this.#moving.add(record);
     }
@@ -371,8 +372,8 @@ export class WebGLGraph {
       record.px.snap(x);
       record.py.snap(y);
       this.#touched.add(record);
+      this.#gridMoved.add(record);
     }
-    this.#gridDirty = true;
     this.requestRender();
   }
 
@@ -992,6 +993,30 @@ export class WebGLGraph {
     this.stats.partialUpload = partial;
   }
 
+  /**
+   * Bring the hit-testing grid up to date: move just the nodes that moved, or rebuild it when much of the graph
+   * moved (or its nodes changed).
+   */
+  #syncGrid() {
+    const moved = this.#gridMoved;
+    if (this.#gridDirty || moved.size > this.#nodes.length / 4)
+      this.#rebuildGrid();
+    else
+      for (const record of moved) {
+        if (this.#nodes[record.gridIndex] !== record) continue; // no longer drawn
+        if (record.style.events === false) continue;
+        this.#grid.move(record.gridIndex, {
+          x1: record.px.value - record.hw,
+          y1: record.py.value - record.hh,
+          x2: record.px.value + record.hw,
+          y2: record.py.value + record.hh,
+        });
+      }
+    moved.clear();
+  }
+
+  #gridMoved = new Set(); // nodes moved since the grid was last brought up to date
+
   #rebuildGrid() {
     const cell = Math.max(
       100,
@@ -1080,7 +1105,7 @@ export class WebGLGraph {
         let moving;
         if (record.px) {
           const moved = record.px.step(dt) | record.py.step(dt);
-          if (moved) this.#gridDirty = true;
+          if (moved && !record.ghost) this.#gridMoved.add(record);
           moving = moved | record.scale.step(dt) | record.glow.step(dt);
         } else moving = !!(record.emphasis.step(dt) | 0);
         moving = record.alpha.step(dt) || moving;
@@ -1270,7 +1295,7 @@ export class WebGLGraph {
    * no thinning (image export).
    */
   #drawLabels(context, { camera, width, height, all = false }) {
-    if (this.#gridDirty) this.#rebuildGrid();
+    this.#syncGrid();
     const zoom = camera.zoom;
     const visible = all
       ? new Set(this.#nodes.keys())
@@ -1571,7 +1596,7 @@ export class WebGLGraph {
   // ---------------------------------------------------------------- input
 
   #nodeAt(event) {
-    if (this.#gridDirty) this.#rebuildGrid();
+    this.#syncGrid();
     const rect = this.canvas.getBoundingClientRect();
     const world = this.camera.toWorld(
       event.clientX - rect.left,
@@ -1729,7 +1754,7 @@ export class WebGLGraph {
         gesture.record.px.snap(x);
         gesture.record.py.snap(y);
         this.#touched.add(gesture.record);
-        this.#gridDirty = true;
+        this.#gridMoved.add(gesture.record);
         this.handlers.onNodeDrag?.(gesture.record.id, x, y);
         this.requestRender();
       } else if (gesture.kind === "pan") {

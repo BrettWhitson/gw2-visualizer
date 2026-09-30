@@ -124,3 +124,32 @@ test("edges attach to box borders; taxi edges bend in the middle; arrows point a
     { x1: -3, y1: 2, x2: 2, y2: 6 },
   );
 });
+
+test("spatial grid: moving a box in place answers like a freshly built grid", () => {
+  const boxAt = (x, y) => ({ x1: x - 10, y1: y - 10, x2: x + 10, y2: y + 10 });
+  const positions = [...Array(40).keys()].map((i) => [
+    (i % 8) * 30,
+    Math.floor(i / 8) * 30,
+  ]);
+  const moved = new SpatialGrid(50);
+  positions.forEach(([x, y], i) => moved.insert(i, boxAt(x, y)));
+  // Move a few, one of them on top of another (index order decides which is on top).
+  positions[3] = [500, 500];
+  positions[12] = positions[13];
+  positions[39] = [-200, 35];
+  for (const i of [3, 12, 39]) moved.move(i, boxAt(...positions[i]));
+  const fresh = new SpatialGrid(50);
+  positions.forEach(([x, y], i) => fresh.insert(i, boxAt(x, y)));
+  for (const area of [
+    { x1: -300, y1: -300, x2: 600, y2: 600 },
+    { x1: 0, y1: 0, x2: 60, y2: 60 },
+    { x1: 480, y1: 480, x2: 520, y2: 520 },
+  ])
+    assert.deepEqual(
+      [...moved.query(area)].sort((a, b) => a - b),
+      [...fresh.query(area)].sort((a, b) => a - b),
+    );
+  for (const [x, y] of [positions[13], [500, 500], [-200, 35], [90, 0]])
+    assert.equal(moved.hit(x, y), fresh.hit(x, y));
+  assert.equal(moved.hit(...positions[13]), 13, "the higher index is on top");
+});
