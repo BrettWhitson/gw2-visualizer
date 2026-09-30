@@ -1,17 +1,18 @@
 // The KPI strip's figures: craft cost against the Trading Post price after its 15% cut.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { TP_FEE, rootEconomics } from "../web/src/model/root-economics.js";
+import { rootEconomics } from "../web/src/model/root-economics.js";
+import { tradingPostNet } from "../web/src/model/craftable.js";
 
-test("profit after the 15% fee, charged per unit and rounded down", () => {
-  assert.equal(TP_FEE, 0.15);
+test("profit after the Trading Post's fees, as the What you can craft page counts them", () => {
   const figures = rootEconomics({
     craftCost: 21_993_420,
     sellPrice: 32_500_001,
     quantity: 1,
   });
   assert.equal(figures.buyNow, 32_500_001);
-  assert.equal(figures.sellNet, Math.floor(32_500_001 * 0.85));
+  assert.equal(figures.sellNet, tradingPostNet(32_500_001));
+  assert.equal(figures.sellNet, 27_624_999, "each fee rounded up, per unit");
   assert.equal(figures.profit, figures.sellNet - 21_993_420);
   assert.ok(Math.abs(figures.margin - figures.profit / 21_993_420) < 1e-12);
 });
