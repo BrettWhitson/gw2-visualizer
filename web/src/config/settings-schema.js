@@ -91,6 +91,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   growNewTrees: true,
   canvasBackground: "gradient", // gradient | dots | grid | plain
   showLegend: true,
+  showKpiStrip: true, // the root item's cost and profit over the graph
+  showMinimap: true, // the overview in the graph's corner (never on phones)
   smoothZoom: !prefersReducedMotion,
   zoomSpeed: 1,
 });
@@ -813,6 +815,20 @@ export const CUSTOMIZE_GROUPS = [
         label: "Legend",
         type: "checkbox",
         redraw: Redraw.none,
+      },
+      {
+        key: "showKpiStrip",
+        label: "KPI strip",
+        type: "checkbox",
+        redraw: Redraw.none,
+        hint: "Craft cost, Trading Post price, profit after fees and margin for the item you're crafting, over the graph.",
+      },
+      {
+        key: "showMinimap",
+        label: "Minimap",
+        type: "checkbox",
+        redraw: Redraw.none,
+        hint: "An overview of the whole graph in its corner; click or drag it to move the view. Not shown on phones.",
       },
     ],
   },

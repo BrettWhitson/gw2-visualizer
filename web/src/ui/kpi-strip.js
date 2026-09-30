@@ -25,6 +25,7 @@ export class KpiStrip {
   /** @param {import('../types.js').TreeNode | null} tree  the root of the drawn tree, or null for none */
   render(tree) {
     const show =
+      this.#settings.values.showKpiStrip &&
       !!tree &&
       tree.kind === EntityKind.item &&
       this.#settings.values.priceBasis !== "off";

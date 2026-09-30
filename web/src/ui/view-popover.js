@@ -39,6 +39,11 @@ export const POPOVER_GROUPS = [
     ],
   },
   {
+    id: "vp-canvas",
+    title: "On the canvas",
+    keys: ["showLegend", "showKpiStrip", "showMinimap"],
+  },
+  {
     id: "vp-recipes",
     title: "Recipes",
     keys: ["includeForgePromotions", "useOwned"],

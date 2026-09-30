@@ -54,6 +54,9 @@ import { formatNumber } from "./utils/format.js";
  * Render pipeline:  TreeState + GameData + PriceBook ─CraftTreeBuilder→ TreeNode tree ─buildGraphModel→ GraphModel
  *                   ─NodeAppearance→ graph elements ─WebGLGraphView (Prism)→ canvas (+ legend / details / shopping list)
  */
+/** Settings that show, hide or change the KPI strip and minimap. */
+const OVERLAY_SETTINGS = new Set(["showKpiStrip", "showMinimap", "priceBasis"]);
+
 export class CraftingTreeApp {
   /** @type {import('./types.js').TreeNode | null} */ tree = null;
   /** @type {import('./types.js').GraphModel} */ graph = {
@@ -213,6 +216,11 @@ export class CraftingTreeApp {
           : null;
       },
       onMove: () => this.tooltip.hide(),
+    });
+    // Their switches (Customize → Canvas, the View popover) redraw nothing in the graph, so follow them here.
+    this.settings.onChange(({ keys }) => {
+      if (keys.some((key) => OVERLAY_SETTINGS.has(key)))
+        this.#refreshOverlays();
     });
   }
 
@@ -677,7 +685,7 @@ export class CraftingTreeApp {
   #refreshOverlays() {
     const hasGraph = this.treeState.hasRoot && this.graph.nodes.length > 0;
     this.kpiStrip.render(hasGraph ? this.tree : null);
-    this.minimap.setVisible(hasGraph);
+    this.minimap.setVisible(hasGraph && this.settings.values.showMinimap);
     this.minimap.redraw();
   }
 
