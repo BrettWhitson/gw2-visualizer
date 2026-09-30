@@ -319,6 +319,7 @@ export function armoryHtml(armory, weaponSet, { view = "icons" } = {}) {
         </div></div>
         ${templateButtons ? `<div class="control"><span class="control-label">Equipment template</span><div class="seg">${templateButtons}</div></div>` : ""}
         <div class="control"><span class="control-label">Stats with weapon</span><div class="seg">${setButtons}</div></div>
+        <button type="button" class="share-btn" data-share-open title="Export this template's gear as a PNG: gear only, no stats or account details">Share image</button>
       </div>
     </div>
     ${armory.missingItemIds.length ? `<p class="notice">${armory.missingItemIds.length} item${armory.missingItemIds.length > 1 ? "s" : ""} couldn't be looked up in the API, so the totals below may be incomplete. Reload to try again.</p>` : ""}

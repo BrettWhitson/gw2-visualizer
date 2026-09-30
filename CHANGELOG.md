@@ -25,6 +25,8 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 - Characters: a **Full** gear view shows every slot's details in place (stats on one line, rune tiers in a grid),
   remembered in this browser; the character's **bags** appear below the gear (with the `inventories` permission);
   every gear piece and bag item links to its crafting tree.
+- Characters: **Share image** exports the current template's gear as a PNG to download or copy, as Compact rows or
+  Full detail cards. It shows gear only: no attribute totals, account name or wallet.
 - A key that isn't remembered is now kept for the browser tab, so it carries across pages until the tab closes.
 
 ## 0.9.0 — 2026-09-29

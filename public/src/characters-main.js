@@ -6,6 +6,7 @@ import { CharacterCatalogs } from "./data/account-client.js";
 import { AccountSession } from "./data/account-session.js";
 import { activeBuild, buildArmory } from "./model/character-armory.js";
 import { armoryHtml, characterListHtml } from "./ui/character-view.js";
+import { openShareDialog } from "./ui/share-image.js";
 import { escapeHtml, querySelector as $ } from "./utils/dom.js";
 import { registerServiceWorker } from "./pwa.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
@@ -141,6 +142,14 @@ class CharactersPage {
           this.renderArmory(character);
         }),
       );
+      content
+        .querySelector("[data-share-open]")
+        .addEventListener("click", () =>
+          openShareDialog(
+            armory,
+            this.gearView === "full" ? "full" : "compact",
+          ),
+        );
       content.querySelectorAll("[data-gear-view]").forEach((button) =>
         button.addEventListener("click", () => {
           this.gearView = button.dataset.gearView;
