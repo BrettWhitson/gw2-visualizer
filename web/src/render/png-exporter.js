@@ -8,7 +8,7 @@ import { loadImage } from "../utils/dom.js";
 /**
  * Compose a shareable PNG: a title bar, the full graph (with whatever highlight is active), and a legend band.
  *
- * @param {{ graphView: import('./graph-view.js').GraphView, title: string, titleColor: string, subtitle: string,
+ * @param {{ graphView: import('./webgl-graph-view.js').WebGLGraphView, title: string, titleColor: string, subtitle: string,
  *           legendEntries: { key: string, label: string, color: string, count: number, border?: string, image?: string }[],
  *           selectedLegendKeys: Set<string>, footer?: string }} options
  * @returns {Promise<{ blob: Blob, width: number, height: number }>}

@@ -30,7 +30,7 @@ import {
   recipeDisciplines,
   usefulMaterials,
 } from "./model/craftable.js";
-import { chooseGraphView } from "./render/choose-graph-view.js";
+import { WebGLGraphView } from "./render/webgl-graph-view.js";
 
 /** Looks for this page's own classes: "+N more" folds are placeholders, and the most profitable routes stand out. */
 const CLASS_STYLES = {
@@ -40,9 +40,9 @@ const CLASS_STYLES = {
   },
   edges: { "best-route": { color: "#e5b83b", width: 3, glow: true } },
 };
-import { NodeAppearance } from "./graph/node-appearance.js";
+import { NodeAppearance } from "./render/node-appearance.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
-import { canDrawGraphs } from "./render/choose-graph-view.js";
+import { canDrawGraphs, NO_WEBGL_MESSAGE } from "./render/webgl-support.js";
 import { registerServiceWorker } from "./pwa.js";
 import { escapeHtml, querySelector as $ } from "./utils/dom.js";
 import {
@@ -175,7 +175,7 @@ class CraftablePage {
   }
 
   start() {
-    this.graphView = new (chooseGraphView(this.settings.values))({
+    this.graphView = new WebGLGraphView({
       container: $("#cy"),
       canvasWrapper: $("#cyWrap"),
       settings: this.graphSettings,
@@ -1306,9 +1306,7 @@ function showFatalError(message) {
 const account = createAccountSession();
 mountSiteChrome({ page: "craftable", account });
 if (!canDrawGraphs()) {
-  showFatalError(
-    "The graph library failed to load. Check your connection and reload the page.",
-  );
+  showFatalError(NO_WEBGL_MESSAGE);
 } else {
   const page = new CraftablePage(account);
   if (["localhost", "127.0.0.1"].includes(location.hostname))

@@ -16,7 +16,7 @@ import { LayoutGraph } from "tether/layout-graph.js";
 import { runLayout } from "tether/run-layout.js";
 import { PHYSICS_TUNING, TUNING_OPTIONS } from "tether/tuning.js";
 import { registerServiceWorker } from "./pwa.js";
-import { canDrawGraphs } from "./render/choose-graph-view.js";
+import { canDrawGraphs } from "./render/webgl-support.js";
 import { layoutSettings } from "./render/prism-settings.js";
 import { WebGLGraphView } from "./render/webgl-graph-view.js";
 import { GRAPH_SHAPES, generateGraph } from "./sandbox/generate-graph.js";
@@ -39,19 +39,16 @@ const PHYSICS_GROUPS = withoutKeys(
   CUSTOMIZE_GROUPS.filter((group) => ["layout", "forces"].includes(group.id)),
   ["ingredientOrder"],
 );
-const RENDER_GROUPS = withoutKeys(
-  [
-    ...CUSTOMIZE_GROUPS.filter((group) =>
-      ["nodes", "labels", "edges", "forge", "highlight", "canvas"].includes(
-        group.id,
-      ),
+const RENDER_GROUPS = [
+  ...CUSTOMIZE_GROUPS.filter((group) =>
+    ["nodes", "labels", "edges", "forge", "highlight", "canvas"].includes(
+      group.id,
     ),
-    ...SETTINGS_GROUPS.filter((group) =>
-      ["interaction", "animation"].includes(group.id),
-    ),
-  ],
-  ["graphRenderer"],
-);
+  ),
+  ...SETTINGS_GROUPS.filter((group) =>
+    ["interaction", "animation"].includes(group.id),
+  ),
+];
 
 // ---------------------------------------------------------------- state
 
@@ -965,14 +962,6 @@ function saveTab(tab) {
   }
 }
 
-function supportsWebGL2() {
-  try {
-    return !!document.createElement("canvas").getContext("webgl2");
-  } catch {
-    return false;
-  }
-}
-
 // ---------------------------------------------------------------- start (last: everything above is defined)
 
 const account = createAccountSession();
@@ -980,5 +969,5 @@ mountSiteChrome({ page: "sandbox", account });
 account.restore();
 registerServiceWorker();
 
-if (!canDrawGraphs() || !supportsWebGL2()) $("#sbUnsupported").hidden = false;
+if (!canDrawGraphs()) $("#sbUnsupported").hidden = false;
 else start();

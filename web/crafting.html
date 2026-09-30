@@ -12,9 +12,6 @@
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://render.guildwars2.com; connect-src 'self' https://api.guildwars2.com https://wiki.guildwars2.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'"
     />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
-    <!-- Vendored UMD library (global: cytoscape, the classic renderer; see npm run vendor), served from static/.
-         It sits above the page's module, which Vite moves into <head>, so `defer` still runs it first. -->
-    <script src="/lib/cytoscape.min.js" defer></script>
 
     <title>
       GW2 Visualizer (unofficial fansite): Guild Wars 2 crafting tree explorer

@@ -89,9 +89,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
   animationEasing: "smooth",
   growNewTrees: true,
   canvasBackground: "gradient", // gradient | dots | grid | plain
-  // Prism (our own engine, the prism package) | classic (Cytoscape). A new key: the preview's "renderer" (stored as
-  // "classic" by anyone who only tried it) is dropped as unknown, so everyone starts on Prism.
-  graphRenderer: "prism",
   showLegend: true,
   smoothZoom: !prefersReducedMotion,
   zoomSpeed: 1,
@@ -785,17 +782,6 @@ export const CUSTOMIZE_GROUPS = [
         label: "Legend",
         type: "checkbox",
         redraw: Redraw.none,
-      },
-      {
-        key: "graphRenderer",
-        label: "Renderer",
-        type: "select",
-        redraw: Redraw.none,
-        hint: "Prism is the app's own GPU renderer: smooth with thousands of items, with gliding motion and flowing lineages. Classic is the previous one. The page reloads to switch.",
-        choices: [
-          ["prism", "Prism"],
-          ["classic", "Classic"],
-        ],
       },
     ],
   },

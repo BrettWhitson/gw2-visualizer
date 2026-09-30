@@ -25,12 +25,9 @@ import { ItemSearchIndex } from "./data/item-search-index.js";
 import { TreeState } from "./model/tree-state.js";
 import { CraftTreeBuilder, walkTree } from "./model/craft-tree.js";
 import { buildGraphModel } from "./model/graph-model.js";
-import { NodeAppearance } from "./graph/node-appearance.js";
-import {
-  chooseGraphView,
-  reloadForRenderer,
-} from "./render/choose-graph-view.js";
-import { composeGraphPng } from "./graph/png-exporter.js";
+import { NodeAppearance } from "./render/node-appearance.js";
+import { WebGLGraphView } from "./render/webgl-graph-view.js";
+import { composeGraphPng } from "./render/png-exporter.js";
 import { Tooltip } from "./ui/tooltip.js";
 import { DetailsPanel } from "./ui/details-panel.js";
 import { ShoppingListPanel } from "./ui/shopping-list-panel.js";
@@ -56,7 +53,7 @@ import { formatNumber } from "./utils/format.js";
  * that tie them together. Components never talk to each other directly — they call back into the app.
  *
  * Render pipeline:  TreeState + GameData + PriceBook ─CraftTreeBuilder→ TreeNode tree ─buildGraphModel→ GraphModel
- *                   ─NodeAppearance→ Cytoscape elements ─GraphView→ canvas (+ legend / details / shopping list)
+ *                   ─NodeAppearance→ graph elements ─WebGLGraphView (Prism)→ canvas (+ legend / details / shopping list)
  */
 export class CraftingTreeApp {
   /** @type {import('./types.js').TreeNode | null} */ tree = null;
@@ -190,7 +187,7 @@ export class CraftingTreeApp {
       onPick: (itemId) => this.openItem(itemId),
       getRecentItemIds: () => this.recentItems.itemIds,
     });
-    this.graphView = new (chooseGraphView(this.settings.values))({
+    this.graphView = new WebGLGraphView({
       container: $("#cy"),
       canvasWrapper: $("#cyWrap"),
       settings: this.settings,
@@ -381,10 +378,6 @@ export class CraftingTreeApp {
    */
   changeSetting(key, value, redraw) {
     this.settings.set(key, value);
-    if (key === "graphRenderer") {
-      reloadForRenderer(); // the graph view is built once, at start
-      return;
-    }
     if (key === "viewMode") {
       // Node ids and collapse keys differ between views.
       this.treeState.resetExpansion();
@@ -411,24 +404,17 @@ export class CraftingTreeApp {
 
   /** @param {'layout' | 'style'} kind */
   applyPreset(kind, name) {
-    const renderer = this.settings.get("graphRenderer");
     this.settings.applyPreset(kind, name);
-    this.#afterBulkSettingsChange(renderer);
+    this.#afterBulkSettingsChange();
   }
 
   /** Restore the given settings to their defaults (Customize: per option, per section, or all). */
   resetSettings(keys) {
-    const renderer = this.settings.get("graphRenderer");
     this.settings.reset(keys);
-    this.#afterBulkSettingsChange(renderer);
+    this.#afterBulkSettingsChange();
   }
 
-  /** @param {string} previousRenderer  the Renderer setting before the change (it needs a reload) */
-  #afterBulkSettingsChange(previousRenderer) {
-    if (this.settings.get("graphRenderer") !== previousRenderer) {
-      reloadForRenderer();
-      return;
-    }
+  #afterBulkSettingsChange() {
     this.optionPanels.forEach((panel) => panel.render());
     this.toolbar.sync();
     this.#applyRibbonState();
@@ -642,7 +628,7 @@ export class CraftingTreeApp {
   // ---------------------------------------------------------------- rendering
 
   /**
-   * Rebuild tree → graph → elements and hand them to the GraphView, then refresh the side panels.
+   * Rebuild tree → graph → elements and hand them to the graph view, then refresh the side panels.
    * @param {{ fit?: boolean | 'smart', anchorNodeId?: string | null, grow?: boolean }} [options]
    */
   #render({ fit = false, anchorNodeId = null, grow = false } = {}) {

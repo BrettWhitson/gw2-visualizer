@@ -13,6 +13,10 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 - Development: `public/` is now `web/`, with the files that ship untouched in `web/static/`. `npm start` runs Vite
   with hot reload, `npm run preview` serves the built site, and `npm run dev:local` runs against the Prism and Tether
   checkouts beside the repo. Prism and Tether are pinned packages that Vite bundles, no longer copied into the repo.
+- **Cytoscape is gone.** Prism draws every graph; the Classic renderer and the Customize → Canvas → Renderer option are
+  removed (a saved Classic choice is simply dropped). With the Vite build, the crafting page now downloads 8 files and
+  143 KB (gzip, Mystic Forge data included), down from 82 files and 408 KB in 0.10.0. Browsers without WebGL2 (hardware acceleration off, a blocklisted GPU) now see a message saying so on
+  the graph pages, instead of the old renderer.
 
 ## 0.10.0 — 2026-09-30
 

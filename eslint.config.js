@@ -11,10 +11,7 @@ export default [
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: "module",
-      globals: {
-        ...globals.browser,
-        cytoscape: "readonly",
-      },
+      globals: { ...globals.browser },
     },
   },
   {

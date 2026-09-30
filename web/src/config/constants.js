@@ -154,7 +154,7 @@ export const SOURCE_LABELS = {
 export const COST_HEAT_COLORS = ["#34405a", "#ffb347", "#ff4d3d"];
 export const COST_LOW_LEGEND_COLOR = "#5a6a8a";
 
-/** Shared UI colours (mirrors the CSS variables; needed where CSS can't reach: canvas + Cytoscape). */
+/** Shared UI colours (mirrors the CSS variables; needed where CSS can't reach: the graph canvas). */
 export const UI_COLORS = {
   canvas: "#0d1017",
   panel: "#151a24",
@@ -177,54 +177,7 @@ export const UI_COLORS = {
 };
 
 // ---------------------------------------------------------------- layout & motion
-/** Base sizes in graph units; the node size, spacing and font sliders scale these. */
-export const LAYOUT_BASE = {
-  nodeSize: 48,
-  siblingGap: 22,
-  levelGap: 70,
-  fontSize: 11,
-  labelWidth: 120,
-};
-
-/** Labels go from invisible (at the fade zoom) to fully visible over this zoom ratio. */
-export const LABEL_FADE_RANGE = 1.6;
-/** Label opacity is quantised to this many steps so zooming only restyles when a step is crossed. */
-export const LABEL_FADE_STEPS = 5;
-
-/** Cytoscape easing names for each user-facing easing option. */
-export const EASING_FUNCTIONS = {
-  smooth: "ease-in-out-cubic",
-  snappy: "ease-out-quint",
-  bouncy: "spring(380, 22)",
-  linear: "linear",
-};
-
-/** Thresholds that trade polish for speed on big graphs. */
-export const PERFORMANCE_LIMITS = {
-  maxAnimatedNodes: 1500, // transitions run in one batched loop (graph-transition.js), so this can be generous
-  maxStaggeredNodes: 800,
-  textureOnViewportAboveElements: 500,
-  hideEdgesOnViewportAboveElements: 2500,
-  dimOnHoverBelowElements: 2500,
-  maxFlowAnimatedEdges: 1500,
-  fullRateFlowEdges: 300, // above this, the flow animation drops to ~20 fps
-  hoverDelayMs: 35,
-};
-
 export const ZOOM_LIMITS = { min: 0.005, max: 4, maxFitZoom: 1.6 };
-
-/**
- * Smooth wheel zoom: each wheel pixel scales the zoom target by exp(-pixels × perPixel × zoomSpeed); the view then
- * eases toward the target with this time constant. Pinch gestures (ctrl+wheel) send tiny deltas, so they're boosted.
- */
-export const SMOOTH_ZOOM = {
-  perPixel: 0.0018,
-  pinchBoost: 5,
-  maxStepPixels: 240,
-  easeTimeMs: 90,
-  lineHeightPx: 16,
-  pageHeightPx: 400,
-};
 
 /** The depth slider's top step means "no limit". */
 export const UNLIMITED_DEPTH = 13;

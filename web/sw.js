@@ -3,7 +3,7 @@
  *
  *  - Page navigations: network-first, falling back to the cache when offline, so a deploy shows up at once.
  *  - Built code (assets/): cache-first. Vite puts a content hash in every file name, so a cached copy never goes stale.
- *  - Stable assets (lib/, icons/, data/): stale-while-revalidate — instant loads, refreshed in the background.
+ *  - Stable assets (icons/, data/): stale-while-revalidate — instant loads, refreshed in the background.
  *  - Item icons (render.guildwars2.com): cache-first, capped. Only CORS responses are stored (opaque ones waste quota).
  *  - API calls: not cached here — game data lives in IndexedDB, prices should always be live.
  *
@@ -17,7 +17,7 @@ const ICON_CACHE = "gw2ct-icons-v1";
 const MAX_CACHED_ICONS = 4000;
 const ICON_HOST = "render.guildwars2.com";
 const HASHED_ASSET_PATH = /\/assets\//;
-const STABLE_ASSET_PATH = /\/(lib|icons|data)\//;
+const STABLE_ASSET_PATH = /\/(icons|data)\//;
 
 /** @type {{ url: string, revision: string | null }[]} */
 const PRECACHE = self.__WB_MANIFEST;

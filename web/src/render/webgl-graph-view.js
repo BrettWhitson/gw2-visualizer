@@ -8,9 +8,9 @@ import {
 } from "./prism-settings.js";
 
 /**
- * Prism (the prism package, laid out and moved by Tether) behind the interface the pages use for GraphView (render,
+ * Prism (the prism package, laid out and moved by Tether) behind the interface the pages use (render,
  * select, lineage, fit, export…), so a page can switch renderers without other changes. This adapter speaks the
- * app's language: it maps the settings to Prism's options and theme, Cytoscape-style elements to Prism's nodes and
+ * app's language: it maps the settings to Prism's options and theme, the pages' `{ data, classes }` elements to Prism's nodes and
  * edges, and the item states (owned, Mystic Forge, cheaper, cycle, collapsed) to Prism's class rules.
  */
 export class WebGLGraphView {
@@ -22,7 +22,7 @@ export class WebGLGraphView {
 
   /**
    * @param {{ container: HTMLElement, canvasWrapper?: HTMLElement, settings: { values: object },
-   *           handlers: object }} options  the same as GraphView's
+   *           handlers: object }} options
    */
   constructor({ container, canvasWrapper, settings, handlers }) {
     this.#settings = settings;
@@ -105,7 +105,7 @@ export class WebGLGraphView {
 
   // ---------------------------------------------------------------- rendering
 
-  /** Same arguments as GraphView.render. */
+  /** Draw these elements (`{ data, classes }`), morphing from what's shown. */
   render({
     nodeElements,
     edgeElements,

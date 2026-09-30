@@ -1,5 +1,5 @@
 // Vite builds the pages in web/ into _site/ for GitHub Pages. Static files that ship untouched (icons, the web
-// manifest, vendored Cytoscape, the data snapshot) live in web/static/. See the README's Development section.
+// manifest, the data snapshot) live in web/static/. See the README's Development section.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
@@ -103,7 +103,6 @@ export default defineConfig(({ mode }) => ({
           "assets/**/*.{js,css}",
           "manifest.webmanifest",
           "icons/icon.svg",
-          "lib/cytoscape.min.js",
         ],
         // The forge data chunk is ~700 KB; precache it too, so the crafting page is complete offline.
         maximumFileSizeToCacheInBytes: 1024 * 1024,

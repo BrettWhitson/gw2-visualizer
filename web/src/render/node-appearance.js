@@ -14,7 +14,7 @@ import {
 } from "../model/graph-model.js";
 
 /**
- * Turns graph nodes/edges into Cytoscape element data: colour (per colour mode), label text and state classes.
+ * Turns graph nodes/edges into element data for the graph view: colour (per colour mode), label text and state classes.
  * The stylesheet (stylesheet.js) maps these onto visuals.
  */
 export class NodeAppearance {
@@ -74,7 +74,7 @@ export class NodeAppearance {
       .join(" ");
   }
 
-  /** Cytoscape `data` for a node. `bgs` carries the icon + forge badge as a two-layer background. */
+  /** The element `data` for a node. `bgs` carries the icon + forge badge as a two-layer background. */
   nodeData(node, rootCost) {
     const entity = this.gameData.getEntity(node.kind, node.entityId);
     const data = {

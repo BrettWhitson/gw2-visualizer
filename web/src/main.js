@@ -1,11 +1,8 @@
-/**
- * Entry point. Cytoscape (the classic renderer) is a vendored UMD script (static/lib/) loaded before this module, so it's
- * available as a global.
- */
+/** Entry point for the crafting page. Graphs are drawn by Prism, which needs WebGL2. */
 import { CraftingTreeApp } from "./app.js";
 import { registerServiceWorker } from "./pwa.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
-import { canDrawGraphs } from "./render/choose-graph-view.js";
+import { canDrawGraphs, NO_WEBGL_MESSAGE } from "./render/webgl-support.js";
 import { createAccountSession } from "./data/site-account.js";
 
 const account = createAccountSession();
@@ -18,9 +15,7 @@ function showFatalError(message) {
 }
 
 if (!canDrawGraphs()) {
-  showFatalError(
-    "The graph library failed to load. Check your connection and reload the page.",
-  );
+  showFatalError(NO_WEBGL_MESSAGE);
 } else {
   const app = new CraftingTreeApp({ account });
   if (["localhost", "127.0.0.1"].includes(location.hostname))

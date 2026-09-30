@@ -150,7 +150,7 @@ Larger architectural changes that have been weighed but not made. Each is worth 
 - *Next:* Phase 2 adds Svelte, reactive settings and a graph component, starting with the legend; Phase 3 moves
   the pages over one at a time, crafting last.
 
-**Our own graph engines: Prism and Tether** (replacing Cytoscape)
+**Our own graph engines: Prism and Tether**
 - Both are their own open-source projects, free of anything GW2:
   [Prism](https://github.com/BrettWhitson/prism) and [Tether](https://github.com/BrettWhitson/tether). The app pins
   a commit of each as a package that Vite bundles (`npm run dev:local` uses the checkouts beside this repo
@@ -158,8 +158,8 @@ Larger architectural changes that have been weighed but not made. Each is worth 
   maps the app's settings and item states (owned, Mystic Forge, cheaper…) onto Prism's options and class rules.
 - **Prism** draws, animates and handles input: WebGL2 instanced drawing of nodes, edges and
   arrowheads, a label layer, springs for every motion, partial GPU uploads (a frame costs what moves), hit-testing,
-  pan / zoom / pinch, tiled PNG export. Prism is the default; Classic (Cytoscape) stays selectable under
-  Customize → Canvas → Renderer for now, and goes, with Cytoscape, once nobody needs it.
+  pan / zoom / pinch, tiled PNG export. It replaced Cytoscape, which the app no longer uses. Browsers without
+  WebGL2 (hardware acceleration off, a blocklisted GPU) get a message on the graph pages instead.
 - **Tether** decides where things go: tidy and radial tree seeds, a layered layout for the merged
   view (ranks, crossing minimisation by barycentre sweeps and transposition, exact per-rank placement; it replaced
   dagre), the physics (a deterministic force simulation with a Barnes-Hut quadtree and a hashed collision grid,
@@ -188,22 +188,21 @@ live in `web/` (modules in `web/src/`), files that ship untouched in `web/static
 packages that Vite bundles. All tooling is Node.
 
 ```bash
-npm install            # Vite, ESLint, Prettier, the pinned Prism and Tether, and Cytoscape for vendoring
+npm install            # Vite, ESLint, Prettier, and the pinned Prism and Tether
 npm start              # Vite dev server on :8642 with hot reload + open browser   (npm run serve: without opening)
 npm run dev:local      # the same, but against the Prism and Tether checkouts in ../prism and ../tether
-npm run verify         # syntax/import + vendored-version check, ESLint, Prettier check, unit tests
+npm run verify         # syntax/import check, ESLint, Prettier check, unit tests
 npm run format         # format JS and CSS with Prettier (default options)
 npm run build          # build the deployable site into _site/ (hashed files + service worker)
 npm run preview        # serve _site/ on :8642, as it will be deployed
 npm run snapshot       # build web/static/data/snapshot/ (what visitors download; ~150 API requests)
-npm run vendor         # copy the pinned Cytoscape into web/static/lib/
 npm run update-forge   # re-read Mystic Forge recipes from the wiki (needs WIKI_CONTACT or REPOSITORY_URL)
 npm run icons          # regenerate web/static/icons/ from tools/generate-icons.mjs
 ```
 
 - Tests (`tests/`, Node's built-in `node:test`) cover tree building and cost roll-up, the Path planner, graph
   projection, search, data loading, caching and the snapshot path, price and wiki lookups, settings migrations, and
-  layout behaviour (flow direction, radial rings, forces, drag physics) against real headless Cytoscape.
+  layout behaviour (flow direction, radial rings, forces, drag physics) through Tether with the app's settings.
 - The service worker only exists in a build: under `npm run preview`, add `?sw=1` to test offline and install
   behaviour locally (it is skipped on localhost otherwise). The build fills in its list of files to precache, and
   fails if a page would carry an inline script, which the Content-Security-Policy blocks.
@@ -223,7 +222,6 @@ tools/
   build-site.mjs           after `vite build`: LICENSE + notices + .nojekyll → _site/
   check.mjs                syntax + import check; generated data must stay unformatted
   build-data-snapshot.mjs  GW2 API → web/static/data/snapshot/ (gzip + meta)
-  vendor-libs.mjs          node_modules → web/static/lib/ (Cytoscape + VERSIONS.json)
   update-mystic-forge.mjs  wiki → web/data/mystic-forge-recipes.js
   generate-icons.mjs       web/static/icons/ (SVG + PNGs, no dependencies)
 tests/                     node:test suites + helpers/fixtures.js
@@ -240,7 +238,6 @@ web/                       the web app: Vite's root (pages, CSS and modules are 
   static/                  copied into _site/ untouched
     manifest.webmanifest, _headers, robots.txt
     icons/                 app icons (generated)
-    lib/                   vendored Cytoscape.js (UMD global; the classic renderer)
     data/
       LICENSE-GFDL-1.3.txt   licence text for the wiki-derived data
       custom-recipes.json    your own recipes
@@ -256,10 +253,9 @@ web/                       the web app: Vite's root (pages, CSS and modules are 
     data/                  Gw2ApiClient, IndexedDbStore, GameData (+ core-data-sources: snapshot / API),
                            PriceBook, WikiSources, ItemSearchIndex, AccountClient + CharacterCatalogs
     model/                 TreeState, CraftTreeBuilder, PathPlanner, buildGraphModel, character armory
-    graph/                 the classic (Cytoscape) renderer: GraphView, GraphTransition, SmoothWheelZoom, stylesheet,
-                           layouts (adapter onto Tether); NodeAppearance, PNG export (shared)
     render/                WebGLGraphView (Prism behind the pages' interface), prism-settings (settings and
-                           item states → Prism's options, theme and class rules), choose-graph-view
+                           item states → Prism's options, theme and class rules), NodeAppearance, PNG export,
+                           webgl-support
     ui/                    site chrome (shared header, footer, About), character view, Toolbar (+ ribbon-sections, RibbonPopout), OptionsPanel (Customize, Settings,
                            popouts), range steppers, Legend, SearchBox,
                            Tooltip, DetailsPanel, ShoppingListPanel, toasts, status bar / overlay / side panel
@@ -274,7 +270,7 @@ TreeState + GameData + PriceBook
                                      buy vs craft and which recipe; costs rolled up)
    → buildGraphModel()               GraphModel (tree or merged view, filters, ordering)
    → NodeAppearance                  element data (colour, label, classes)
-   → graph view .render()            Tether lays it out; Prism (or Classic) morphs from the previous graph
+   → graph view .render()            Tether lays it out; Prism morphs from the previous graph
    → Legend / DetailsPanel / ShoppingListPanel refresh
 ```
 
@@ -332,4 +328,4 @@ Not covered by that license:
   endorsed, sponsored or approved by ArenaNet or NCSOFT.
 - **`web/data/mystic-forge-recipes.js`**, derived from the [Guild Wars 2 Wiki](https://wiki.guildwars2.com/):
   contributor content under the [GNU FDL 1.3](web/static/data/LICENSE-GFDL-1.3.txt).
-- **Bundled libraries** (Cytoscape in `web/static/lib/`; Prism and Tether, bundled by Vite) keep their own (MIT) licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- **Bundled libraries** (Prism and Tether, bundled by Vite) keep their own (MIT) licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
