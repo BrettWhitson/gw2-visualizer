@@ -185,3 +185,15 @@ test("cards: Items as and Card links reach Prism, and card colours follow the to
   assert.equal(theme.cardText, UI_COLORS.text);
   assert.equal(theme.portFill, UI_COLORS.canvas);
 });
+
+test("edges coloured by where they come from keep their colour when their lineage lights up", () => {
+  const options = (edgeColorMode) => prismOptions(settings({ edgeColorMode }));
+  assert.equal(options("source").lineageColor, "edge");
+  assert.equal(
+    options("source").edgeColorMode,
+    "neutral",
+    "class rules colour them",
+  );
+  for (const mode of ["neutral", "child", "parent"])
+    assert.equal(options(mode).lineageColor, "theme");
+});

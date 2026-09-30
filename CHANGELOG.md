@@ -10,7 +10,7 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
   recipe options. **All settings** opens Customize for every other look option, and App settings covers how the app
   behaves. The graph gets the room the ribbon took.
 - **Edges show where each ingredient comes from**: crafted, Mystic Forge, bought, currency or generic, each in its own
-  colour, with a key in the legend (click it to highlight those ingredients). It's the new default under Customize →
+  colour, with a key in the legend (click it to highlight those ingredients); a lit path keeps those colours. It's the new default under Customize →
   Edges → Color ("Where it comes from"); saved single-colour edges move to it once, and the other colourings are
   still there.
 - **A KPI strip over the graph** for the item you're crafting: craft cost, what buying it on the Trading Post costs,

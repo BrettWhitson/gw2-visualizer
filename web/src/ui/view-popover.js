@@ -28,6 +28,7 @@ export const POPOVER_GROUPS = [
     id: "vp-style",
     title: "Style",
     keys: [
+      "nodeLook",
       "nodeColorMode",
       "edgeColorMode",
       "edgeRouting",

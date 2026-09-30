@@ -74,8 +74,9 @@ export function prismOptions(s) {
 
     hoverMode: HOVER_MODES[s.hoverMode] ?? "both",
     pinSelectionLineage: s.pinSelectionLineage,
-    // TODO(prism 0.3.0): lineageColor: "edge", so a lit lineage keeps each edge's own colour (the "Where it comes
-    // from" edge colours) instead of repainting it in the lineage colours.
+    // Edges coloured by where the ingredient comes from keep that colour when their lineage lights up (widened and
+    // flowing); the other modes light it in the lineage colours.
+    lineageColor: s.edgeColorMode === "source" ? "edge" : "theme",
     animateFlow: s.animateFlow,
     // Flow runs from ingredient to product: against the edges on the crafting page, along them where a page's edges
     // run ingredient → product (flowToward: "target").
