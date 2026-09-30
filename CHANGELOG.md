@@ -20,21 +20,24 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
   Customize → Canvas and in the View popover.
 - **Fixed: on phones, the toolbar and side panel stayed collapsed on later visits.** They start collapsed on a small
   screen for that visit only, but the next change to any setting used to save that too.
-- **Faster, steadier graphs** (Prism 0.3.2, Tether 0.3.1): layouts are about twice as fast on big trees (10,000 items:
+- **Faster, steadier graphs** (Prismatrix 0.4.0, which combines the former Prism 0.3.2 and Tether 0.3.1): layouts are about twice as fast on big trees (10,000 items:
   1.8 s instead of 4.6 s) and floating layouts 8–11× faster, with the same positions. In Floating physics a touch no
   longer sets a big graph drifting: dragging an item tugs what it's linked to while the far graph stays put, and it
   all settles and stops after you let go (radial graphs respond to a drag again instead of turning as a whole).
   Panning onto new item cards is smoother.
 - **Items as cards** (Customize → Nodes → Items as): wide cards with the item's name, quantity and where it comes from,
   its cost in coins and what you own, a rarity stripe and dots where the lines meet. Icons stay the default. Card
-  links chooses dots, arrowheads or both. Drawn by Prism 0.3.0.
+  links chooses dots, arrowheads or both. Drawn by Prismatrix.
 - The Characters page is now a Svelte app (phase 3 of the move to Svelte, first page). It looks and works as before:
   the list, each character's armory, the view choices (focus and scroll kept when they redraw) and the gear tooltips.
 - The legend is the site's first Svelte component (phase 2 of the move to Svelte). It looks and works as before, and
   now follows setting changes on its own.
+- Development: the two graph engines are now one, [Prismatrix](https://github.com/BrettWhitson/prismatrix): one
+  package (`prismatrix`, and `prismatrix/layout` for layout and physics alone), one pin, and `npm run dev:local` runs
+  against `../prismatrix`.
 - Development: Svelte 5, with `svelte-check`, ESLint and Prettier covering `.svelte` files in `npm run verify`.
   Settings announce their changes (`SettingsStore.onChange`), `settings.svelte.js` mirrors them as Svelte state,
-  `islands.js` mounts a component inside a page that isn't Svelte yet, and `GraphCanvas.svelte` hosts Prism for the
+  `islands.js` mounts a component inside a page that isn't Svelte yet, and `GraphCanvas.svelte` hosts Prismatrix for the
   pages that move over next.
 
 ## 0.11.0 — 2026-09-30

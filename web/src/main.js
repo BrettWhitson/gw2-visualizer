@@ -1,4 +1,4 @@
-/** Entry point for the crafting page. Graphs are drawn by Prism, which needs WebGL2. */
+/** Entry point for the crafting page. Graphs are drawn by Prismatrix, which needs WebGL2. */
 import { CraftingTreeApp } from "./app.js";
 import { registerServiceWorker } from "./pwa.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";

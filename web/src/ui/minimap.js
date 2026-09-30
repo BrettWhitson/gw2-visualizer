@@ -1,6 +1,6 @@
 /**
  * A small overview of the whole graph in the canvas's bottom-right corner: every node as a dot in its colour, the
- * visible area as a frame. Click or drag in it to move the view there. Built on Prism's camera API: positions(),
+ * visible area as a frame. Click or drag in it to move the view there. Built on Prismatrix's camera API: positions(),
  * getViewport() / setViewport() and the viewportChange, render, drag and physics events.
  */
 

@@ -1,5 +1,5 @@
 /**
- * Can this browser draw graphs: Prism needs WebGL2 (every current browser has it, unless hardware acceleration is
+ * Can this browser draw graphs: Prismatrix needs WebGL2 (every current browser has it, unless hardware acceleration is
  * off or the GPU is blocklisted).
  */
 export function canDrawGraphs() {

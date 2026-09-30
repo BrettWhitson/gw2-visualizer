@@ -30,7 +30,7 @@ export function formatCoinsHtml(copper) {
 }
 
 /**
- * Coins as text runs for a graph card (Prism's `value`): each amount followed by a coin dot, gold in full and silver
+ * Coins as text runs for a graph card (Prismatrix's `value`): each amount followed by a coin dot, gold in full and silver
  * and copper in the muted colour, like the page's coin typography.
  * @param {number} copper
  * @param {{ gold: string, silver: string, copper: string, muted: string }} colors

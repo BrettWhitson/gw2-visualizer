@@ -52,7 +52,7 @@ import { formatNumber } from "./utils/format.js";
  * that tie them together. Components never talk to each other directly — they call back into the app.
  *
  * Render pipeline:  TreeState + GameData + PriceBook ─CraftTreeBuilder→ TreeNode tree ─buildGraphModel→ GraphModel
- *                   ─NodeAppearance→ graph elements ─WebGLGraphView (Prism)→ canvas (+ legend / details / shopping list)
+ *                   ─NodeAppearance→ graph elements ─WebGLGraphView (Prismatrix)→ canvas (+ legend / details / shopping list)
  */
 /** Settings that show, hide or change the KPI strip and minimap. */
 const OVERLAY_SETTINGS = new Set(["showKpiStrip", "showMinimap", "priceBasis"]);

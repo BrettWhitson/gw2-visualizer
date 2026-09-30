@@ -1,7 +1,7 @@
 /**
- * Entry point for the engine sandbox: developer tools for Prism and Tether (the prism and tether packages) on made-up
- * graphs. Tabs: the graph; the crafting page's layout and physics options; Tether's constants (tuning.js), live;
- * Prism's rendering options; automated probes and benchmarks; tools to poke the engines. Live engine stats stay
+ * Entry point for the engine sandbox: developer tools for Prismatrix on made-up
+ * graphs. Tabs: the graph; the crafting page's layout and physics options; the layout layer's constants (layout/tuning.js), live;
+ * Prismatrix's rendering options; automated probes and benchmarks; tools to poke the engines. Live engine stats stay
  * visible. Everything here is kept apart from the crafting page's settings (its own storage key).
  */
 import {
@@ -12,9 +12,9 @@ import {
 } from "./config/settings-schema.js";
 import { UI_COLORS } from "./config/constants.js";
 import { createAccountSession } from "./data/site-account.js";
-import { LayoutGraph } from "tether/layout-graph.js";
-import { runLayout } from "tether/run-layout.js";
-import { PHYSICS_TUNING, TUNING_OPTIONS } from "tether/tuning.js";
+import { LayoutGraph } from "prismatrix/layout/layout-graph.js";
+import { runLayout } from "prismatrix/layout/run-layout.js";
+import { PHYSICS_TUNING, TUNING_OPTIONS } from "prismatrix/layout/tuning.js";
 import { registerServiceWorker } from "./pwa.js";
 import { canDrawGraphs } from "./render/webgl-support.js";
 import { layoutSettings } from "./render/prism-settings.js";
@@ -195,7 +195,7 @@ function elements() {
   });
 }
 
-/** Lay out and draw what's shown (Tether, then Prism morphs from the previous graph). */
+/** Lay out and draw what's shown (the layout layer, then the view morphs from the previous graph). */
 function draw({ fit = false, anchorNodeId = null, grow = false } = {}) {
   const result = elements();
   hasChildren = result.hasChildren;
@@ -724,7 +724,7 @@ const TESTS = {
       html: `<p>While held:</p>${hopTable(held, id)}<p>After letting go:</p>${hopTable(released, id)}<p>Direct links moved up to ${nearMax.toFixed(1)}; 4+ links away up to ${farMax.toFixed(1)}.</p>`,
     };
   },
-  /** Tether alone: the same graph and settings must always lay out the same. */
+  /** The layout layer alone: the same graph and settings must always lay out the same. */
   async determinism() {
     const layoutOnce = () => {
       const layoutGraph = plainLayoutGraph();
@@ -746,7 +746,7 @@ const TESTS = {
       html: `<p>${a.count.toLocaleString()} items laid out twice; largest difference ${worst}.</p>`,
     };
   },
-  /** How long Tether takes for this graph and these settings. */
+  /** How long the layout layer takes for this graph and these settings. */
   async layout() {
     const times = [];
     for (let k = 0; k < 3; k++) {
@@ -764,7 +764,7 @@ const TESTS = {
       html: `<p>${shownIds.length.toLocaleString()} items, ${s.direction === "radial" ? "radial" : `tree ${s.direction}`}, ${s.physicsMode}: ${times.map((t) => `${Math.round(t)} ms`).join(", ")} (mean ${Math.round(mean)} ms). Last full render (layout + first draw): ${Math.round(lastLayoutMs)} ms.</p>`,
     };
   },
-  /** Prism: pan and zoom for 120 frames. */
+  /** Prismatrix: pan and zoom for 120 frames. */
   async render() {
     await atRest();
     const engine = view.graph;
@@ -798,7 +798,7 @@ const TESTS = {
   },
 };
 
-/** The shown graph as Tether sees it, with fixed sizes (for layout-only tests). */
+/** The shown graph as the layout layer sees it, with fixed sizes (for layout-only tests). */
 function plainLayoutGraph() {
   return new LayoutGraph(
     shownIds.map((id) => ({

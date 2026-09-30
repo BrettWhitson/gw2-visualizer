@@ -1,7 +1,7 @@
 import { FORGE_COLOR, UI_COLORS, ZOOM_LIMITS } from "../config/constants.js";
 
 /**
- * The app's settings and item states in Prism's terms (the prism package, a general graphing engine that knows
+ * The app's settings and item states in Prismatrix's terms (a general graph engine that knows
  * nothing of Guild Wars 2): its options, its theme, and class rules for the states the crafting pages mark. Pure: no
  * DOM.
  */
@@ -18,7 +18,7 @@ const ARROW_ENDS = { product: "source", ingredient: "target", both: "both" };
 const EDGE_COLOR_MODES = { child: "target", parent: "source" };
 
 /**
- * The layout and physics settings in Tether's terms (the tether package), for runLayout and Prism.
+ * The layout and physics settings in the terms of Prismatrix's layout layer, for runLayout and the view.
  * @param {object} s  settings values
  */
 export function layoutSettings(s) {
@@ -114,7 +114,7 @@ export function prismTheme(s) {
 }
 
 /**
- * The item states NodeAppearance marks (cycle, cheaper, owned, mf), as Prism class rules, in the order they apply;
+ * The item states NodeAppearance marks (cycle, cheaper, owned, mf), as Prismatrix class rules, in the order they apply;
  * a page's own rules go after these.
  * @param {object} s  settings values
  */
@@ -136,7 +136,7 @@ export function gw2ClassRules(s) {
   return { nodes, edges };
 }
 
-/** The app's class names for Prism: "hiddenKids" (collapsed children) is Prism's built-in "collapsed". */
+/** The app's class names for Prismatrix: "hiddenKids" (collapsed children) is Prismatrix's built-in "collapsed". */
 export function prismClasses(classes) {
   const list = Array.isArray(classes)
     ? classes

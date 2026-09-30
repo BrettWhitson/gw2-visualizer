@@ -13,7 +13,7 @@ import {
   resolveEdgeStyle,
   resolveNodeStyle,
   resolveRouting,
-} from "prism/style.js";
+} from "prismatrix/style.js";
 import { tokenTheme } from "../web/src/render/theme-tokens.js";
 import { DEFAULT_SETTINGS } from "../web/src/config/settings-schema.js";
 import { FORGE_COLOR, UI_COLORS } from "../web/src/config/constants.js";

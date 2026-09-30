@@ -1,6 +1,6 @@
 import { FORGE_BADGE_URI } from "../config/constants.js";
 import { edgeSourceRules } from "./edge-sources.js";
-import { GraphView as PrismView } from "prism/graph-view.js";
+import { GraphView as PrismView } from "prismatrix/graph-view.js";
 import {
   gw2ClassRules,
   prismClasses,
@@ -10,16 +10,16 @@ import {
 import { tokenTheme } from "./theme-tokens.js";
 
 /**
- * Prism (the prism package, laid out and moved by Tether) behind the interface the pages use (render,
+ * Prismatrix (graph rendering, layout and physics) behind the interface the pages use (render,
  * select, lineage, fit, export…), so a page can switch renderers without other changes. This adapter speaks the
- * app's language: it maps the settings to Prism's options and theme, the pages' `{ data, classes }` elements to Prism's nodes and
- * edges, and the item states (owned, Mystic Forge, cheaper, cycle, collapsed) to Prism's class rules.
+ * app's language: it maps the settings to Prismatrix's options and theme, the pages' `{ data, classes }` elements to Prismatrix's nodes and
+ * edges, and the item states (owned, Mystic Forge, cheaper, cycle, collapsed) to Prismatrix's class rules.
  */
 export class WebGLGraphView {
   #settings;
   #view;
   #pageRules = {};
-  /** What was last handed to Prism, so unchanged settings don't restyle everything. */
+  /** What was last handed to Prismatrix, so unchanged settings don't restyle everything. */
   #sent = { options: "", theme: "", rules: "" };
 
   /**
@@ -51,7 +51,7 @@ export class WebGLGraphView {
       canvas.setAttribute("aria-hidden", "true");
   }
 
-  /** Prism's renderer (WebGLGraph), for developer tools. */
+  /** Prismatrix's renderer (WebGLGraph), for developer tools. */
   get graph() {
     return this.#view.graph;
   }
@@ -61,7 +61,7 @@ export class WebGLGraphView {
   }
 
   /**
-   * Extra looks for a page's own classes, in Prism's terms (see prism/style.js):
+   * Extra looks for a page's own classes, in Prismatrix's terms (see prismatrix/style.js):
    * { nodes: { className: { pattern, border, borderWidth, fillAlpha, aura, ring, badge, events } },
    *   edges: { className: { color, width, glow, pattern } } }
    */
@@ -70,7 +70,7 @@ export class WebGLGraphView {
     this.#syncClassRules();
   }
 
-  /** Hand Prism the options, theme and class rules for the current settings, each only when it changed. */
+  /** Hand Prismatrix the options, theme and class rules for the current settings, each only when it changed. */
   #sync(what, value, apply) {
     const key = JSON.stringify(value);
     if (key === this.#sent[what]) return;
@@ -85,7 +85,7 @@ export class WebGLGraphView {
   }
 
   /**
-   * Hand Prism whatever settings changed: options, theme, class rules. Cheap when nothing did. The page calls it
+   * Hand Prismatrix whatever settings changed: options, theme, class rules. Cheap when nothing did. The page calls it
    * after every settings change, since some settings (hover highlight, zoom speed, background…) redraw nothing.
    */
   syncSettings() {
@@ -172,7 +172,7 @@ export class WebGLGraphView {
     this.#view.destroy();
   }
 
-  // ---------------------------------------------------------------- physics (Tether), for developer tools
+  // ---------------------------------------------------------------- physics (Prismatrix's layout layer), for developer tools
 
   setPhysicsTuning(tuning) {
     this.#view.setPhysicsTuning(tuning);
@@ -269,7 +269,7 @@ export class WebGLGraphView {
   }
 
   syncBackground() {
-    this.syncSettings(); // the background setting lives in Prism's options
+    this.syncSettings(); // the background setting lives in Prismatrix's options
     this.#view.syncBackground();
   }
 
@@ -297,14 +297,14 @@ export class WebGLGraphView {
     return this.#view.positions();
   }
 
-  /** Subscribe to a Prism event (viewportChange, render, drag, physicsStart…); returns the unsubscribe. */
+  /** Subscribe to a Prismatrix event (viewportChange, render, drag, physicsStart…); returns the unsubscribe. */
   on(type, listener) {
     return this.#view.on(type, listener);
   }
 }
 
 /**
- * A node's text for Prism: its label, or for an item card (NodeAppearance.cardData) the name as the title with the
+ * A node's text for Prismatrix: its label, or for an item card (NodeAppearance.cardData) the name as the title with the
  * subtitle, value and tag.
  */
 function cardFields(data) {

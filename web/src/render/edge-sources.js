@@ -1,9 +1,9 @@
 import { EDGE_SOURCE_STYLES } from "../config/constants.js";
 
 /**
- * Prism class rules for edges coloured by where the ingredient comes from (Customize → Edges → Color "Where it comes
+ * Prismatrix class rules for edges coloured by where the ingredient comes from (Customize → Edges → Color "Where it comes
  * from"). NodeAppearance gives every edge a `src-<category>` class; these rules colour them, reading each colour from
- * its design token so the graph follows the stylesheet. Tokens are literal colours: Prism rejects var() and
+ * its design token so the graph follows the stylesheet. Tokens are literal colours: Prismatrix rejects var() and
  * color-mix().
  */
 
@@ -26,7 +26,7 @@ export function edgeSourceColor(category, readToken = cssToken) {
 }
 
 /**
- * The `src-<category>` edge rules, in Prism's terms: `{ edges: { "src-craft": { color }, … } }`.
+ * The `src-<category>` edge rules, in Prismatrix's terms: `{ edges: { "src-craft": { color }, … } }`.
  * @param {(token: string) => string | null} [readToken]
  */
 export function edgeSourceRules(readToken = cssToken) {

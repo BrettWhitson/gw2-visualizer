@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { isColor } from "tether/index.js";
+import { isColor } from "prismatrix/layout";
 import { UI_COLORS } from "../web/src/config/constants.js";
 import { tokenTheme } from "../web/src/render/theme-tokens.js";
 import { prismTheme } from "../web/src/render/prism-settings.js";

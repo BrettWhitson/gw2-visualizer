@@ -33,10 +33,9 @@
     "globals": "^17.12.0",
     "prettier": "3.9.9",
     "prettier-plugin-svelte": "4.1.1",
-    "prism": "github:BrettWhitson/prism#v0.3.2",
+    "prismatrix": "github:BrettWhitson/prismatrix#v0.4.0",
     "svelte": "5.57.1",
     "svelte-check": "4.7.6",
-    "tether": "github:BrettWhitson/tether#v0.3.1",
     "typescript": "5.9.3",
     "vite": "8.3.1",
     "vite-plugin-pwa": "1.3.0"

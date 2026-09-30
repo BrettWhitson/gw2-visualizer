@@ -72,8 +72,8 @@ function aboutHtml() {
       ${external("https://account.arena.net/applications", "account.arena.net/applications")}.</p>
     <h3>Open source</h3>
     <ul>
-      <li>Graphs are drawn by ${external("https://github.com/BrettWhitson/prism", "Prism")} and laid out by
-        ${external("https://github.com/BrettWhitson/tether", "Tether")}, our own open-source engines (MIT).</li>
+      <li>Graphs are laid out and drawn by ${external("https://github.com/BrettWhitson/prismatrix", "Prismatrix")}, our
+        own open-source graph rendering and physics engine (MIT).</li>
       <li>${APP_NAME} itself is open source under the <a href="LICENSE" target="_blank" rel="noopener">MIT License</a>
         (<a href="THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">third-party notices</a>).</li>
       ${REPOSITORY_URL ? `<li>${external(REPOSITORY_URL, "Source code")}</li>` : ""}

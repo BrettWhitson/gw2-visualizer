@@ -1,8 +1,8 @@
 // Layout regressions on plain data (no renderer): direction semantics, the force controls, radial rings, spacing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { LayoutGraph } from "tether/layout-graph.js";
-import { runLayout as layOut } from "tether/run-layout.js";
+import { LayoutGraph } from "prismatrix/layout/layout-graph.js";
+import { runLayout as layOut } from "prismatrix/layout/run-layout.js";
 import { layoutSettings } from "../web/src/render/prism-settings.js";
 import { DEFAULT_SETTINGS } from "../web/src/config/settings-schema.js";
 import { stepRange } from "../web/src/ui/range-stepper.js";

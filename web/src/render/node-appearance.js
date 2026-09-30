@@ -100,7 +100,7 @@ export class NodeAppearance {
   }
 
   /**
-   * What an item card shows (Prism's nodeLook "card"): the name as its title; quantity and where it comes from; its
+   * What an item card shows (Prismatrix's nodeLook "card"): the name as its title; quantity and where it comes from; its
    * cost in coins; and what's owned, as a tag.
    * @param {import('../types.js').GraphNode} node  @param {string} name
    */

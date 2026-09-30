@@ -23,7 +23,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   useOwned: true, // with a connected account: use owned items first, and only buy or craft the rest
   sidebarOpen: true,
   sidebarWidth: 360, // px, dragged with the side panel's edge
-  // physics (Tether, layout/): "elastic" = the graph holds its layout and a dragged node pulls its links, fading hop
+  // physics (Prismatrix's layout layer): "elastic" = the graph holds its layout and a dragged node pulls its links, fading hop
   // by hop; "floating" = the whole graph is a live force simulation, like Obsidian's graph view
   physicsMode: "elastic",
   // forces (layout/physics.js and layout/elastic.js)
@@ -35,7 +35,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   preferMysticForge: false,
   // nodes
   nodeColorMode: "rarity", // rarity | source | discipline | depth | cost
-  nodeLook: "icon", // icon | card (Prism draws items as wide cards with their text inside)
+  nodeLook: "icon", // icon | card (Prismatrix draws items as wide cards with their text inside)
   cardConnectors: "dots", // dots | arrows | both: where edges meet a card
   nodeShape: "round-rectangle",
   nodeSizeScale: 1,

@@ -1,6 +1,6 @@
 import { UI_COLORS } from "../config/constants.js";
 
-/** Prism theme colour ← the CSS design token it follows (css/app.css :root), with the mirrored fallback. */
+/** Prismatrix theme colour ← the CSS design token it follows (css/app.css :root), with the mirrored fallback. */
 const TOKENS = {
   node: ["muted", UI_COLORS.muted],
   nodeFill: ["raised", UI_COLORS.nodeFill],
@@ -13,9 +13,9 @@ const TOKENS = {
 };
 
 /**
- * The part of Prism's theme that comes from the page's design tokens, read from the CSS custom properties so the
+ * The part of Prismatrix's theme that comes from the page's design tokens, read from the CSS custom properties so the
  * graph follows the stylesheet (and a future light theme). Outside a browser, or for a token that isn't set, the
- * UI_COLORS mirror is used. Tokens must be literal colours: Prism rejects var() and color-mix().
+ * UI_COLORS mirror is used. Tokens must be literal colours: Prismatrix rejects var() and color-mix().
  */
 export function tokenTheme() {
   const style =

@@ -1,5 +1,5 @@
 <!--
-  A graph drawn by Prism, for Svelte pages. It mounts the view on its element and hands it to the page through
+  A graph drawn by Prismatrix, for Svelte pages. It mounts the view on its element and hands it to the page through
   `onready` for imperative calls (render, select, fit…): graph data never goes through Svelte state. When any
   setting changes it re-syncs the view's looks; a change that needs a new layout is still the page's to render.
 -->
