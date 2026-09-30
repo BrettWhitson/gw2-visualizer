@@ -526,9 +526,9 @@ export class CraftingTreeApp {
     if (section) $(`#${section}`)?.scrollIntoView({ block: "start" });
   }
 
+  /** Fetch the tree's prices again; other saved prices are kept (they refresh when a tree needs them). */
   async refreshPrices() {
-    this.priceBook.clear();
-    if (this.treeState.hasRoot) await this.#loadPricesForTree();
+    if (this.treeState.hasRoot) await this.#loadPricesForTree({ force: true });
     this.#renderDataSummary();
   }
 
@@ -543,10 +543,14 @@ export class CraftingTreeApp {
           onClick: async () => {
             try {
               await this.gameData.cache.clear();
-              this.toasts.show("Cached game data cleared.", {
-                tone: "success",
-                durationMs: 4000,
-              });
+              this.priceBook.clear(); // or the next fetch would save them all again
+              this.toasts.show(
+                "Cleared the saved game data, prices and account data.",
+                {
+                  tone: "success",
+                  durationMs: 4000,
+                },
+              );
             } catch (error) {
               this.toasts.show(`Could not clear the cache: ${error.message}`, {
                 tone: "error",
@@ -696,7 +700,7 @@ export class CraftingTreeApp {
   }
 
   /** Fetch trading-post prices for everything in the tree; update in place when they arrive. */
-  async #loadPricesForTree() {
+  async #loadPricesForTree({ force = false } = {}) {
     if (this.settings.values.priceBasis === "off" || !this.tree) return;
     const { pathMode } = this.settings.values;
     // Path planning weighs every recipe option, including branches not drawn yet, so it needs their prices too.
@@ -711,7 +715,7 @@ export class CraftingTreeApp {
     const busyTimer = setTimeout(() => this.statusBar.setBusy(true), 250); // only show for slow fetches
     let receivedNewPrices;
     try {
-      receivedNewPrices = await this.priceBook.ensure(itemIds);
+      receivedNewPrices = await this.priceBook.ensure(itemIds, { force });
     } finally {
       clearTimeout(busyTimer);
       if (generation === this.#priceRequestGeneration)

@@ -108,7 +108,8 @@ export class AccountSession extends EventTarget {
     this.key = key;
     this.#apply(snapshot);
     this.#set({ status: "ready", error: "" });
-    if (!(this.now() - snapshot.savedAt < this.maxAge())) this.refresh();
+    if (snapshot.partial || !(this.now() - snapshot.savedAt < this.maxAge()))
+      this.refresh();
     return true;
   }
 
@@ -144,7 +145,12 @@ export class AccountSession extends EventTarget {
       const optional = (permission, load) =>
         permissions.includes(permission) ? load() : Promise.resolve(null);
       // Each part the key can read; one failing (the API has the odd hiccup) leaves the rest usable.
-      const tolerant = (promise) => promise.catch(() => null);
+      let partial = false; // a part that failed is retried by treating the snapshot as stale
+      const tolerant = (promise) =>
+        promise.catch(() => {
+          partial = true;
+          return null;
+        });
       const [characters, bank, shared, materials, wallet, delivery] =
         await Promise.all([
           optional("characters", () => client.characters()),
@@ -160,13 +166,14 @@ export class AccountSession extends EventTarget {
       const snapshot = {
         version: SNAPSHOT_VERSION,
         savedAt: this.now(),
+        partial,
         accountName: account.name,
         permissions,
         raw: { characters, bank, shared, materials, wallet, delivery },
       };
       this.#apply(snapshot);
       this.#set({ status: "ready", error: "", refreshing: false });
-      this.#writeSnapshot(key, remember, snapshot);
+      this.#writeSnapshot(key, remember, snapshot, token);
       return true;
     } catch (error) {
       if (token !== this.#loadToken) return false;
@@ -235,12 +242,19 @@ export class AccountSession extends EventTarget {
     }
   }
 
-  /** Saved where the key is: on disk only for a remembered key; the other copy is removed. */
-  async #writeSnapshot(key, remember, snapshot) {
+  /**
+   * Saved where the key is: on disk only for a remembered key; the other copy is removed. Dropped if the load it
+   * came from has been superseded meanwhile (a Forget or another key): hashing the key takes a moment.
+   */
+  async #writeSnapshot(key, remember, snapshot, token) {
     if (!this.cache) return;
     try {
       const id = await fingerprint(key);
-      if (!id) return;
+      if (token !== this.#loadToken) return;
+      if (!id) {
+        this.#deleteSnapshots(); // can't save this one: don't leave an older one behind
+        return;
+      }
       const value = { ...snapshot, fingerprint: id };
       if (remember) {
         await this.cache.set(SNAPSHOT_KEY, value);
@@ -250,7 +264,7 @@ export class AccountSession extends EventTarget {
         this.tabStorage?.setItem(TAB_SNAPSHOT_KEY, JSON.stringify(value));
       }
     } catch {
-      /* quota or private mode: the next page loads from the API */
+      this.#deleteSnapshots(); // quota or private mode: the next page loads from the API
     }
   }
 

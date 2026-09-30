@@ -266,3 +266,61 @@ test("another key's snapshot is never shown", async () => {
   await setup.make().restore();
   assert.ok(setup.calls.includes("tokenInfo"), "loaded from the API instead");
 });
+
+test("forgetting while a snapshot is being written leaves nothing saved", async () => {
+  const setup = sessionSetup();
+  const session = setup.make();
+  await session.restore(); // loads, then starts writing (hashing the key first)
+  session.forget(); // before the write lands
+  for (let turn = 0; turn < 200; turn++) await tick();
+  assert.equal(setup.cache.map.has("accountSnapshot"), false);
+});
+
+test("a saved key the API rejects takes its snapshot with it", async () => {
+  const setup = sessionSetup({ maxAge: () => 0 });
+  await setup.make().restore();
+  await until(() => setup.cache.map.has("accountSnapshot"));
+  const session = setup.make();
+  session.createClient = () => ({
+    tokenInfo: async () => {
+      throw Object.assign(new Error("HTTP 401"), { status: 401 });
+    },
+    account: async () => ({ name: "Test.1234" }),
+  });
+  await session.restore(); // shows the snapshot, then the background refresh is rejected
+  await until(() => !setup.cache.map.has("accountSnapshot"));
+  assert.equal(session.status, "error");
+});
+
+test("a partly failed load is retried on the next visit, even with manual updates", async () => {
+  const setup = sessionSetup();
+  const first = setup.make();
+  first.createClient = () => ({
+    tokenInfo: async () => ({ permissions: ["account", "inventories"] }),
+    account: async () => ({ name: "Test.1234" }),
+    bank: async () => {
+      throw new Error("timeout");
+    },
+    sharedInventory: async () => [],
+    materials: async () => [],
+  });
+  await first.restore();
+  await until(() => setup.cache.map.get("accountSnapshot")?.partial === true);
+  setup.calls.length = 0;
+  const second = setup.make();
+  await second.restore();
+  await until(() => setup.calls.includes("bank"));
+  await until(() => second.ownedItems.get(19721) === 250);
+});
+
+test("clearing prices isn't undone by the saved copy", async () => {
+  const store = memoryStore();
+  await store.set("prices", { version: 1, quotes: [[1, 0, 10, 11]] });
+  const api = {
+    getPrices: async (ids) => ids.map((id) => ({ id, buy: 99, sell: 99 })),
+  };
+  const book = new PriceBook(api, { store, maxAge: () => Infinity });
+  book.clear(); // before anything was restored
+  await book.ensure([1]);
+  assert.equal(book.getQuote(1).buy, 99, "fetched fresh, not the saved 10");
+});

@@ -180,7 +180,10 @@ class CraftablePage {
       },
     });
     this.#bindControls();
-    this.account.addEventListener("change", () => this.#onAccountChange());
+    this.account.addEventListener(
+      "change",
+      () => (this.#computing = this.#onAccountChange()),
+    );
     this.#gameDataReady = this.gameData
       .load({
         onProgress: (message) => this.#status(message),
@@ -203,6 +206,7 @@ class CraftablePage {
 
   /** Forget the lists, graph and selection: they belonged to the account as it was. */
   #resetResults() {
+    this.#computedFor = null; // whatever comes next is computed afresh
     this.planner = null;
     this.craftable = new Map();
     this.craftableEntries = [];
@@ -257,8 +261,7 @@ class CraftablePage {
     }
 
     this.#computedFor = { accountName: this.account.accountName, fetchedAt };
-    const force = this.#forceFetch;
-    this.#forceFetch = false;
+    const force = this.#forceFetch; // cleared once a computation with it completes
     this.planner = new CraftPlanner({
       getRecipes: (id) => this.gameData.getRecipes(id),
       getConsumers: (id) => this.gameData.getConsumers(id),
@@ -333,6 +336,7 @@ class CraftablePage {
     this.#status("Checking buy-order depth…");
     const changed = await this.#priceAgainstOrderBooks(token, force);
     if (token !== this.#computeToken) return;
+    if (force) this.#forceFetch = false;
     this.#status("");
     performance.mark("craftable:refined");
     if (changed) {
@@ -367,20 +371,27 @@ class CraftablePage {
   }
 
   #refreshing = false;
+  /** The computation under way (or last run), so a refresh can wait for it. */
+  #computing = null;
 
   /** Refresh: the account from the API, then prices and order books fetched again for the new results. */
   async #refreshAll() {
     this.#refreshing = true;
     this.#forceFetch = true;
     this.#renderDataBar();
-    const loaded = await this.account.refresh();
-    if (!loaded && this.planner) {
-      // The account didn't change (or couldn't be reached): still refresh the prices.
-      this.#computedFor = null;
-      await this.#onAccountChange();
+    try {
+      const loaded = await this.account.refresh();
+      // New account data recomputes through the change event; otherwise (unchanged, or unreachable) still refresh
+      // the prices. Either way, wait for that computation before calling the refresh done.
+      if (!loaded && this.account.isReady) {
+        this.#computedFor = null;
+        this.#computing = this.#onAccountChange();
+      }
+      await this.#computing;
+    } finally {
+      this.#refreshing = false;
+      this.#renderDataBar();
     }
-    this.#refreshing = false;
-    this.#renderDataBar();
   }
 
   /**
@@ -473,6 +484,9 @@ class CraftablePage {
   // ---------------------------------------------------------------- list
 
   #bindControls() {
+    globalThis.addEventListener("gw2-data-updates", () =>
+      this.#renderDataBar(),
+    );
     $("#craftData").addEventListener("click", (event) => {
       if (event.target.closest("[data-refresh-data]")) this.#refreshAll();
     });

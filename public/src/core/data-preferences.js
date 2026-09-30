@@ -17,12 +17,14 @@ export function getDataUpdates(storage = globalThis.localStorage) {
   }
 }
 
+/** Also announces the change ("gw2-data-updates" on the window) so pages can say which mode they're in. */
 export function setDataUpdates(mode, storage = globalThis.localStorage) {
   try {
     storage?.setItem(STORAGE_KEY, mode);
   } catch {
     /* private mode: this page only */
   }
+  globalThis.dispatchEvent?.(new Event("gw2-data-updates"));
 }
 
 /** How old saved data may be before it's refetched without being asked: never, in manual mode. */

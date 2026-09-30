@@ -36,6 +36,14 @@ export class PriceBook {
     this.store = store;
     this.maxAge = maxAge;
     this.now = now;
+    // A save waiting on its debounce would be lost when the page goes away: write it now.
+    if (store)
+      globalThis.addEventListener?.("pagehide", () => {
+        if (!this.#saveTimer) return;
+        clearTimeout(this.#saveTimer);
+        this.#saveTimer = 0;
+        this.#save();
+      });
   }
 
   /** Number of items with a known price. */
@@ -136,8 +144,12 @@ export class PriceBook {
     );
   }
 
-  /** Forget every quote so the next request refetches (keeps showing nothing stale in the meantime). */
+  /**
+   * Forget every quote, saved ones included, so the next request refetches (a new game build, or cleared caches).
+   * To refetch some prices while keeping the rest, use ensure(ids, { force: true }).
+   */
   clear() {
+    this.#restored = Promise.resolve(); // nothing to restore any more
     this.#quotes.clear();
     this.#fetchedAt.clear();
     this.#lastUpdatedAt = 0;
@@ -162,7 +174,10 @@ export class PriceBook {
   #scheduleSave() {
     if (!this.store) return;
     clearTimeout(this.#saveTimer);
-    this.#saveTimer = setTimeout(() => this.#save(), SAVE_DELAY_MS);
+    this.#saveTimer = setTimeout(() => {
+      this.#saveTimer = 0;
+      this.#save();
+    }, SAVE_DELAY_MS);
   }
 
   async #save() {
