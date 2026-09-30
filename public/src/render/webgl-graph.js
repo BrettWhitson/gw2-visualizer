@@ -220,7 +220,14 @@ export class WebGLGraph {
   // ---------------------------------------------------------------- data
 
   /** Replace the graph. Positions are world units; the view is left where it is (call fit() to frame it). */
-  setGraph({ nodes, edges, routing = "straight", flowAxis = "y" }) {
+  setGraph({
+    nodes,
+    edges,
+    routing = "straight",
+    flowAxis = "y",
+    labelPosition = "right",
+  }) {
+    this.labelPosition = labelPosition;
     this.#nodes = nodes.map((node) => ({
       ...node,
       hw: node.width / 2,
@@ -286,6 +293,15 @@ export class WebGLGraph {
         { x: n.x + n.hw, y: n.y + n.hh },
       ]),
     );
+  }
+
+  /** Bring a node to the middle of the view, keeping the zoom. */
+  centerOn(id) {
+    const node = this.#nodes[this.#indexById.get(id)];
+    if (!node) return;
+    this.camera.panX = this.width / 2 - node.x * this.camera.zoom;
+    this.camera.panY = this.height / 2 - node.y * this.camera.zoom;
+    this.requestRender();
   }
 
   fit() {
@@ -668,13 +684,26 @@ export class WebGLGraph {
       const image = this.#labelImage(node.label, node.labelColor ?? "#e3e6ec");
       const width = (image.width / 2) * scale,
         height = (image.height / 2) * scale;
-      const screen = this.camera.toScreen(node.x + node.hw, node.y);
-      const box = {
-        x1: screen.x + 4,
-        y1: screen.y - height / 2,
-        x2: screen.x + 4 + width,
-        y2: screen.y + height / 2,
-      };
+      const box =
+        this.labelPosition === "below"
+          ? (() => {
+              const screen = this.camera.toScreen(node.x, node.y + node.hh);
+              return {
+                x1: screen.x - width / 2,
+                y1: screen.y + 3,
+                x2: screen.x + width / 2,
+                y2: screen.y + 3 + height,
+              };
+            })()
+          : (() => {
+              const screen = this.camera.toScreen(node.x + node.hw, node.y);
+              return {
+                x1: screen.x + 4,
+                y1: screen.y - height / 2,
+                x2: screen.x + 4 + width,
+                y2: screen.y + height / 2,
+              };
+            })();
       if (
         box.x1 > this.width ||
         box.x2 < 0 ||
@@ -693,6 +722,9 @@ export class WebGLGraph {
       )
         continue;
       taken.push(box);
+      context.globalAlpha = this.#dimmed?.has(node.id)
+        ? opacity * 0.2
+        : opacity;
       context.drawImage(
         image,
         box.x1 * dpr,
@@ -792,6 +824,7 @@ export class WebGLGraph {
     canvas.addEventListener("pointermove", (event) => {
       const previous = pointers.get(event.pointerId);
       if (!previous) {
+        this.handlers.onPointerMove?.(event);
         const index = nodeAt(event);
         if (index !== this.#hovered) {
           this.#hovered = index;

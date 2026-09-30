@@ -31,6 +31,18 @@ import {
   usefulMaterials,
 } from "./model/craftable.js";
 import { GraphView } from "./graph/graph-view.js";
+import { WebGLGraphView } from "./render/webgl-graph-view.js";
+
+/**
+ * The experimental WebGL renderer with ?renderer=webgl (see src/render/), when the browser has WebGL2; otherwise the
+ * Cytoscape-based GraphView.
+ */
+function chooseGraphView() {
+  const wanted =
+    new URLSearchParams(location.search).get("renderer") === "webgl";
+  const supported = !!document.createElement("canvas").getContext("webgl2");
+  return wanted && supported ? WebGLGraphView : GraphView;
+}
 import { NodeAppearance } from "./graph/node-appearance.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
 import { registerServiceWorker } from "./pwa.js";
@@ -161,7 +173,7 @@ class CraftablePage {
   }
 
   start() {
-    this.graphView = new GraphView({
+    this.graphView = new (chooseGraphView())({
       container: $("#cy"),
       canvasWrapper: $("#cyWrap"),
       settings: this.graphSettings,
@@ -816,7 +828,8 @@ class CraftablePage {
     if (node.isOverflow) {
       const parent = nodeId.replace(/\/more$/, "");
       this.showAll.add(parent);
-      this.focus?.delete(parent);
+      // It may have been open only to show a route: keep it open now that it shows everything.
+      if (this.focus?.delete(parent)) this.expanded.add(parent);
     } else if (!node.productCount) {
       return;
     } else if (this.focus?.has(nodeId)) {
