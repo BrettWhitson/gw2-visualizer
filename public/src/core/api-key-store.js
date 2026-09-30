@@ -1,41 +1,52 @@
 const STORAGE_KEY = "gw2ct.apiKey";
 
 /**
- * The user's GW2 API key. Remembered in localStorage only when asked; otherwise it lives for this page only.
- * It never leaves the browser except as `access_token` on requests to the GW2 API.
+ * The user's GW2 API key. "Remember" keeps it in localStorage; otherwise it's kept in sessionStorage, so it survives
+ * moving between this site's pages but is gone when the tab closes. It never leaves the browser except as
+ * `access_token` on requests to the GW2 API.
  */
 export class ApiKeyStore {
-  #sessionKey = null;
-
-  constructor(storage = globalThis.localStorage) {
+  constructor(
+    storage = globalThis.localStorage,
+    sessionStorage = globalThis.sessionStorage,
+  ) {
     this.storage = storage;
+    this.sessionStorage = sessionStorage;
   }
 
   get() {
-    if (this.#sessionKey) return this.#sessionKey;
-    try {
-      return this.storage?.getItem(STORAGE_KEY) || null;
-    } catch {
-      return null; // storage blocked
-    }
+    return read(this.sessionStorage) ?? read(this.storage);
+  }
+
+  /** Whether the key is kept across visits. */
+  isRemembered() {
+    return !!read(this.storage);
   }
 
   set(key, { remember }) {
-    this.#sessionKey = key;
-    try {
-      if (remember) this.storage?.setItem(STORAGE_KEY, key);
-      else this.storage?.removeItem(STORAGE_KEY);
-    } catch {
-      /* private mode: the session copy still works */
-    }
+    write(remember ? this.storage : this.sessionStorage, key);
+    write(remember ? this.sessionStorage : this.storage, null);
   }
 
   clear() {
-    this.#sessionKey = null;
-    try {
-      this.storage?.removeItem(STORAGE_KEY);
-    } catch {
-      /* nothing stored */
-    }
+    write(this.storage, null);
+    write(this.sessionStorage, null);
+  }
+}
+
+function read(storage) {
+  try {
+    return storage?.getItem(STORAGE_KEY) || null;
+  } catch {
+    return null; // storage blocked
+  }
+}
+
+function write(storage, value) {
+  try {
+    if (value) storage?.setItem(STORAGE_KEY, value);
+    else storage?.removeItem(STORAGE_KEY);
+  } catch {
+    /* private mode: nothing to keep */
   }
 }

@@ -3,6 +3,13 @@ import { referencedIds } from "../model/character-armory.js";
 
 /** API key permissions the character view reads; `account` is always granted. */
 export const CHARACTER_SCOPES = ["characters", "builds"];
+/** Permissions the account inventory reads (bank, materials, shared slots, bags, wallet, Trading Post pickup). */
+export const INVENTORY_SCOPES = [
+  "inventories",
+  "characters",
+  "wallet",
+  "tradingpost",
+];
 
 /** GW2 keys are two hyphenated GUIDs run together (72 characters). */
 const API_KEY_PATTERN =
@@ -37,9 +44,31 @@ export class AccountClient {
     return this.#get("/account");
   }
 
-  /** Every character with equipment, templates and builds (whatever the key's scopes allow). */
+  /** Every character with equipment, templates, builds and bags (whatever the key's scopes allow). */
   characters() {
     return this.#get("/characters?ids=all");
+  }
+
+  bank() {
+    return this.#get("/account/bank");
+  }
+
+  /** Shared inventory slots. */
+  sharedInventory() {
+    return this.#get("/account/inventory");
+  }
+
+  materials() {
+    return this.#get("/account/materials");
+  }
+
+  wallet() {
+    return this.#get("/account/wallet");
+  }
+
+  /** `{coins, items}` waiting to be picked up from the Trading Post. */
+  delivery() {
+    return this.#get("/commerce/delivery");
   }
 }
 
