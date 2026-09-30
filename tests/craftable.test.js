@@ -4,6 +4,8 @@ import {
   CraftPlanner,
   MAX_COUNT,
   buildForwardGraph,
+  chooseLayout,
+  RADIAL_LEVEL_SIZE,
   filterAndSort,
   usefulMaterials,
 } from "../public/src/model/craftable.js";
@@ -126,20 +128,20 @@ test("the forward graph opens one level, folds big fan-outs and follows expansio
     first.nodes.map((n) => [n.nodeId, n.entityId, n.quantity, n.isCollapsed]),
     [
       ["r", 5, 12, false],
-      ["r/0", 4, 12, true],
+      ["r/4", 4, 12, true],
     ],
   );
   assert.deepEqual(
     first.edges.map((e) => [e.sourceId, e.targetId, e.quantity]),
-    [["r", "r/0", 2]],
+    [["r", "r/4", 2]],
   );
 
   const opened = buildForwardGraph(5, {
     ...options,
-    expanded: new Set(["r/0"]),
+    expanded: new Set(["r/4"]),
   });
-  assert.ok(opened.nodesById.get("r/0/0"), "ingot → blade");
-  assert.equal(opened.nodesById.get("r/0/0").entityId, 2);
+  assert.ok(opened.nodesById.get("r/4/2"), "ingot → blade");
+  assert.equal(opened.nodesById.get("r/4/2").entityId, 2);
 
   // With room for none, the root's one product folds into "+1 more"; opening it shows everything.
   const folded = buildForwardGraph(5, { ...options, childLimit: 0 });
@@ -151,7 +153,7 @@ test("the forward graph opens one level, folds big fan-outs and follows expansio
     showAll: new Set(["r"]),
     childLimit: 0,
   });
-  assert.ok(all.nodesById.get("r/0") && !all.nodesById.get("r/more"));
+  assert.ok(all.nodesById.get("r/4") && !all.nodesById.get("r/more"));
 });
 
 test("the lists: materials that lead somewhere, filtered and sorted", async () => {
@@ -203,5 +205,20 @@ test("the lists: materials that lead somewhere, filtered and sorted", async () =
       }),
     ),
     [3, 4, 1],
+  );
+});
+
+test("auto layout turns radial when a level gets crowded", () => {
+  const graph = (perLevel) => ({
+    nodes: perLevel.flatMap((count, depth) =>
+      Array.from({ length: count }, () => ({ depth })),
+    ),
+  });
+  assert.equal(chooseLayout(graph([1, 4, 12])), "columns");
+  assert.equal(chooseLayout(graph([1, 4, RADIAL_LEVEL_SIZE + 1])), "radial");
+  assert.equal(
+    chooseLayout(graph([1, 80]), "columns"),
+    "columns",
+    "a chosen layout is kept",
   );
 });

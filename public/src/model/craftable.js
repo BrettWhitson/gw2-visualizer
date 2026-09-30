@@ -235,7 +235,8 @@ export class CraftPlanner {
 export const CHILD_LIMIT = 12;
 
 /**
- * A forward tree from `rootItemId`: each node's children are the craftable items whose recipes use it. Shaped like
+ * A forward tree from `rootItemId`: each node's children are the craftable items whose recipes use it. Node ids are
+ * paths of item ids from the root ("r/19684/9586"). Shaped like
  * the crafting page's GraphModel (tree view), so the same graph view, layout and styles draw it; edges run from an
  * ingredient to its product.
  *
@@ -301,8 +302,9 @@ export function buildForwardGraph(
 
     const shown = showAll.has(path) ? products : products.slice(0, childLimit);
     const nextAncestors = new Set(ancestors).add(itemId);
-    shown.forEach((productId, index) => {
-      const childPath = `${path}/${index}`;
+    // Paths use item ids, not positions: ranking changes (prices arriving) mustn't move what's expanded.
+    shown.forEach((productId) => {
+      const childPath = `${path}/${productId}`;
       addNode(productId, childPath, depth + 1, nextAncestors);
       edges.push({
         edgeId: `${path}->${childPath}`,
@@ -424,4 +426,18 @@ export function filterAndSort(
     name: () => 0,
   }[sort];
   return kept.sort((a, b) => compare(a, b) || byName(a, b));
+}
+
+/** Levels wider than this read better as rings than as one very tall column. */
+export const RADIAL_LEVEL_SIZE = 25;
+
+/** "auto" → radial when any level of the graph holds more than RADIAL_LEVEL_SIZE items, columns otherwise. */
+export function chooseLayout(graph, preference = "auto") {
+  if (preference !== "auto") return preference;
+  const perDepth = new Map();
+  for (const node of graph.nodes)
+    perDepth.set(node.depth, (perDepth.get(node.depth) ?? 0) + 1);
+  return Math.max(0, ...perDepth.values()) > RADIAL_LEVEL_SIZE
+    ? "radial"
+    : "columns";
 }

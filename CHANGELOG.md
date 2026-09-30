@@ -5,6 +5,14 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 
 ## Unreleased
 
+- **What you can craft** (new page, linked from the header): with an account connected (`inventories` permission), a
+  ranked list of everything you can craft right now from what you own, counting intermediate crafts and currencies
+  from your wallet, filterable by name and discipline and sortable by Trading Post value, how many you can make,
+  rarity or name; recipes no character has the level for are left out unless you ask. Pick an item, or one of your
+  materials, to see a graph of what it can become, one step at a time: double-click to go further, big fan-outs fold
+  into "+N more", and the layout switches to rings when a step gets crowded (or pick Columns / Radial).
+- Fixed: in left-right layouts, wide labels made neighbouring levels collide, so big trees stacked into a tall
+  column with overlapping nodes. Levels now make room for their labels, and nodes on a level never overlap.
 - About and a new header button link to the source code on GitHub.
 - **Clear graph** (✕ in the header, or `X`) returns to the start screen; Back reopens the cleared item.
 - Live at [gw2visualizer.com](https://gw2visualizer.com).

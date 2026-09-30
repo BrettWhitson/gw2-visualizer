@@ -11,6 +11,7 @@
   "categories": ["games", "utilities"],
   "shortcuts": [
     { "name": "Crafting", "url": "crafting.html" },
+    { "name": "What you can craft", "url": "craftable.html" },
     { "name": "Characters", "url": "characters.html" }
   ],
   "icons": [

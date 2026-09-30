@@ -31,6 +31,9 @@ const SHELL_URLS = [
   "src/main.js",
   "characters.html",
   "css/characters.css",
+  "craftable.html",
+  "css/craftable.css",
+  "src/craftable-main.js",
   "src/characters-main.js",
 ];
 

@@ -17,6 +17,7 @@ import { AccountMenu } from "./account-menu.js";
 export const PAGES = [
   { id: "home", href: "./", label: "Home" },
   { id: "crafting", href: "crafting.html", label: "Crafting" },
+  { id: "craftable", href: "craftable.html", label: "Craftable" },
   { id: "characters", href: "characters.html", label: "Characters" },
 ];
 
@@ -84,7 +85,7 @@ function aboutHtml() {
 
 /**
  * Fill in the shared header and footer, and add the About dialog and the account control.
- * @param {{ page: "home" | "crafting" | "characters", account: import('../data/account-session.js').AccountSession }} options
+ * @param {{ page: "home" | "crafting" | "craftable" | "characters", account: import('../data/account-session.js').AccountSession }} options
  * @returns {{ showAbout(): void, accountMenu: AccountMenu }}
  */
 export function mountSiteChrome({ page, account }) {

@@ -108,6 +108,29 @@
             aria-label="What the selected item can become. Double-click a node to show what it can make in turn."
           ></div>
           <div id="graphEmpty" class="graph-empty"></div>
+          <div class="graph-layout seg" role="group" aria-label="Layout">
+            <button
+              type="button"
+              data-layout="auto"
+              title="Columns, or rings when a level gets crowded"
+            >
+              Auto
+            </button>
+            <button
+              type="button"
+              data-layout="columns"
+              title="Left to right, one column per step"
+            >
+              Columns
+            </button>
+            <button
+              type="button"
+              data-layout="radial"
+              title="The item in the middle, each step on a wider ring"
+            >
+              Radial
+            </button>
+          </div>
           <div class="graph-tools">
             <button
               type="button"
@@ -134,8 +157,13 @@
               −
             </button>
           </div>
-          <div id="craftDetails" class="craft-details" hidden></div>
         </div>
+        <aside
+          id="craftDetails"
+          class="craft-details"
+          aria-label="Details"
+          hidden
+        ></aside>
       </section>
     </main>
 
