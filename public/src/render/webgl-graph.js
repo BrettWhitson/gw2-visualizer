@@ -3,12 +3,18 @@ import { SpatialGrid } from "./spatial-grid.js";
 import { AtlasPacker } from "./atlas-packer.js";
 import {
   arrowTemplate,
-  edgeRoute,
   pointAlong,
   pointsBounds,
   polylineLength,
 } from "./edge-geometry.js";
 import { Spring, springFor } from "./spring.js";
+import { parseColor } from "./color.js";
+import {
+  ARROW_FLOATS,
+  EDGE_FLOATS,
+  InstanceData,
+  NODE_FLOATS,
+} from "./instance-data.js";
 import {
   ARROW_FRAGMENT,
   ARROW_VERTEX,
@@ -39,6 +45,8 @@ const DOUBLE_TAP_MS = 300;
 const LONG_PRESS_MS = 550;
 const DRAG_THRESHOLD_PX = 4;
 const GLIDE_FRICTION_S = 0.28; // time constant for the camera's glide after a flick
+const FLICK_WINDOW_MS = 90; // pan moves this recent set the glide's speed
+const FLICK_MIN_SPEED = 120; // px/s; slower than this, letting go just stops
 const COLORS = {
   selected: "#f0c46a",
   hover: "#cfd8ea",
@@ -47,39 +55,19 @@ const COLORS = {
   labelBackdrop: "rgba(11, 14, 20, 0.8)",
   edgeLabelBackdrop: "rgba(13, 16, 23, 0.9)",
 };
-const SHAPES = {
-  rectangle: 0,
-  "round-rectangle": 1,
-  ellipse: 2,
-  hexagon: 3,
-  octagon: 4,
-  "round-diamond": 5,
-  diamond: 5,
-};
-const NODE_PATTERNS = { solid: 0, dashed: 1, dotted: 2, stack: 3 };
-const EDGE_PATTERNS = { dashed: 1, dotted: 2 };
-const NODE_FLOATS = 36;
-const EDGE_FLOATS = 16;
-const ARROW_FLOATS = 9;
-
-/** "#rrggbb" (or "#rgb") → [r, g, b] in 0..1. */
-export function parseColor(hex) {
-  let text = String(hex ?? "#888888").trim();
-  if (text.length === 4)
-    text = "#" + [...text.slice(1)].map((c) => c + c).join("");
-  const value = parseInt(text.slice(1, 7), 16);
-  if (Number.isNaN(value)) return [0.53, 0.53, 0.53];
-  return [
-    ((value >> 16) & 255) / 255,
-    ((value >> 8) & 255) / 255,
-    (value & 255) / 255,
-  ];
-}
+export { parseColor };
 
 export class WebGLGraph {
   camera = new Camera();
   /** Timings of the last frame, for profiling. */
-  stats = { drawMs: 0, labels: 0, visibleNodes: 0, animating: 0 };
+  stats = {
+    drawMs: 0,
+    uploadMs: 0,
+    partialUpload: false,
+    labels: 0,
+    visibleNodes: 0,
+    animating: 0,
+  };
 
   /** Live nodes, in draw order, and the ones leaving (fading into their destination). */
   #nodes = [];
@@ -104,6 +92,10 @@ export class WebGLGraph {
   #input = { smoothZoom: true, zoomSpeed: 1, draggable: true };
   #dimAlpha = 0.18;
   #flowSpeed = 1;
+
+  #instances = new InstanceData();
+  #touched = new Set(); // records changed since the last upload (see #syncGeometry)
+  #bufferCapacity = new Map(); // GL buffer → floats allocated on the GPU
 
   #grid = new SpatialGrid(200);
   #gridDirty = true;
@@ -368,8 +360,9 @@ export class WebGLGraph {
       if (!record) continue;
       record.px.snap(x);
       record.py.snap(y);
+      this.#touched.add(record);
     }
-    this.#geometryDirty = this.#gridDirty = true;
+    this.#gridDirty = true;
     this.requestRender();
   }
 
@@ -885,180 +878,67 @@ export class WebGLGraph {
 
   // ---------------------------------------------------------------- geometry
 
-  /** Arrowhead size in CSS pixels for an edge of `width`. */
-  #arrowSize(style) {
-    return (7 + style.width * 2.2) * (style.arrowScale ?? 1);
+  /** Send `list`'s dirty span to `buffer`, growing the GPU buffer (and sending it all) when it no longer fits. */
+  #upload(buffer, list) {
+    const gl = this.gl;
+    const span = list.takeDirty();
+    if (!span && this.#bufferCapacity.has(buffer)) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    if (list.data.length !== this.#bufferCapacity.get(buffer)) {
+      gl.bufferData(gl.ARRAY_BUFFER, list.data.byteLength, gl.DYNAMIC_DRAW);
+      this.#bufferCapacity.set(buffer, list.data.length);
+      if (list.length)
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, list.data, 0, list.length);
+      return;
+    }
+    if (span)
+      gl.bufferSubData(
+        gl.ARRAY_BUFFER,
+        span[0] * 4,
+        list.data,
+        span[0],
+        span[1] - span[0],
+      );
   }
 
-  /** Rebuild every instance buffer from the records (positions, springs and states baked in). */
-  #uploadGeometry() {
-    const gl = this.gl;
-    const layout = this.#layout;
+  /**
+   * Bring the GPU's instance data up to date: rewrite just what moved since the last frame when the draw order still
+   * holds, everything otherwise (a new graph, restyles, a node lifted on top, icons arriving).
+   */
+  #syncGeometry() {
+    if (!this.#geometryDirty && !this.#touched.size) return;
+    const started = performance.now();
+    const scene = {
+      ghosts: this.#ghosts,
+      nodes: this.#nodes,
+      edges: this.#edges,
+      top: [this.#selected, this.#hovered, this.#dragged].filter(
+        (id) => id != null,
+      ),
+      layout: this.#layout,
+      iconUv: (url) => {
+        const slot = this.#iconSlots.get(url);
+        return slot && typeof slot === "object" ? slot.uv : null;
+      },
+    };
+    const instances = this.#instances;
+    const partial =
+      !this.#geometryDirty && instances.update(this.#touched, scene);
+    if (!partial) instances.rebuild(scene);
+    this.#touched.clear();
+    this.#geometryDirty = false;
 
-    // Edges first: their routes depend on the nodes' current positions and sizes.
-    const arrowData = new Map();
-    const pieces = [];
-    const emphasised = [];
-    const ordered = [];
-    for (const edge of this.#edges) {
-      if (edge.emphasis.value > 0.01) emphasised.push(edge);
-      else ordered.push(edge);
-    }
-    ordered.push(...emphasised); // highlighted lineages draw on top
-    for (const edge of ordered) {
-      const { source, target, style } = edge;
-      const alpha =
-        edge.alpha.value *
-        Math.min(source.alpha.value, target.alpha.value) *
-        (style.alpha ?? 1);
-      edge.points = null;
-      if (alpha < 0.004) continue;
-      const points = edgeRoute(
-        {
-          x: source.px.value,
-          y: source.py.value,
-          hw: source.hw * source.scale.value,
-          hh: source.hh * source.scale.value,
-        },
-        {
-          x: target.px.value,
-          y: target.py.value,
-          hw: target.hw * target.scale.value,
-          hh: target.hh * target.scale.value,
-        },
-        layout,
-      );
-      edge.points = points;
-      if (points.length < 2) continue;
-      const emphasis = edge.emphasis.value;
-      const state = edge.emphasisState;
-      let [r, g, b] = edge.color;
-      let width = style.width;
-      // Edges with a standing glow (a best route) keep their colour when a lineage lights them; they still flow.
-      if (emphasis > 0 && state && !style.glow) {
-        const [er, eg, eb] = parseColor(state.color);
-        r += (er - r) * emphasis;
-        g += (eg - g) * emphasis;
-        b += (eb - b) * emphasis;
-        width += (state.boost ?? 1) * emphasis;
-      }
-      const flow = emphasis > 0.5 && state?.flow ? state.flow : 0;
-      const pattern = flow ? 0 : (EDGE_PATTERNS[style.pattern] ?? 0);
-      const glow = style.glow ? 1 : emphasis * 0.6;
-      const arrowSize = this.#arrowSize({ ...style, width });
-      const startArrow = style.arrowAtSource
-        ? this.#arrowGroup(style.arrowAtSource)
-        : null;
-      const endArrow = style.arrowAtTarget
-        ? this.#arrowGroup(style.arrowAtTarget)
-        : null;
-      const trimStart = startArrow ? startArrow.inset * arrowSize : 0;
-      const trimEnd = endArrow ? endArrow.inset * arrowSize : 0;
-      let distance = 0;
-      for (let i = 1; i < points.length; i++) {
-        const a = points[i - 1],
-          c = points[i];
-        pieces.push(
-          a.x,
-          a.y,
-          c.x,
-          c.y,
-          r,
-          g,
-          b,
-          alpha,
-          width,
-          distance,
-          pattern,
-          flow,
-          i === 1 ? trimStart : 0,
-          i === points.length - 1 ? trimEnd : 0,
-          glow,
-          0,
-        );
-        distance += Math.hypot(c.x - a.x, c.y - a.y);
-      }
-      const addArrow = (shape, from, tip) => {
-        let list = arrowData.get(shape);
-        if (!list) arrowData.set(shape, (list = []));
-        list.push(
-          tip.x,
-          tip.y,
-          tip.x - from.x,
-          tip.y - from.y,
-          r,
-          g,
-          b,
-          alpha,
-          arrowSize,
-        );
-      };
-      if (startArrow) addArrow(style.arrowAtSource, points[1], points[0]);
-      if (endArrow) addArrow(style.arrowAtTarget, points.at(-2), points.at(-1));
-    }
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.edgeBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pieces), gl.DYNAMIC_DRAW);
-    this.edgePieceCount = pieces.length / EDGE_FLOATS;
-    for (const [shape, group] of this.#arrowGroups) {
-      const list = arrowData.get(shape) ?? [];
-      gl.bindBuffer(gl.ARRAY_BUFFER, group.buffer);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(list), gl.DYNAMIC_DRAW);
+    this.#upload(this.edgeBuffer, instances.edges);
+    this.edgePieceCount = instances.edges.length / EDGE_FLOATS;
+    for (const [shape, list] of instances.arrows) {
+      const group = this.#arrowGroup(shape);
+      this.#upload(group.buffer, list);
       group.count = list.length / ARROW_FLOATS;
     }
-
-    // Nodes: leaving ones underneath, the hovered / selected / dragged ones on top.
-    const top = [];
-    const drawn = [...this.#ghosts];
-    for (const record of this.#nodes) {
-      if (
-        record.id === this.#selected ||
-        record.id === this.#hovered ||
-        record.id === this.#dragged
-      )
-        top.push(record);
-      else drawn.push(record);
-    }
-    drawn.push(...top);
-    const data = new Float32Array(drawn.length * NODE_FLOATS);
-    let offset = 0;
-    for (const record of drawn) {
-      const style = record.style;
-      const slot = style.icon ? this.#iconSlots.get(style.icon) : null;
-      const icon =
-        slot && typeof slot === "object"
-          ? [slot.u0, slot.v0, slot.u1, slot.v1]
-          : [0, 0, 0, 0];
-      const glow = Math.max(0, record.glow.value);
-      data.set(
-        [
-          record.px.value,
-          record.py.value,
-          record.hw,
-          record.hh,
-          ...record.fill,
-          ...record.border,
-          ...record.aura,
-          ...record.glowColor,
-          Math.min(1, glow),
-          ...record.ring,
-          ...icon,
-          style.borderWidth ?? 3,
-          SHAPES[style.shape] ?? 1,
-          NODE_PATTERNS[style.pattern] ?? 0,
-          style.badge ? 1 : 0,
-          Math.max(0, Math.min(1, record.alpha.value)),
-          Math.max(0.05, record.scale.value),
-          style.iconAlpha ?? 1,
-          0,
-        ],
-        offset,
-      );
-      offset += NODE_FLOATS;
-    }
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.nodeBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-    this.nodeCount = drawn.length;
-    this.#geometryDirty = false;
+    this.#upload(this.nodeBuffer, instances.nodes);
+    this.nodeCount = instances.nodes.length / NODE_FLOATS;
+    this.stats.uploadMs = performance.now() - started;
+    this.stats.partialUpload = partial;
   }
 
   #rebuildGrid() {
@@ -1091,12 +971,11 @@ export class WebGLGraph {
     image.crossOrigin = "anonymous"; // render.guildwars2.com allows it; keeps the texture uploadable
     image.onload = () => {
       this.atlasContext.drawImage(image, spot.x, spot.y, ICON_SIZE, ICON_SIZE);
-      this.#iconSlots.set(url, {
-        u0: spot.x / ATLAS_SIZE,
-        v0: spot.y / ATLAS_SIZE,
-        u1: (spot.x + ICON_SIZE) / ATLAS_SIZE,
-        v1: (spot.y + ICON_SIZE) / ATLAS_SIZE,
-      });
+      const u0 = spot.x / ATLAS_SIZE,
+        v0 = spot.y / ATLAS_SIZE,
+        u1 = (spot.x + ICON_SIZE) / ATLAS_SIZE,
+        v1 = (spot.y + ICON_SIZE) / ATLAS_SIZE;
+      this.#iconSlots.set(url, { u0, v0, u1, v1, uv: [u0, v0, u1, v1] });
       this.#atlasDirty = true;
       this.#scheduleIconRefresh();
     };
@@ -1146,6 +1025,7 @@ export class WebGLGraph {
           record.wait -= dt;
           continue;
         }
+        this.#touched.add(record);
         let moving;
         if (record.px) {
           const moved = record.px.step(dt) | record.py.step(dt);
@@ -1155,12 +1035,14 @@ export class WebGLGraph {
         moving = record.alpha.step(dt) || moving;
         if (!moving) this.#moving.delete(record);
       }
-      this.#geometryDirty = true;
       // Ghosts leave once faded.
       const leaving = this.#ghosts.filter(
         (g) => g.alpha.value > 0.01 && this.#moving.has(g),
       );
-      if (leaving.length !== this.#ghosts.length) this.#ghosts = leaving;
+      if (leaving.length !== this.#ghosts.length) {
+        this.#ghosts = leaving;
+        this.#geometryDirty = true;
+      }
       active ||= this.#moving.size > 0;
     }
     const flowing = [...this.#edgeEmphasis.values()].some(
@@ -1229,7 +1111,7 @@ export class WebGLGraph {
       gl.generateMipmap(gl.TEXTURE_2D);
       this.#atlasDirty = false;
     }
-    if (this.#geometryDirty) this.#uploadGeometry();
+    this.#syncGeometry();
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clearColor(0, 0, 0, 0);
@@ -1541,7 +1423,7 @@ export class WebGLGraph {
     padding = 30,
     maxSide = 16000,
   } = {}) {
-    if (this.#geometryDirty) this.#uploadGeometry();
+    this.#syncGeometry();
     const nodeBounds = this.bounds();
     const labelRoom = this.#labels.maxWidth + 20;
     const bounds = {
@@ -1811,7 +1693,8 @@ export class WebGLGraph {
           y = world.y - gesture.grab.y;
         gesture.record.px.snap(x);
         gesture.record.py.snap(y);
-        this.#geometryDirty = this.#gridDirty = true;
+        this.#touched.add(gesture.record);
+        this.#gridDirty = true;
         this.handlers.onNodeDrag?.(gesture.record.id, x, y);
         this.requestRender();
       } else if (gesture.kind === "pan") {
@@ -1821,7 +1704,7 @@ export class WebGLGraph {
         this.camera.panBy(dx, dy);
         const now = performance.now();
         samples.push({ at: now, dx, dy });
-        samples = samples.filter((sample) => now - sample.at < 90);
+        samples = samples.filter((sample) => now - sample.at < FLICK_WINDOW_MS);
         this.#viewportChanged();
       }
     });
@@ -1847,17 +1730,12 @@ export class WebGLGraph {
       if (ended.kind === "pan") {
         if (ended.moved) {
           // Let go mid-flick: the view glides on and slows down.
-          const span =
-            samples.length > 1 ? samples.at(-1).at - samples[0].at : 0;
-          if (span > 10 && this.#motion.enabled) {
-            const dx = samples.reduce((sum, s) => sum + s.dx, 0),
-              dy = samples.reduce((sum, s) => sum + s.dy, 0);
-            const vx = (dx / span) * 1000,
-              vy = (dy / span) * 1000;
-            if (Math.hypot(vx, vy) > 120) {
-              this.#glide = { vx, vy };
-              this.requestRender();
-            }
+          const velocity = this.#motion.enabled
+            ? flickVelocity(samples, performance.now())
+            : null;
+          if (velocity) {
+            this.#glide = velocity;
+            this.requestRender();
           }
           return;
         }
@@ -1881,6 +1759,22 @@ export class WebGLGraph {
       if (!pointers.has(event.pointerId)) this.#setHovered(null, null);
     });
   }
+}
+
+/**
+ * The glide velocity (px/s) for letting go of a pan at `now`, from its recent moves ({ at, dx, dy }), or null for no
+ * glide. Only moves in the last FLICK_WINDOW_MS count, so holding still before letting go stops the view.
+ */
+export function flickVelocity(samples, now) {
+  const recent = samples.filter((sample) => now - sample.at < FLICK_WINDOW_MS);
+  const span = recent.length > 1 ? recent.at(-1).at - recent[0].at : 0;
+  if (span <= 10) return null;
+  // The first move happened before the span starts, so it isn't part of it.
+  const dx = recent.slice(1).reduce((sum, s) => sum + s.dx, 0),
+    dy = recent.slice(1).reduce((sum, s) => sum + s.dy, 0);
+  const vx = (dx / span) * 1000,
+    vy = (dy / span) * 1000;
+  return Math.hypot(vx, vy) > FLICK_MIN_SPEED ? { vx, vy } : null;
 }
 
 /**

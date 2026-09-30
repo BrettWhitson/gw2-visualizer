@@ -15,7 +15,15 @@ import {
   roundCorners,
 } from "../public/src/render/edge-geometry.js";
 import { planTransition } from "../public/src/render/transition-plan.js";
-import { parseColor, wrapLabel } from "../public/src/render/webgl-graph.js";
+import {
+  InstanceData,
+  NODE_FLOATS,
+} from "../public/src/render/instance-data.js";
+import {
+  flickVelocity,
+  parseColor,
+  wrapLabel,
+} from "../public/src/render/webgl-graph.js";
 import { DEFAULT_SETTINGS } from "../public/src/config/settings-schema.js";
 import { FORGE_COLOR, UI_COLORS } from "../public/src/config/constants.js";
 
@@ -335,4 +343,112 @@ test("colours parse from #rrggbb and #rgb", () => {
   assert.deepEqual(parseColor("#ff0000"), [1, 0, 0]);
   assert.deepEqual(parseColor("#0f0"), [0, 1, 0]);
   assert.equal(parseColor("nonsense").length, 3);
+});
+
+test("a flick glides at the speed of the last moves; holding still before letting go does not", () => {
+  const moves = [0, 16, 32, 48, 64].map((at) => ({ at, dx: 20, dy: -5 }));
+  const { vx, vy } = flickVelocity(moves, 70);
+  assert.ok(
+    Math.abs(vx - 1250) < 1 && Math.abs(vy + 312.5) < 1,
+    `${vx}, ${vy}`,
+  );
+  // Same moves, let go 400 ms later: they're stale.
+  assert.equal(flickVelocity(moves, 464), null);
+  // A slow drag or a single move stops without a glide.
+  const slow = [0, 40, 80].map((at) => ({ at, dx: 1, dy: 0 }));
+  assert.equal(flickVelocity(slow, 85), null);
+  assert.equal(flickVelocity([{ at: 0, dx: 50, dy: 0 }], 5), null);
+});
+
+test("instance data: moving a few records rewrites them in place, matching a full rebuild", () => {
+  const value = (v) => ({ value: v });
+  const node = (id, x, y) => ({
+    id,
+    px: value(x),
+    py: value(y),
+    alpha: value(1),
+    scale: value(1),
+    glow: value(0),
+    hw: 20,
+    hh: 20,
+    fill: [0.1, 0.1, 0.2, 1],
+    border: [1, 0.5, 0, 1],
+    aura: [0, 0, 0, 0],
+    ring: [0, 0, 0, 0],
+    glowColor: [1, 1, 1],
+    style: { shape: "round-rectangle", icon: "a.png" },
+  });
+  const edge = (id, source, target) => ({
+    id,
+    source,
+    target,
+    alpha: value(1),
+    emphasis: value(0),
+    emphasisState: null,
+    color: [0.3, 0.3, 0.4],
+    style: { width: 1.6, arrowAtTarget: "triangle" },
+  });
+  const [root, a, b, c] = [
+    node("root", 0, 0),
+    node("a", 200, -80),
+    node("b", 200, 80),
+    node("c", 400, 80),
+  ];
+  const edges = [edge("e1", root, a), edge("e2", root, b), edge("e3", b, c)];
+  const layout = { routing: "round-taxi", flowAxis: "x", cornerRadius: 10 };
+  const scene = {
+    ghosts: [],
+    nodes: [root, a, b, c],
+    edges,
+    top: [],
+    layout,
+    iconUv: (url) => (url === "a.png" ? [0, 0, 0.5, 0.5] : null),
+  };
+  const snapshot = (data) => ({
+    nodes: [...data.nodes.data.subarray(0, data.nodes.length)],
+    edges: [...data.edges.data.subarray(0, data.edges.length)],
+    arrows: [...data.arrows.get("triangle").data.subarray(0, 9 * 3)],
+  });
+
+  const incremental = new InstanceData();
+  incremental.rebuild(scene);
+  incremental.nodes.takeDirty();
+  incremental.edges.takeDirty();
+
+  // b glows and slides right; its two edges follow. a, c and e1 stay untouched.
+  b.glow.value = 0.6;
+  b.scale.value = 1.06;
+  b.px.value = 215;
+  assert.equal(incremental.update(new Set([b]), scene), true);
+  const nodesDirty = incremental.nodes.takeDirty();
+  assert.deepEqual(nodesDirty, [2 * NODE_FLOATS, 3 * NODE_FLOATS]);
+  assert.equal(edges[0].routeKey[2], 0, "e1 was not re-routed");
+
+  const full = new InstanceData();
+  full.rebuild(scene);
+  assert.deepEqual(snapshot(incremental), snapshot(full));
+
+  // A node lifted on top changes the draw order: that takes a rebuild.
+  assert.equal(
+    incremental.update(new Set([b]), { ...scene, top: ["b"] }),
+    false,
+  );
+  // Selected and hovered being the same node is still one node on top.
+  incremental.rebuild({ ...scene, top: ["b"] });
+  assert.equal(
+    incremental.update(new Set([b]), { ...scene, top: ["b", "b"] }),
+    true,
+  );
+  incremental.rebuild(scene);
+  // So does an edge bending into a different number of pieces (b→c was straight)…
+  b.py.value = 95;
+  assert.equal(incremental.update(new Set([b]), scene), false);
+  // …or fading out of sight.
+  b.py.value = 80;
+  incremental.rebuild(scene);
+  edges[2].alpha.value = 0;
+  assert.equal(incremental.update(new Set([edges[2]]), scene), false);
+  // Records from an older graph are skipped.
+  const gone = node("gone", 0, 0);
+  assert.equal(incremental.update(new Set([gone]), scene), true);
 });

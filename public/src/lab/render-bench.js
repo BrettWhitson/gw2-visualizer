@@ -157,6 +157,7 @@ function mountOurs(graph, stage) {
       panY: view.camera.panY,
     }),
     drawMs: () => view.stats.drawMs,
+    engine: view, // for console experiments
   };
 }
 
@@ -248,6 +249,7 @@ async function show(rendererKey, size) {
   const graph = makeGraph(size);
   const started = performance.now();
   current = RENDERERS[rendererKey].mount(graph, $("#stage"));
+  if (flowing) current.flow?.(true); // the toggle outlives the renderer
   await nextFrame();
   await nextFrame();
   return performance.now() - started;
@@ -295,7 +297,8 @@ async function benchmark(rendererKey, size, scenario = "overview") {
   return {
     renderer:
       RENDERERS[rendererKey].name +
-      (scenario === "closeup" ? " (close-up)" : ""),
+      (scenario === "closeup" ? " (close-up)" : "") +
+      (flowing && current.flow ? " (flow)" : ""),
     size,
     firstFrame,
     average: average(gaps),
@@ -350,7 +353,10 @@ $("#runAll").addEventListener("click", async () => {
   $("#status").textContent = "Done.";
 });
 globalThis.renderBench = {
-  flow: (on) => current?.flow?.(on),
+  flow: (on) => {
+    flowing = on;
+    current?.flow?.(on);
+  },
   benchmark,
   show,
   results,
