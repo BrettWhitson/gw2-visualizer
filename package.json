@@ -29,8 +29,8 @@
     "eslint": "^10.0.0",
     "globals": "^17.12.0",
     "prettier": "3.9.9",
-    "prism": "github:BrettWhitson/prism#e0162e37cef97dc2ebea475ce72be00b59fcd0ac",
-    "tether": "github:BrettWhitson/tether#72200e70f4cdf5467b0ea1c3f64bb0904f791e87",
+    "prism": "github:BrettWhitson/prism#2607de1395714f09cada8036739c9c13466bcc65",
+    "tether": "github:BrettWhitson/tether#d53485b67491be00e84b2150ea0dbaf46295d10b",
     "vite": "8.3.1",
     "vite-plugin-pwa": "1.3.0"
   }
