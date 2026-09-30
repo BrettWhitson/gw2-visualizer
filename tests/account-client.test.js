@@ -78,3 +78,41 @@ test("catalogs fetch each id once, and item stats after the items that name them
   await catalogs.loadFor(character);
   assert.equal(api.calls.length, before, "a second character reuses the cache");
 });
+
+test("catalogs are kept in the browser and only missing ids are fetched on the next visit", async () => {
+  const saved = new Map();
+  const store = {
+    get: async (key) => saved.get(key),
+    set: async (key, value) => saved.set(key, structuredClone(value)),
+  };
+  const catalog = {
+    "/items": { 10: { id: 10, name: "Coat" }, 11: { id: 11, name: "Rune" } },
+  };
+  const character = (ids) => ({
+    equipment: ids.map((id) => ({ id, slot: "Coat" })),
+  });
+  let now = 1000;
+
+  const firstApi = createFakeApi(catalog);
+  await new CharacterCatalogs(firstApi, { store, now: () => now }).loadFor(
+    character([10]),
+  );
+
+  now += 60_000;
+  const secondApi = createFakeApi(catalog);
+  const second = new CharacterCatalogs(secondApi, { store, now: () => now });
+  await second.loadFor(character([10, 11]));
+  assert.equal(second.items.get(10).name, "Coat", "restored");
+  assert.deepEqual(
+    secondApi.calls,
+    ["/items?ids=11"],
+    "only the new item; specializations came from storage too",
+  );
+
+  now += 8 * 24 * 60 * 60 * 1000; // over a week after the first save
+  const thirdApi = createFakeApi(catalog);
+  await new CharacterCatalogs(thirdApi, { store, now: () => now }).loadFor(
+    character([10]),
+  );
+  assert.ok(thirdApi.calls.includes("/items?ids=10"), "expired: fetched again");
+});

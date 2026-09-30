@@ -2,7 +2,9 @@
  * Entry point for the Characters page: connect an account → character list → one character's armory (`#<name>`).
  * The account comes from the shared AccountSession (the header's account control connects, refreshes and forgets).
  */
+import { CACHE_DB_NAME } from "./config/constants.js";
 import { CharacterCatalogs } from "./data/account-client.js";
+import { IndexedDbStore } from "./data/indexed-db-store.js";
 import { AccountSession } from "./data/account-session.js";
 import { activeBuild, buildArmory } from "./model/character-armory.js";
 import { armoryHtml, characterListHtml } from "./ui/character-view.js";
@@ -12,7 +14,10 @@ import { registerServiceWorker } from "./pwa.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
 
 class CharactersPage {
-  catalogs = new CharacterCatalogs();
+  // Kept with the crafting data, so Settings → Clear cached data clears these too.
+  catalogs = new CharacterCatalogs(undefined, {
+    store: new IndexedDbStore(CACHE_DB_NAME),
+  });
   /** Per-character view choices, kept while the page is open. */
   choices = new Map();
   tooltips = new Map();
