@@ -23,7 +23,7 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
   removed (a saved Classic choice is simply dropped). With the Vite build, the crafting page now downloads 8 files and
   143 KB (gzip, Mystic Forge data included), down from 82 files and 408 KB in 0.10.0. Browsers without WebGL2 (hardware acceleration off, a blocklisted GPU) now see a message saying so on
   the graph pages, instead of the old renderer.
-- Development: Prism and Tether are now at 0.2.0, with a public API: one entry point each, schemas for every option,
+- Development: Prism and Tether are now at 0.2.0 (pinned by release tag instead of commit), with a public API: one entry point each, schemas for every option,
   theme colour and physics constant (checked, with warnings for bad values), events, plugins (node shapes, arrowheads,
   edge routings, easings, layouts and forces), and TypeScript declarations. Nothing on the site changes. The engine
   sandbox's Tuning tab now shows all 39 of Tether's constants, including the layout ones that were hardcoded before.
