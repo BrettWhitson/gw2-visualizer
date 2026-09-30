@@ -18,6 +18,7 @@ import { RecentItems } from "./core/recent-items.js";
 import { Gw2ApiClient } from "./data/gw2-api-client.js";
 import { IndexedDbStore } from "./data/indexed-db-store.js";
 import { GameData } from "./data/game-data.js";
+import { AccountSession } from "./data/account-session.js";
 import { PriceBook } from "./data/price-book.js";
 import { WikiSources } from "./data/wiki-sources.js";
 import { ItemSearchIndex } from "./data/item-search-index.js";
@@ -66,8 +67,10 @@ export class CraftingTreeApp {
   #startTitle = document.title;
   #lastErrorAt = 0;
 
-  constructor() {
+  /** @param {{ account?: AccountSession }} [options]  the connected GW2 account, shared with the page header */
+  constructor({ account = new AccountSession() } = {}) {
     // services
+    this.account = account;
     this.settings = new SettingsStore();
     this.recentItems = new RecentItems();
     this.api = new Gw2ApiClient();
@@ -82,6 +85,7 @@ export class CraftingTreeApp {
       priceBook: this.priceBook,
       settings: this.settings,
       treeState: this.treeState,
+      getAccount: () => (this.account.isReady ? this.account : null),
     });
     this.appearance = new NodeAppearance({
       gameData: this.gameData,
@@ -94,6 +98,7 @@ export class CraftingTreeApp {
       priceBook: this.priceBook,
       settings: this.settings,
       wikiSources: this.wikiSources,
+      account: this.account,
     };
     const panelActions = {
       openItem: (itemId) => this.openItem(itemId),
@@ -205,6 +210,19 @@ export class CraftingTreeApp {
 
   async start() {
     this.#bindGlobalControls();
+    // Owned items change quantities and costs: redraw when the account connects, refreshes or goes.
+    const syncOwnedToggle = () => {
+      const input = $('[data-setting="useOwned"]');
+      if (input) input.disabled = !this.account.isReady;
+    };
+    syncOwnedToggle();
+    this.account.addEventListener("change", () => {
+      syncOwnedToggle();
+      if (this.account.status === "connecting") return;
+      this.shoppingListPanel.render(this.tree);
+      if (this.treeState.hasRoot)
+        this.#render({ anchorNodeId: this.#anchorNodeId() });
+    });
     this.optionPanels.forEach((panel) => panel.render());
     this.toolbar.sync();
     // Phones start with the graph uncovered: toolbar and panel collapsed (for this visit only; the handles open them).

@@ -1,13 +1,9 @@
 /**
- * Entry point for the Characters page: API key → character list → one character's armory (`#<name>`).
+ * Entry point for the Characters page: connect an account → character list → one character's armory (`#<name>`).
+ * The account comes from the shared AccountSession (the header's account control connects, refreshes and forgets).
  */
-import { ApiKeyStore } from "./core/api-key-store.js";
-import {
-  AccountClient,
-  CHARACTER_SCOPES,
-  CharacterCatalogs,
-  looksLikeApiKey,
-} from "./data/account-client.js";
+import { CharacterCatalogs } from "./data/account-client.js";
+import { AccountSession } from "./data/account-session.js";
 import { activeBuild, buildArmory } from "./model/character-armory.js";
 import { armoryHtml, characterListHtml } from "./ui/character-view.js";
 import { escapeHtml, querySelector as $ } from "./utils/dom.js";
@@ -15,33 +11,58 @@ import { registerServiceWorker } from "./pwa.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
 
 class CharactersPage {
-  keys = new ApiKeyStore();
   catalogs = new CharacterCatalogs();
-  /** @type {object[] | null} raw /v2/characters entries */
-  characters = null;
-  accountName = null;
   /** Per-character view choices, kept while the page is open. */
   choices = new Map();
   tooltips = new Map();
   pinnedTip = null;
   renderToken = 0;
 
+  /** @param {AccountSession} account */
+  constructor(account) {
+    this.account = account;
+  }
+
+  get characters() {
+    return this.account.characters;
+  }
+
   start() {
     $("#keyForm").addEventListener("submit", (event) => {
       event.preventDefault();
-      this.connect($("#apiKey").value, $("#rememberKey").checked);
-    });
-    $("#changeKey").addEventListener("click", () => this.showKeyPanel());
-    $("#forgetKey").addEventListener("click", () => {
-      this.keys.clear();
-      this.showKeyPanel();
+      this.account.connect($("#apiKey").value, {
+        remember: $("#rememberKey").checked,
+      });
     });
     window.addEventListener("hashchange", () => this.render());
+    this.account.addEventListener("change", () => this.#onAccountChange());
     this.bindTooltips();
+    this.#onAccountChange();
+  }
 
-    const saved = this.keys.get();
-    if (saved) this.connect(saved, true, { saved: true });
-    else this.showKeyPanel();
+  #onAccountChange() {
+    const { status, error } = this.account;
+    if (status === "ready") {
+      $("#keyPanel").hidden = true;
+      if (!this.characters) {
+        this.#showMessage(
+          "This API key doesn't have the <b>characters</b> permission. Use the account menu at the top right to connect a key with <b>characters</b> and <b>builds</b>.",
+        );
+        return;
+      }
+      this.render();
+    } else if (status === "connecting") {
+      this.#invalidate();
+      $("#keyPanel").hidden = true;
+      this.setContent('<p class="loading">Connecting to your account…</p>');
+    } else {
+      this.showKeyPanel(status === "error" ? error : "");
+    }
+  }
+
+  #showMessage(html) {
+    this.#invalidate();
+    this.setContent(`<p class="notice">${html}</p>`);
   }
 
   /** Any view change: an armory still loading must not draw over what replaced it. */
@@ -49,75 +70,17 @@ class CharactersPage {
     return ++this.renderToken;
   }
 
-  /** Back to the key form; the previous account's data is dropped so nothing of it can reappear. */
-  showKeyPanel(error = "", { keepInput = false } = {}) {
+  /** The key form; view choices are dropped with the account they belonged to. */
+  showKeyPanel(error = "") {
     this.#invalidate();
-    this.characters = null;
-    this.accountName = null;
     this.choices.clear();
     $("#keyPanel").hidden = false;
-    $("#keyStatus").hidden = true;
     this.setContent("");
     $("#keyError").textContent = error;
-    if (!keepInput) $("#apiKey").value = "";
-    $("#apiKey").focus();
-  }
-
-  async connect(rawKey, remember, { saved = false } = {}) {
-    const key = rawKey.trim();
-    if (!looksLikeApiKey(key)) {
-      this.showKeyPanel(
-        "That doesn't look like a GW2 API key: it should be 72 characters of letters, digits and hyphens.",
-        { keepInput: true },
-      );
-      return;
-    }
-    const token = this.#invalidate();
-    $("#keyPanel").hidden = true;
-    this.setContent('<p class="loading">Connecting to your account…</p>');
-    const client = new AccountClient(key);
-    let account, characters, missing;
-    try {
-      const info = await client.tokenInfo();
-      missing = CHARACTER_SCOPES.filter(
-        (scope) => !info.permissions?.includes(scope),
-      );
-      if (missing.includes("characters")) {
-        if (saved) this.keys.clear();
-        this.showKeyPanel(
-          `This key doesn't have the characters permission. Create a key with: ${CHARACTER_SCOPES.join(", ")}.`,
-        );
-        return;
-      }
-      [account, characters] = await Promise.all([
-        client.account(),
-        client.characters(),
-        this.catalogs.loadSpecializations(),
-      ]);
-    } catch (error) {
-      if (token !== this.renderToken) return;
-      // The API answers an invalid key with 400, a deleted one with 401 / 403.
-      const rejected = [400, 401, 403].includes(error.status);
-      if (rejected && saved) this.keys.clear();
-      this.showKeyPanel(
-        rejected
-          ? "The API rejected this key. It may have been deleted, or mistyped."
-          : `Couldn't reach the Guild Wars 2 API (${error.message}). Try again in a moment.`,
-      );
-      return;
-    }
-    if (token !== this.renderToken) return; // the key form was reopened meanwhile
-    this.keys.set(key, { remember });
-    this.accountName = account.name;
-    this.characters = characters;
-    this.missingScopes = missing;
-    $("#keyAccount").textContent = this.accountName;
-    $("#keyStatus").hidden = false;
-    this.render();
   }
 
   render() {
-    if (!this.characters) return;
+    if (!this.account.isReady || !this.characters) return;
     this.#invalidate();
     let name = "";
     try {
@@ -132,15 +95,20 @@ class CharactersPage {
     else this.renderList();
   }
 
-  renderList() {
+  async renderList() {
+    const token = this.renderToken;
+    await this.catalogs.loadSpecializations(); // elite spec names and icons; loaded once
+    if (token !== this.renderToken) return;
     const summaries = this.characters.map((character) => ({
       ...character,
       build: activeBuild(character, this.catalogs.specializations),
     }));
-    const notice = this.missingScopes?.includes("builds")
+    const notice = !this.account.has("builds")
       ? '<p class="notice">This key lacks the <b>builds</b> permission, so equipment templates and build specializations are unavailable.</p>'
       : "";
-    this.setContent(notice + characterListHtml(summaries, this.accountName));
+    this.setContent(
+      notice + characterListHtml(summaries, this.account.accountName),
+    );
   }
 
   async renderArmory(character) {
@@ -293,9 +261,11 @@ class CharactersPage {
   }
 }
 
-mountSiteChrome({ page: "characters" });
-const page = new CharactersPage();
+const account = new AccountSession();
+mountSiteChrome({ page: "characters", account });
+const page = new CharactersPage(account);
 if (["localhost", "127.0.0.1"].includes(location.hostname))
   globalThis.gw2Characters = page; // console access while developing
 page.start();
+account.restore();
 registerServiceWorker(); // a new release is picked up on the next visit

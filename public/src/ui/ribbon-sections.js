@@ -15,7 +15,7 @@ export const RIBBON_SECTIONS = {
   },
   recipes: {
     title: "Recipes",
-    keys: ["pathMode", "includeForgePromotions"],
+    keys: ["pathMode", "includeForgePromotions", "useOwned"],
     groups: ["recipes"],
   },
   presets: {

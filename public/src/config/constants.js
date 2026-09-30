@@ -167,6 +167,7 @@ export const UI_COLORS = {
   lineageDown: "#62a4da",
   focus: "#62a4da",
   danger: "#e0645c",
+  owned: "#4fc1b0", // covered by the account's own items
   good: "#8fd07a",
 };
 

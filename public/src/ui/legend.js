@@ -222,6 +222,8 @@ export class Legend {
     });
     if (s.showBuyCheaperHint && s.priceBasis !== "off")
       add("flag:cheaper", "Buy cheaper", UI_COLORS.good, { border: "dashed" });
+    if ([...this.#nodesById.values()].some((node) => node.isOwnedEnough))
+      add("flag:owned", "Owned", UI_COLORS.owned);
     return entries;
   }
 
@@ -260,6 +262,7 @@ export class Legend {
         if (value === "mf") return isForgeResult(node);
         if (value === "collapsed") return node.isCollapsed;
         if (value === "cheaper") return node.isBuyCheaper;
+        if (value === "owned") return node.isOwnedEnough;
         return false;
       default:
         return false;

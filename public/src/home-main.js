@@ -1,5 +1,5 @@
 /** Entry point for the home page. */
-import { ApiKeyStore } from "./core/api-key-store.js";
+import { AccountSession } from "./data/account-session.js";
 import { registerServiceWorker } from "./pwa.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
 
@@ -7,9 +7,13 @@ import { mountSiteChrome } from "./ui/site-chrome.js";
 if (/[#&]item=\d+/.test(location.hash))
   location.replace(`crafting.html${location.hash}`);
 else {
-  mountSiteChrome({ page: "home" });
-  if (new ApiKeyStore().get())
-    document.getElementById("charactersGo").textContent =
-      "See your characters →";
+  const account = new AccountSession();
+  mountSiteChrome({ page: "home", account });
+  account.addEventListener("change", () => {
+    document.getElementById("charactersGo").textContent = account.isReady
+      ? "See your characters →"
+      : "Connect your account →";
+  });
+  account.restore();
   registerServiceWorker();
 }

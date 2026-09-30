@@ -5,8 +5,10 @@
 import { CraftingTreeApp } from "./app.js";
 import { registerServiceWorker } from "./pwa.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
+import { AccountSession } from "./data/account-session.js";
 
-mountSiteChrome({ page: "crafting" });
+const account = new AccountSession();
+mountSiteChrome({ page: "crafting", account });
 
 function showFatalError(message) {
   const overlay = document.getElementById("overlay");
@@ -25,7 +27,7 @@ if (!globalThis.cytoscape) {
     // cytoscape-dagre registers itself when loaded after cytoscape; use() then throws "already registered".
   }
 
-  const app = new CraftingTreeApp();
+  const app = new CraftingTreeApp({ account });
   if (["localhost", "127.0.0.1"].includes(location.hostname))
     globalThis.gw2CraftingTree = app; // console access while developing
 
@@ -38,5 +40,6 @@ if (!globalThis.cytoscape) {
   );
 
   app.start();
+  account.restore(); // owned items fill in when the account loads
   registerServiceWorker({ onUpdateReady: () => app.offerReload() });
 }

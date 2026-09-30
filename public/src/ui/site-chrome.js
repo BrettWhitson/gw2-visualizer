@@ -4,6 +4,7 @@ import {
   ARENANET_NOTICE,
   REPOSITORY_URL,
 } from "../config/constants.js";
+import { AccountMenu } from "./account-menu.js";
 
 /**
  * The header and footer every page shares: brand, links between the visualizers, source link, and a footer with
@@ -82,12 +83,18 @@ function aboutHtml() {
 }
 
 /**
- * Fill in the shared header and footer, and add the About dialog.
- * @param {{ page: "home" | "crafting" | "characters" }} options
+ * Fill in the shared header and footer, and add the About dialog and the account control.
+ * @param {{ page: "home" | "crafting" | "characters", account: import('../data/account-session.js').AccountSession }} options
+ * @returns {{ showAbout(): void, accountMenu: AccountMenu }}
  */
-export function mountSiteChrome({ page }) {
+export function mountSiteChrome({ page, account }) {
   const header = document.getElementById("topbar");
   header.insertAdjacentHTML("afterbegin", brandHtml() + navHtml(page));
+  header.insertAdjacentHTML("beforeend", '<div class="account-slot"></div>');
+  const accountMenu = new AccountMenu(
+    header.querySelector(".account-slot"),
+    account,
+  );
   if (REPOSITORY_URL)
     header.insertAdjacentHTML(
       "beforeend",
@@ -118,5 +125,5 @@ export function mountSiteChrome({ page }) {
     if (action === "about") about.showModal();
     else if (action === "close-about") about.close();
   });
-  return { showAbout: () => about.showModal() };
+  return { showAbout: () => about.showModal(), accountMenu };
 }

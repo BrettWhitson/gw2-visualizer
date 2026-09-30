@@ -17,6 +17,12 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
   rune tiers lit by how many pieces you wear, infusions, dyes and skins; gear-only attribute totals with a
   per-source breakdown, critical chance, critical damage, health and armor; switch equipment templates and weapon
   sets. The key stays in your browser (remembered only if you choose) and is sent only to the official API.
+- **Connect your account on any page** (top right). The crafting explorer then uses what you own first: ingredients
+  in your bank, material storage, shared slots, bags and Trading Post pickup are taken before anything is bought or
+  crafted, items you hold enough of are marked ✓ and not expanded, and costs and the shopping list cover only the
+  rest (with how much you already have). Crafted steps no character has the level for are flagged, and the shopping
+  list sums up the crafting levels you lack. Toggle it with **Use what I own** in the ribbon's Recipes section.
+- A key that isn't remembered is now kept for the browser tab, so it carries across pages until the tab closes.
 
 ## 0.9.0 — 2026-09-29
 

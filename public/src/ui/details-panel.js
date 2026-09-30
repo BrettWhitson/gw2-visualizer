@@ -17,7 +17,9 @@ import {
   entitySubtitle,
   entityIcon,
   definitionList,
+  accountRows,
 } from "./html-fragments.js";
+import { STORAGE_LABELS, itemLocations } from "../model/account-inventory.js";
 
 const MAX_USED_IN_ROWS = 60;
 
@@ -68,14 +70,28 @@ export class DetailsPanel {
   }
 
   #pricingHtml(node) {
-    const { priceBook, settings } = this.context;
+    const { priceBook, settings, account } = this.context;
     const rows = [
       ["Source", this.#sourcesHtml(node)],
       [
         "Needed",
         `<b>${escapeHtml(formatQuantity(node.kind, node.entityId, node.quantity))}</b>${node.occurrenceCount > 1 ? ` (${node.occurrenceCount} places)` : ""}`,
       ],
+      ...accountRows(node, account, settings.values.useOwned),
     ];
+    if (account?.isReady && node.kind === EntityKind.item) {
+      const places = itemLocations(account.stacks, node.entityId);
+      if (places.length)
+        rows.push([
+          "Held in",
+          places
+            .map(
+              (place) =>
+                `${place.owner ? `${escapeHtml(place.owner)}'s bags` : STORAGE_LABELS[place.storage]} <span class="muted">${formatNumber(place.count)}</span>`,
+            )
+            .join(" · "),
+        ]);
+    }
     if (node.kind === EntityKind.item && settings.values.priceBasis !== "off") {
       const quote = priceBook.getQuote(node.entityId);
       if (quote)
@@ -84,7 +100,10 @@ export class DetailsPanel {
           `${formatCoinsHtml(quote.buy)} / ${formatCoinsHtml(quote.sell)}`,
         ]);
       if (node.buyCost != null)
-        rows.push(["Buy all", formatCoinsHtml(node.buyCost)]);
+        rows.push([
+          node.ownedQuantity ? "Buy the rest" : "Buy all",
+          formatCoinsHtml(node.buyCost),
+        ]);
       if (node.hasChildren && node.craftCost != null) {
         rows.push([
           "Craft cost",

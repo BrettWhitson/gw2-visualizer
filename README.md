@@ -8,6 +8,8 @@ Guild Wars 2 tools that run entirely in the browser and install as a PWA:
   trading post costs, the cheapest buy-or-craft path, where every ingredient comes from, and a shopping list.
 - **Characters:** connect an API key to see each character's equipped gear, rune sets and gear-only attribute
   totals. The key never leaves the browser except to the official API.
+- **Your account in the crafting explorer:** with a key connected, what you already own is used first, so costs and
+  the shopping list show only what's left to buy, and missing crafting levels are flagged.
 
 **Live: [gw2visualizer.com](https://gw2visualizer.com)** · Current version: **0.9.0** · [Changelog](CHANGELOG.md) · [Next steps](#next-steps) · [Roadmap](#roadmap) · [Considerations](#considerations)
 
@@ -135,8 +137,8 @@ Ideas, roughly in order; none of this is promised.
 
 - **Image export with preview:** choose what's included (legend, title, notice), background, scale and crop, and see
   the result before saving; SVG export.
-- **GW2 account (API key):** optional, stored only in the browser. Subtract what you already own (bank, material
-  storage, shared inventory, wallet) from the shopping list and costs, and mark ingredients you have enough of.
+- **GW2 account (API key), next:** "expected stock" (items you'll have soon, such as Wizard's Vault picks) counted
+  as owned; let owned intermediates steer the Cheapest path; wallet currencies against currency ingredients.
 - **More visualizers** built on the same graph and data layer:
   - characters: equipment, builds and crafting disciplines;
   - achievements and collections: progress trees, what's left and what it costs;

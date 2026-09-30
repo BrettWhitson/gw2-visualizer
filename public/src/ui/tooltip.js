@@ -10,6 +10,7 @@ import {
   FORGE_CHIP_HTML,
   entitySubtitle,
   entityIcon,
+  accountRows,
   definitionList,
 } from "./html-fragments.js";
 
@@ -114,7 +115,10 @@ export class Tooltip {
             : '<span class="muted">loading…</span>';
       rows.push(["TP unit", unitHtml]);
       if (node.buyCost != null)
-        rows.push(["Buy all", formatCoinsHtml(node.buyCost)]);
+        rows.push([
+          node.ownedQuantity ? "Buy the rest" : "Buy all",
+          formatCoinsHtml(node.buyCost),
+        ]);
       if (node.hasChildren && node.craftCost != null)
         rows.push([
           "Craft cost",
@@ -130,8 +134,14 @@ export class Tooltip {
         ]);
     }
 
+    rows.push(
+      ...accountRows(node, this.context.account, settings.values.useOwned),
+    );
+
     const hints = [];
-    if (node.isCollapsed) hints.push("Double-click to expand");
+    if (node.isOwnedEnough)
+      hints.push("You own enough: its ingredients aren't needed");
+    else if (node.isCollapsed) hints.push("Double-click to expand");
     else if (node.hasChildren) hints.push("Double-click to collapse");
     if (node.isCycle) hints.push("Recursive recipe — not expanded");
     if (node.kind === EntityKind.item && !node.isRoot)

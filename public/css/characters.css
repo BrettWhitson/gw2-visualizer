@@ -23,34 +23,6 @@
   margin: 0 0 8px;
   font-size: 18px;
 }
-.key-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin: 14px 0 6px;
-}
-.key-form input[type="password"] {
-  flex: 1 1 320px;
-  min-width: 0;
-  padding: 6px 8px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 5px;
-  font-family: ui-monospace, Consolas, monospace;
-}
-.key-form .remember {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--muted);
-}
-.key-error {
-  min-height: 1.4em;
-  margin: 4px 0;
-  color: var(--danger);
-}
-
 /* ---------- character list ---------- */
 .char-list {
   list-style: none;

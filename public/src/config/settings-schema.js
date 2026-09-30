@@ -18,6 +18,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   wikiSources: true, // look up vendors & containers on the wiki when an item's details are opened
   pathMode: "standard", // standard = craft everything | cheapest = buy or craft, whichever costs less | fewest = buy whatever is tradeable
   priceBasis: "sell", // 'sell' = instant buy from sell listings, 'buy' = buy orders, 'off'
+  useOwned: true, // with a connected account: use owned items first, and only buy or craft the rest
   sidebarOpen: true,
   sidebarWidth: 360, // px, dragged with the side panel's edge
   ribbonCollapsed: false,
@@ -824,6 +825,13 @@ export const SETTINGS_GROUPS = [
           ["buy", "Buy orders"],
           ["off", "Off (no prices)"],
         ],
+      },
+      {
+        key: "useOwned",
+        label: "Use what I own",
+        hint: "With a connected account: take ingredients from your bank, material storage, shared slots, bags and Trading Post pickup first, and only buy or craft the rest",
+        type: "checkbox",
+        redraw: Redraw.relayout,
       },
       {
         key: "preferMysticForge",

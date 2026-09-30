@@ -42,7 +42,7 @@ export class NodeAppearance {
     }
   }
 
-  /** "250 × Mithril Ingot", plus "  ▸" when collapsed and an optional cost line. */
+  /** "250 × Mithril Ingot", plus "  ▸" when collapsed ("  ✓" when owned), what's owned, and an optional cost line. */
   label(node) {
     const { showQuantities, showCostInLabel } = this.settings.values;
     const name = this.gameData.getEntity(node.kind, node.entityId).name;
@@ -51,7 +51,10 @@ export class NodeAppearance {
         ? `${formatQuantity(node.kind, node.entityId, node.quantity)} × `
         : "") +
       name +
-      (node.isCollapsed ? "  ▸" : "");
+      (node.isOwnedEnough ? "  ✓" : node.isCollapsed ? "  ▸" : "");
+    if (node.ownedQuantity && !node.isOwnedEnough)
+      label += `
+(have ${formatQuantity(node.kind, node.entityId, node.ownedQuantity)})`;
     if (showCostInLabel && node.kind === EntityKind.item && node.effectiveCost)
       label += "\n" + formatCoinsText(node.effectiveCost);
     return label;
@@ -64,6 +67,7 @@ export class NodeAppearance {
       node.isCollapsed && "hiddenKids",
       node.isCycle && "cycle",
       node.isBuyCheaper && "cheaper",
+      node.isOwnedEnough && "owned",
       isForgeResult(node) && "mf",
     ]
       .filter(Boolean)

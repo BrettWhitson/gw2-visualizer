@@ -57,6 +57,9 @@ export function buildGraphModel(root, { settings, gameData }) {
         hasChildren: treeNode.children.length > 0,
         isBuyCheaper: treeNode.isBuyCheaper,
         isPlannedPurchase: treeNode.isPlannedPurchase,
+        ownedQuantity: 0,
+        isOwnedEnough: true, // until an occurrence isn't
+        missingCraftingLevels: null,
         collapseKey: getCollapseKey(treeNode, settings.viewMode),
         occurrenceCount: 0,
         isRoot: treeNode.depth === 0,
@@ -76,6 +79,9 @@ export function buildGraphModel(root, { settings, gameData }) {
     node.isCollapsed ||= treeNode.isCollapsed;
     node.hasChildren ||= treeNode.children.length > 0;
     node.isBuyCheaper ||= treeNode.isBuyCheaper;
+    node.ownedQuantity += treeNode.ownedQuantity ?? 0;
+    node.isOwnedEnough &&= !!treeNode.isOwnedEnough;
+    node.missingCraftingLevels ??= treeNode.missingCraftingLevels ?? null;
 
     if (treeNode.parent) {
       const sourceId = nodeIdOf(treeNode.parent);
