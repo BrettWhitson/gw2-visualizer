@@ -1,7 +1,7 @@
 // Which renderer a page gets: Prism by default, Classic on request, and the URL override for one visit.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_SETTINGS } from "../public/src/config/settings-schema.js";
+import { DEFAULT_SETTINGS } from "../web/src/config/settings-schema.js";
 
 // A browser just big enough for the choice: WebGL2 support, a URL, and (optionally) Cytoscape.
 function browser({ webgl2 = true, search = "", cytoscape = true } = {}) {
@@ -16,10 +16,10 @@ function browser({ webgl2 = true, search = "", cytoscape = true } = {}) {
 }
 
 const { chooseGraphView } =
-  await import("../public/src/render/choose-graph-view.js");
+  await import("../web/src/render/choose-graph-view.js");
 const { WebGLGraphView } =
-  await import("../public/src/render/webgl-graph-view.js");
-const { GraphView } = await import("../public/src/graph/graph-view.js");
+  await import("../web/src/render/webgl-graph-view.js");
+const { GraphView } = await import("../web/src/graph/graph-view.js");
 
 test("renderer: Prism by default, Classic when chosen, and the URL wins for one visit", () => {
   browser();

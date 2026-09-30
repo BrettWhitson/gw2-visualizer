@@ -8,14 +8,14 @@ import {
   prismClasses,
   prismOptions,
   prismTheme,
-} from "../public/src/render/prism-settings.js";
+} from "../web/src/render/prism-settings.js";
 import {
   resolveEdgeStyle,
   resolveNodeStyle,
   resolveRouting,
-} from "../public/lib/prism/style.js";
-import { DEFAULT_SETTINGS } from "../public/src/config/settings-schema.js";
-import { FORGE_COLOR, UI_COLORS } from "../public/src/config/constants.js";
+} from "prism/style.js";
+import { DEFAULT_SETTINGS } from "../web/src/config/settings-schema.js";
+import { FORGE_COLOR, UI_COLORS } from "../web/src/config/constants.js";
 
 const settings = (overrides = {}) => ({ ...DEFAULT_SETTINGS, ...overrides });
 

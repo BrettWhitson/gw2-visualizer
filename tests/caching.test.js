@@ -5,11 +5,11 @@ import {
   getDataUpdates,
   maxAgeFor,
   setDataUpdates,
-} from "../public/src/core/data-preferences.js";
-import { formatAge } from "../public/src/utils/format.js";
-import { PriceBook } from "../public/src/data/price-book.js";
-import { OrderBooks } from "../public/src/data/order-books.js";
-import { AccountSession } from "../public/src/data/account-session.js";
+} from "../web/src/core/data-preferences.js";
+import { formatAge } from "../web/src/utils/format.js";
+import { PriceBook } from "../web/src/data/price-book.js";
+import { OrderBooks } from "../web/src/data/order-books.js";
+import { AccountSession } from "../web/src/data/account-session.js";
 
 const KEY =
   "564F181A-F0FC-114A-A55D-3C1DCD45F3767AF3848F-AB29-4EBF-9594-F91E6A75E015";

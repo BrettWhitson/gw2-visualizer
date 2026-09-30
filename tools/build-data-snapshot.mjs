@@ -1,5 +1,5 @@
 // Build the game-data snapshot the site serves to visitors: every API recipe plus every item, currency and guild
-// upgrade they (and the bundled Mystic Forge recipes) reference, gzipped into public/data/snapshot/.
+// upgrade they (and the bundled Mystic Forge recipes) reference, gzipped into web/static/data/snapshot/.
 // Visitors then download one compressed file from the site's host instead of each making ~150 GW2 API requests.
 //
 // Run by the deploy workflow once a day (and on every deploy); run it locally to test the snapshot path.
@@ -12,18 +12,18 @@ import { gzipSync } from "node:zlib";
 import {
   Gw2ApiClient,
   normalizeRecipe,
-} from "../public/src/data/gw2-api-client.js";
+} from "../web/src/data/gw2-api-client.js";
 import {
   downloadCoreDataFromApi,
   findMissingItemIds,
-} from "../public/src/data/core-data-sources.js";
-import forgeData from "../public/data/mystic-forge-recipes.js";
+} from "../web/src/data/core-data-sources.js";
+import forgeData from "../web/data/mystic-forge-recipes.js";
 
 const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
-const outputDir = path.join(projectRoot, "public", "data", "snapshot");
+const outputDir = path.join(projectRoot, "web", "static", "data", "snapshot");
 
 const log = (message) => process.stdout.write(`${message}\n`);
 let lastProgress = "";

@@ -10,13 +10,9 @@ const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
 );
-const sourceRoots = [
-  "public/src",
-  "public/lib/prism",
-  "public/lib/tether",
-  "tools",
-  "tests",
-].map((dir) => path.join(projectRoot, dir));
+const sourceRoots = ["web/src", "tools", "tests"].map((dir) =>
+  path.join(projectRoot, dir),
+);
 
 function listJavaScriptFiles(dir) {
   return readdirSync(dir).flatMap((name) => {
@@ -29,7 +25,7 @@ function listJavaScriptFiles(dir) {
 let failures = 0;
 const files = [
   ...sourceRoots.flatMap(listJavaScriptFiles),
-  path.join(projectRoot, "public", "sw.js"),
+  path.join(projectRoot, "web", "sw.js"),
 ];
 for (const file of files) {
   const relative = path.relative(projectRoot, file);
@@ -50,7 +46,7 @@ for (const file of files) {
   }
 }
 // Generated modules: a header comment, then `export default {…};` on a single line.
-for (const relative of ["public/data/mystic-forge-recipes.js"]) {
+for (const relative of ["web/data/mystic-forge-recipes.js"]) {
   const source = readFileSync(path.join(projectRoot, relative), "utf8");
   const body = source.slice(source.indexOf("export default "));
   if (body.trimEnd().includes("\n")) {

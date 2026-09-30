@@ -36,5 +36,5 @@ jobs:
           body: |
             Automated weekly re-read of Mystic Forge recipes (`npm run update-forge`).
             Tests passed against the new data. Review the diff size, then merge to deploy.
-          add-paths: public/data/mystic-forge-recipes.js
+          add-paths: web/data/mystic-forge-recipes.js
           delete-branch: true

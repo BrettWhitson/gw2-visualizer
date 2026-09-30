@@ -4,8 +4,8 @@ import assert from "node:assert/strict";
 import {
   GRAPH_SHAPES,
   generateGraph,
-} from "../public/src/sandbox/generate-graph.js";
-import { sandboxElements } from "../public/src/sandbox/sandbox-elements.js";
+} from "../web/src/sandbox/generate-graph.js";
+import { sandboxElements } from "../web/src/sandbox/sandbox-elements.js";
 
 test("generated graphs: the size asked for, edges always run down a level, and a seed repeats", () => {
   for (const shape of Object.keys(GRAPH_SHAPES)) {
@@ -89,7 +89,7 @@ test("sandbox elements: colour by rarity or depth, and icons stick to an item's 
 
 test("probes: links from an item, and how far each group moved", async () => {
   const { hopDistances, movementByHops, hopColor } =
-    await import("../public/src/sandbox/probes.js");
+    await import("../web/src/sandbox/probes.js");
   const edges = [
     { source: "a", target: "b" },
     { source: "b", target: "c" },

@@ -1,4 +1,4 @@
-import { UNLIMITED_DEPTH } from "../public/src/config/constants.js";
+import { UNLIMITED_DEPTH } from "../web/src/config/constants.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -7,8 +7,8 @@ import {
   collectMissingCraftingLevels,
   walkTree,
   getCollapseKey,
-} from "../public/src/model/craft-tree.js";
-import { TreeState } from "../public/src/model/tree-state.js";
+} from "../web/src/model/craft-tree.js";
+import { TreeState } from "../web/src/model/tree-state.js";
 import {
   RECIPES,
   createFakeGameData,

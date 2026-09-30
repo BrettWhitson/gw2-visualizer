@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildArmory } from "../public/src/model/character-armory.js";
+import { buildArmory } from "../web/src/model/character-armory.js";
 import {
   armoryHtml,
   characterListHtml,
   pieceCardHtml,
   pieceTooltipHtml,
-} from "../public/src/ui/character-view.js";
+} from "../web/src/ui/character-view.js";
 
 // Everything a player (or the API) names is text: none of it may become markup or break out of an attribute.
 const HOSTILE = `<img src=x onerror=alert(1)>"'`;

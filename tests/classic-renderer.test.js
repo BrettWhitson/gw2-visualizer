@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import cytoscape from "cytoscape";
-import { GraphTransition } from "../public/src/graph/graph-transition.js";
+import { GraphTransition } from "../web/src/graph/graph-transition.js";
 
 // GraphTransition schedules frames with the browser's animation-frame API.
 globalThis.requestAnimationFrame ??= (callback) =>

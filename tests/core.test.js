@@ -4,16 +4,16 @@ import {
   formatCoinsText,
   formatCoinsHtml,
   formatQuantity,
-} from "../public/src/utils/format.js";
-import { chunkArray, runWithConcurrency } from "../public/src/utils/async.js";
-import { escapeHtml } from "../public/src/utils/dom.js";
-import { TreeState } from "../public/src/model/tree-state.js";
+} from "../web/src/utils/format.js";
+import { chunkArray, runWithConcurrency } from "../web/src/utils/async.js";
+import { escapeHtml } from "../web/src/utils/dom.js";
+import { TreeState } from "../web/src/model/tree-state.js";
 import {
   DEFAULT_SETTINGS,
   VIEW_OPTION_GROUPS,
   PRESET_KINDS,
   findMatchingPreset,
-} from "../public/src/config/settings-schema.js";
+} from "../web/src/config/settings-schema.js";
 
 // ---------------------------------------------------------------- utils
 
@@ -133,8 +133,7 @@ test("SettingsStore migrates pre-refactor keys and drops unknown ones", async ()
       maxDepth: 3,
     }),
   });
-  const { SettingsStore } =
-    await import("../public/src/core/settings-store.js");
+  const { SettingsStore } = await import("../web/src/core/settings-store.js");
   const store = new SettingsStore();
   assert.equal(
     store.values.direction,
@@ -148,8 +147,7 @@ test("SettingsStore migrates pre-refactor keys and drops unknown ones", async ()
 
 test("layout and style presets are independent and keep what is being viewed", async () => {
   installFakeLocalStorage();
-  const { SettingsStore } =
-    await import("../public/src/core/settings-store.js");
+  const { SettingsStore } = await import("../web/src/core/settings-store.js");
   const store = new SettingsStore();
   store.set("viewMode", "merged");
   store.set("nodeShape", "hexagon");
@@ -192,15 +190,13 @@ test('saved depth "All" (99) maps to the unlimited slider step', async () => {
   installFakeLocalStorage({
     "gw2ct.settings.v2": JSON.stringify({ maxDepth: 99 }),
   });
-  const { SettingsStore } =
-    await import("../public/src/core/settings-store.js");
-  const { UNLIMITED_DEPTH } = await import("../public/src/config/constants.js");
+  const { SettingsStore } = await import("../web/src/core/settings-store.js");
+  const { UNLIMITED_DEPTH } = await import("../web/src/config/constants.js");
   assert.equal(new SettingsStore().values.maxDepth, UNLIMITED_DEPTH);
 });
 
 test("old layout engines become the two layouts: concentric → radial, force-directed → radial and floating", async () => {
-  const { SettingsStore } =
-    await import("../public/src/core/settings-store.js");
+  const { SettingsStore } = await import("../web/src/core/settings-store.js");
   installFakeLocalStorage({
     "gw2ct.settings.v2": JSON.stringify({
       layoutEngine: "concentric",
@@ -243,8 +239,7 @@ test("saved density and spacing settings become equivalent forces", async () => 
       siblingGapScale: 1,
     }),
   });
-  const { SettingsStore } =
-    await import("../public/src/core/settings-store.js");
+  const { SettingsStore } = await import("../web/src/core/settings-store.js");
   const store = new SettingsStore();
   for (const gone of [
     "density",

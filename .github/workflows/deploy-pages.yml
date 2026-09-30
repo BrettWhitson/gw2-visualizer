@@ -41,11 +41,11 @@ jobs:
       - name: Reuse the published snapshot
         if: steps.snapshot.outcome == 'failure'
         run: |
-          mkdir -p public/data/snapshot
+          mkdir -p web/static/data/snapshot
           base="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/snapshot"
-          curl -fsSL "$base/meta.json" -o public/data/snapshot/meta.json &&
-            curl -fsSL "$base/game-data.json.gz" -o public/data/snapshot/game-data.json.gz ||
-            rm -rf public/data/snapshot
+          curl -fsSL "$base/meta.json" -o web/static/data/snapshot/meta.json &&
+            curl -fsSL "$base/game-data.json.gz" -o web/static/data/snapshot/game-data.json.gz ||
+            rm -rf web/static/data/snapshot
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

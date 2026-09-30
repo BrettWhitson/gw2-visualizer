@@ -14,7 +14,7 @@ import {
   findBlocked,
   tradingPostNet,
   usefulMaterials,
-} from "../public/src/model/craftable.js";
+} from "../web/src/model/craftable.js";
 import { RECIPES, createFakeGameData } from "./helpers/fixtures.js";
 
 /*

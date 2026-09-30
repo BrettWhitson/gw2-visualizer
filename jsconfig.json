@@ -5,5 +5,5 @@
     "checkJs": false,
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["public/src/**/*.js", "public/data/**/*.js", "tools/**/*.mjs", "tests/**/*.js"]
+  "include": ["web/src/**/*.js", "web/data/**/*.js", "tools/**/*.mjs", "tests/**/*.js"]
 }

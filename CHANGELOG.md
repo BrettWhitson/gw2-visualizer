@@ -1,7 +1,18 @@
 # Changelog
 
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
-`public/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
+`web/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
+
+## Unreleased
+
+- **The site is now built with Vite** (phase 1 of moving to Svelte; nothing looks or works differently). Pages load
+  a handful of bundled, content-hashed files instead of about 80 separate modules: the crafting page drops from 82
+  requests and 408 KB to 9 requests and 285 KB (gzip, Cytoscape and the Mystic Forge data included). Hashed files are
+  cached for good, by the browser and by the service worker, whose list of files to keep offline now comes from the
+  build.
+- Development: `public/` is now `web/`, with the files that ship untouched in `web/static/`. `npm start` runs Vite
+  with hot reload, `npm run preview` serves the built site, and `npm run dev:local` runs against the Prism and Tether
+  checkouts beside the repo. Prism and Tether are pinned packages that Vite bundles, no longer copied into the repo.
 
 ## 0.10.0 — 2026-09-30
 

@@ -1,4 +1,4 @@
-// Build public/data/mystic-forge-recipes.js from the Guild Wars 2 wiki's Semantic MediaWiki data. No dependencies.
+// Build web/data/mystic-forge-recipes.js from the Guild Wars 2 wiki's Semantic MediaWiki data. No dependencies.
 //
 // The official GW2 API has no Mystic Forge recipes, so this reads them from the wiki's public query API
 // (api.php?action=ask — structured data, not HTML scraping), resolves ingredient/output names to item or currency ids,
@@ -20,13 +20,13 @@ import {
   GW2_API_BASE_URL,
   GW2_API_SCHEMA_VERSION,
   REPOSITORY_URL,
-} from "../public/src/config/constants.js";
+} from "../web/src/config/constants.js";
 
 const WIKI_API_URL = "https://wiki.guildwars2.com/api.php";
 const OUTPUT_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "..",
-  "public",
+  "web",
   "data",
   "mystic-forge-recipes.js",
 );
@@ -34,7 +34,7 @@ const OUTPUT_PATH = path.resolve(
 const CONTACT = process.env.WIKI_CONTACT || REPOSITORY_URL;
 if (!CONTACT) {
   console.error(
-    "Set WIKI_CONTACT (a URL or email the wiki admins can reach you at), or REPOSITORY_URL in public/src/config/constants.js.",
+    "Set WIKI_CONTACT (a URL or email the wiki admins can reach you at), or REPOSITORY_URL in web/src/config/constants.js.",
   );
   process.exit(1);
 }
@@ -347,11 +347,11 @@ if (
   isGeneratedLayout(readFileSync(OUTPUT_PATH, "utf8"))
 ) {
   log(
-    `No changes: ${apiRecipes.length} recipes, public/data/mystic-forge-recipes.js left untouched`,
+    `No changes: ${apiRecipes.length} recipes, web/data/mystic-forge-recipes.js left untouched`,
   );
 } else {
   writeModule(apiRecipes);
   log(
-    `Wrote ${apiRecipes.length} recipes to public/data/mystic-forge-recipes.js (${skipped} skipped: output not resolvable)`,
+    `Wrote ${apiRecipes.length} recipes to web/data/mystic-forge-recipes.js (${skipped} skipped: output not resolvable)`,
   );
 }

@@ -5,9 +5,9 @@ import {
   isForgeResult,
   getSourceCategory,
   getDisciplineKey,
-} from "../public/src/model/graph-model.js";
-import { CraftTreeBuilder } from "../public/src/model/craft-tree.js";
-import { TreeState } from "../public/src/model/tree-state.js";
+} from "../web/src/model/graph-model.js";
+import { CraftTreeBuilder } from "../web/src/model/craft-tree.js";
+import { TreeState } from "../web/src/model/tree-state.js";
 import {
   createFakeGameData,
   createFakePriceBook,

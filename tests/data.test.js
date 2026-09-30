@@ -3,17 +3,17 @@ import assert from "node:assert/strict";
 import {
   ItemSearchIndex,
   decodeItemChatLink,
-} from "../public/src/data/item-search-index.js";
+} from "../web/src/data/item-search-index.js";
 import {
   Gw2ApiClient,
   MAX_RETRY_AFTER_MS,
   normalizeRecipe,
   normalizeItem,
   withSchemaVersion,
-} from "../public/src/data/gw2-api-client.js";
-import { GW2_API_SCHEMA_VERSION } from "../public/src/config/constants.js";
-import { GameData } from "../public/src/data/game-data.js";
-import { PriceBook } from "../public/src/data/price-book.js";
+} from "../web/src/data/gw2-api-client.js";
+import { GW2_API_SCHEMA_VERSION } from "../web/src/config/constants.js";
+import { GameData } from "../web/src/data/game-data.js";
+import { PriceBook } from "../web/src/data/price-book.js";
 import { createFakeGameData } from "./helpers/fixtures.js";
 
 test("decodes item chat links", () => {
