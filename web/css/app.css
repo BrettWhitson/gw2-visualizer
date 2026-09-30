@@ -206,84 +206,6 @@ a.icon:hover {
   border-color: var(--accent);
 }
 
-/* ---------- ribbon (toolbar) ----------
-   Every group is a column of 28px rows (.rctl) + a caption; every row is [label | control(s)]. Groups wrap onto a
-   second line on narrow windows instead of being clipped or scrolled. */
-.ribbon-wrap {
-  position: relative;
-  z-index: 6;
-  --rlabel: 36px;
-  --rrow: 28px;
-}
-.ribbon {
-  padding: 6px 10px 4px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-}
-.ribbon[hidden] {
-  display: none !important;
-}
-.ribbon-groups {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  row-gap: 6px;
-}
-.rgroup {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 0 8px;
-  border-right: 1px solid var(--line);
-}
-.rgroup:first-child {
-  padding-left: 2px;
-}
-.rgroup:last-child {
-  border-right: 0;
-}
-/* Groups a preset controls get a gold top edge; the Presets group's caption is gold too. */
-.rgroup.layout,
-.rgroup.style {
-  box-shadow: inset 0 2px 0 #d6a74a40;
-  padding-top: 4px;
-}
-.rgroup.presets {
-  box-shadow: inset 0 2px 0 var(--accent);
-  padding-top: 4px;
-}
-.rgroup.presets .rcaption {
-  color: var(--accent2);
-}
-.rctl {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: var(--rrow);
-  border-radius: 5px;
-}
-.rlabel {
-  flex: 0 0 var(--rlabel);
-  font-size: 12px;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.rctl select {
-  width: 104px;
-  height: 26px;
-  padding: 2px 6px;
-}
-.rctl.num input[type="range"] {
-  width: 52px;
-  accent-color: var(--accent);
-}
-.rctl.num output {
-  flex: 0 0 34px;
-  text-align: right;
-  font-size: 11px;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
 /* −/+ steppers: 24px targets (WCAG 2.2 AA). */
 .step {
   flex: 0 0 24px;
@@ -295,19 +217,7 @@ a.icon:hover {
   touch-action: manipulation;
   user-select: none;
 }
-.rcaption {
-  margin: auto 0 0;
-  padding: 2px 0 0;
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: 0.7px;
-  text-align: center;
-}
-.pills {
-  gap: 4px;
-}
+
 .pill {
   position: relative;
   cursor: pointer;
@@ -347,7 +257,7 @@ a.icon:hover {
   outline-offset: 2px;
 }
 
-/* ---------- edge handles (collapse the ribbon / side panel from their own edge) ---------- */
+/* ---------- edge handle (collapse the side panel from its own edge) ---------- */
 .edge-handle {
   position: absolute;
   z-index: 7;
@@ -365,18 +275,7 @@ a.icon:hover {
   color: var(--accent2);
   border-color: var(--accent);
 }
-.ribbon-handle {
-  left: 50%;
-  top: 100%;
-  width: 48px;
-  height: 16px;
-  transform: translate(-50%, -1px);
-  border-top: 0;
-  border-radius: 0 0 8px 8px;
-}
-.ribbon-handle[aria-expanded="false"] span[aria-hidden] {
-  transform: rotate(180deg);
-}
+
 main {
   --sidebar-w: 360px;
 }
@@ -428,7 +327,7 @@ main.panel-collapsed .panel-resizer {
   color: var(--accent2);
 }
 
-/* segmented buttons (ribbon + elsewhere) */
+/* segmented buttons */
 .seg {
   display: inline-flex;
   border: 1px solid var(--line);
@@ -1504,7 +1403,7 @@ button.danger:hover:not(:disabled) {
   }
 }
 
-/* ---------- ribbon: double-click reset feedback ---------- */
+/* ---------- options: double-click reset feedback ---------- */
 @keyframes resetFlash {
   from {
     background-color: #3a2f12;
@@ -1622,25 +1521,8 @@ button.danger:hover:not(:disabled) {
   }
 }
 
-/* Phones: one row of ribbon groups that scrolls sideways (wrapping would bury the graph). */
-@media (max-width: 700px) {
-  .ribbon-groups {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: thin;
-    overscroll-behavior-x: contain;
-  }
-  .rgroup {
-    flex: 0 0 auto;
-  }
-}
-
-/* Touch screens: handles large enough to hit (24px minimum). */
+/* Touch screens: a handle large enough to hit (24px minimum). */
 @media (hover: none) {
-  .ribbon-handle {
-    width: 64px;
-    height: 24px;
-  }
   .panel-handle {
     width: 24px;
     height: 64px;
@@ -1691,87 +1573,6 @@ a.icon,
   transition: transform 0.15s;
 }
 
-/* ---------- ribbon: section captions (reset / more) and the section popout ---------- */
-.rcaption-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  margin-top: auto;
-}
-.rcaption-row .rcaption {
-  margin: 0 4px 0 0;
-}
-.rsec-btn {
-  display: inline-grid;
-  place-items: center;
-  width: 24px;
-  height: 20px;
-  padding: 0;
-  background: transparent;
-  border-color: transparent;
-  color: var(--muted);
-}
-.rsec-btn .ico {
-  width: 13px;
-  height: 13px;
-}
-.rsec-btn:hover,
-.rsec-btn:focus-visible,
-.rsec-btn[aria-expanded="true"] {
-  color: var(--accent2);
-  border-color: var(--line);
-  background: var(--panel2);
-}
-.rsec-btn[aria-expanded="true"] .ico {
-  transform: rotate(180deg);
-}
-.rgroup.popout-open {
-  background: linear-gradient(transparent 60%, #d6a74a14);
-}
-.ribbon-popout {
-  position: absolute;
-  z-index: 25;
-  width: 380px;
-  max-width: calc(100vw - 16px);
-  max-height: min(70vh, 600px);
-  overflow-y: auto;
-  padding: 0 12px 8px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-top: 2px solid var(--accent);
-  border-radius: 0 0 8px 8px;
-  box-shadow: 0 16px 40px #000c;
-  animation: popIn 0.14s ease-out;
-}
-.popout-head {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0 6px;
-  background: var(--panel);
-}
-.popout-head h3 {
-  flex: 1;
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
-  color: var(--accent2);
-}
-.popout-close {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  background: none;
-  border-color: transparent;
-  color: var(--muted);
-}
-
 /* Option rows: the control column may shrink (range inputs have a ~130px intrinsic minimum that otherwise pushes
    the readout and reset button out of view). */
 .opt,
@@ -1789,9 +1590,6 @@ a.icon,
 }
 .opt .rng .step {
   flex: 0 0 24px;
-}
-.ribbon-popout {
-  overflow-x: hidden;
 }
 
 /* ---------- header: app icon beside the name ---------- */

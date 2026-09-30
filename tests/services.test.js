@@ -101,43 +101,25 @@ test("Customize and Settings panels split the options, and presets only touch Cu
   );
 });
 
-test("every ribbon control belongs to a section, so its section reset covers it", async () => {
-  const { readFileSync } = await import("node:fs");
-  const { RIBBON_SECTIONS, sectionResetKeys } =
-    await import("../web/src/ui/ribbon-sections.js");
-  const { VIEW_OPTION_GROUPS } =
+test("every setting stays reachable without the ribbon: the View popover, Customize or Settings", async () => {
+  const { DEFAULT_SETTINGS, VIEW_OPTION_GROUPS, getOptionDefinition } =
     await import("../web/src/config/settings-schema.js");
-  const html = readFileSync(
-    new URL("../web/index.html", import.meta.url),
-    "utf8",
+  const { POPOVER_GROUPS, QUICK_KEYS } =
+    await import("../web/src/ui/view-popover.js");
+  // Kept by the app itself, not chosen in a panel.
+  const internal = new Set(["settingsRevision", "sidebarOpen", "sidebarWidth"]);
+  const inPanels = new Set(
+    VIEW_OPTION_GROUPS.flatMap((group) => group.options.map((o) => o.key)),
   );
-  const ribbon = html.slice(
-    html.indexOf('<nav id="toolbar"'),
-    html.indexOf("</nav>"),
-  );
-  const controls = [...ribbon.matchAll(/data-setting="(\w+)"/g)].map(
-    (m) => m[1],
-  );
-  const groupIds = new Set(VIEW_OPTION_GROUPS.map((group) => group.id));
-  for (const [id, section] of Object.entries(RIBBON_SECTIONS))
-    for (const group of section.groups)
-      assert.ok(groupIds.has(group), `${id}: unknown group ${group}`);
-  const covered = new Set(
-    Object.keys(RIBBON_SECTIONS).flatMap((id) =>
-      sectionResetKeys(id, VIEW_OPTION_GROUPS),
-    ),
-  );
-  for (const key of controls)
+  for (const key of Object.keys(DEFAULT_SETTINGS))
     assert.ok(
-      covered.has(key),
-      `ribbon control ${key} is reset by some section`,
+      internal.has(key) || inPanels.has(key) || QUICK_KEYS.includes(key),
+      `${key} can be changed somewhere`,
     );
-  // Each section's ⌄ opens exactly the section it names.
-  for (const [, section] of ribbon.matchAll(/data-section-toggle="(\w+)"/g))
-    assert.ok(
-      RIBBON_SECTIONS[section]?.groups.length,
-      `${section} has a popout`,
-    );
+  for (const key of [...QUICK_KEYS, ...POPOVER_GROUPS.flatMap((g) => g.keys)])
+    assert.ok(getOptionDefinition(key), `the popover's ${key} is defined`);
+  for (const key of POPOVER_GROUPS.flatMap((g) => g.keys))
+    assert.ok(inPanels.has(key), `${key} is also under All settings`);
 });
 
 test("the API key is remembered only when asked, and forgotten completely", () => {

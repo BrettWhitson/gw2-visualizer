@@ -119,7 +119,13 @@ test("refreshing a tab-only key doesn't touch another tab's remembered key", asy
   });
   assert.equal(await session.restore(), true);
   assert.equal(await session.refresh(), true);
-  for (let turn = 0; turn < 50; turn++) await tick();
+  // The snapshot is written after hashing the key (real async crypto): wait by the clock, not a count of turns.
+  const deadline = performance.now() + 5000;
+  while (
+    !tabStorage.map.has("gw2ct.accountSnapshot") &&
+    performance.now() < deadline
+  )
+    await tick();
   assert.equal(local.getItem("gw2ct.apiKey"), KEY_A, "tab A's key stays");
   assert.equal(keysB.get(), KEY_B);
   assert.equal(

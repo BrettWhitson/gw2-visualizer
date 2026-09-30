@@ -3,6 +3,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { VitePWA } from "vite-plugin-pwa";
 
 /** The deployed pages, one build input each. lab/ holds development-only pages, served by `vite` but not built. */
@@ -87,6 +88,7 @@ export default defineConfig(({ mode }) => ({
   },
   preview: { port: 8642, strictPort: true },
   plugins: [
+    svelte(),
     devCsp(),
     noInlineScripts(),
     VitePWA({

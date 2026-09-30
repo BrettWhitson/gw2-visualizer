@@ -1,6 +1,6 @@
 /**
- * A small overview of the whole graph (design-branch prototype): every node as a dot in its colour, the visible
- * area as a frame. Click or drag in it to move the view there. Built on Prism's public camera API: positions(),
+ * A small overview of the whole graph in the canvas's bottom-right corner: every node as a dot in its colour, the
+ * visible area as a frame. Click or drag in it to move the view there. Built on Prism's camera API: positions(),
  * getViewport() / setViewport() and the viewportChange, render, drag and physics events.
  */
 
@@ -19,6 +19,7 @@ export class Minimap {
   #view;
   #container;
   #colorOf;
+  #onMove;
   #canvas;
   #context;
   #visible = false;
@@ -34,14 +35,15 @@ export class Minimap {
   /**
    * @param {import('../render/webgl-graph-view.js').WebGLGraphView} view
    * @param {HTMLElement} container  the graph's wrapper (the minimap floats in its corner)
-   * @param {{ colorOf(nodeId: string): string | null }} options
+   * @param {{ colorOf(nodeId: string): string | null, onMove?(): void }} options  onMove: the view was moved from here
    */
-  constructor(view, container, { colorOf }) {
+  constructor(view, container, { colorOf, onMove = () => {} }) {
     this.#view = view;
     this.#container = container;
     this.#colorOf = colorOf;
+    this.#onMove = onMove;
     this.#canvas = document.createElement("canvas");
-    this.#canvas.className = "dl-minimap";
+    this.#canvas.className = "minimap";
     this.#canvas.hidden = true;
     this.#canvas.setAttribute("role", "img");
     this.#canvas.setAttribute(
@@ -165,6 +167,7 @@ export class Minimap {
       { panX: size.x / 2 - graphX * zoom, panY: size.y / 2 - graphY * zoom },
       { animate: event.type === "pointerdown" },
     );
+    this.#onMove();
   }
 
   #bindPointer() {

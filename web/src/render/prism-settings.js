@@ -14,6 +14,7 @@ const HOVER_MODES = {
 };
 // Edges run product → ingredient, so the product is an edge's source.
 const ARROW_ENDS = { product: "source", ingredient: "target", both: "both" };
+// "source" (where the ingredient comes from) is drawn by class rules (render/edge-sources.js) over neutral edges.
 const EDGE_COLOR_MODES = { child: "target", parent: "source" };
 
 /**
@@ -73,6 +74,8 @@ export function prismOptions(s) {
 
     hoverMode: HOVER_MODES[s.hoverMode] ?? "both",
     pinSelectionLineage: s.pinSelectionLineage,
+    // TODO(prism 0.3.0): lineageColor: "edge", so a lit lineage keeps each edge's own colour (the "Where it comes
+    // from" edge colours) instead of repainting it in the lineage colours.
     animateFlow: s.animateFlow,
     // Flow runs from ingredient to product: against the edges on the crafting page, along them where a page's edges
     // run ingredient → product (flowToward: "target").

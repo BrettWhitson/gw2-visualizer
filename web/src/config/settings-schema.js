@@ -9,12 +9,12 @@ const prefersReducedMotion =
   globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
 export const DEFAULT_SETTINGS = Object.freeze({
-  // what you're looking at (ribbon)
+  // what you're looking at (the View popover)
   viewMode: "tree", // 'tree' = one node per occurrence, 'merged' = shared ingredients combined
   // Layout: a directional tree whose crafting flow (raw → result) runs TB | LR | BT | RL (BT = result on top), or
   // "radial" (result in the centre, one ring per level).
   direction: "BT",
-  settingsRevision: 2, // bumped when saved values need migrating (see migrateLegacySettings)
+  settingsRevision: 3, // bumped when saved values need migrating (see migrateLegacySettings)
   maxDepth: UNLIMITED_DEPTH, // levels expanded by default; UNLIMITED_DEPTH = all
   includeForgePromotions: false, // treat Mystic Forge material promotions (T6 mats, lodestones…) as crafts
   wikiSources: true, // look up vendors & containers on the wiki when an item's details are opened
@@ -23,7 +23,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
   useOwned: true, // with a connected account: use owned items first, and only buy or craft the rest
   sidebarOpen: true,
   sidebarWidth: 360, // px, dragged with the side panel's edge
-  ribbonCollapsed: false,
   // physics (Tether, layout/): "elastic" = the graph holds its layout and a dragged node pulls its links, fading hop
   // by hop; "floating" = the whole graph is a live force simulation, like Obsidian's graph view
   physicsMode: "elastic",
@@ -55,7 +54,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   // edges
   edgeRouting: "taxi", // taxi | round-taxi | bezier | straight
   edgeWidth: 1.6,
-  edgeColorMode: "neutral", // neutral | child | parent
+  edgeColorMode: "source", // source (where the ingredient comes from) | neutral | child | parent
   edgeColor: "#3b4558",
   edgeOpacity: 1,
   showArrows: true,
@@ -207,7 +206,12 @@ export function migrateLegacySettings(saved) {
     const flipped = { TB: "BT", BT: "TB", LR: "RL", RL: "LR" };
     saved.direction = flipped[saved.direction] ?? saved.direction;
   }
-  saved.settingsRevision = 2;
+  // Revision 3: edges are coloured by where the ingredient comes from by default. "Single color" was the old
+  // default, so move saved ones over (someone who picks it again keeps it).
+  if ((saved.settingsRevision ?? 1) < 3 && saved.edgeColorMode === "neutral")
+    saved.edgeColorMode = "source";
+  saved.settingsRevision = 3;
+  delete saved.ribbonCollapsed; // the ribbon became the View popover
   // Layout engines went: the old "Concentric rings" and "Force-directed" engines became the radial layout (the
   // force web floats, as it did). Ranking, alignment and the drag-physics switch went with them.
   if (saved.layoutEngine === "concentric" || saved.engine === "concentric")
@@ -250,8 +254,8 @@ export const Redraw = Object.freeze({
  * Option definitions, split between two panels:
  *  - CUSTOMIZE_GROUPS (side panel "Customize"): how the graph *looks*. Presets only ever touch these.
  *  - SETTINGS_GROUPS (the Settings dialog): how the app *behaves*: recipes & prices, interaction, animation.
- * `visibleWhen` hides options that don't apply; `hint` becomes the tooltip. The ribbon reuses these definitions for
- * any setting it shows (labels, ranges, redraw level).
+ * `visibleWhen` hides options that don't apply; `hint` becomes the tooltip. The View popover reuses these
+ * definitions for the settings it shows (labels, ranges, redraw level).
  */
 export const CUSTOMIZE_GROUPS = [
   {
@@ -541,7 +545,9 @@ export const CUSTOMIZE_GROUPS = [
         label: "Color",
         type: "select",
         redraw: Redraw.restyle,
+        hint: "Where it comes from: each edge takes the colour of its ingredient's source (crafted, Mystic Forge, bought, currency), shown in the legend.",
         choices: [
+          ["source", "Where it comes from"],
           ["neutral", "Single color"],
           ["child", "Ingredient color"],
           ["parent", "Product color"],
@@ -932,7 +938,7 @@ export const SETTINGS_GROUPS = [
 /** Every panel option (Customize + Settings). */
 export const VIEW_OPTION_GROUPS = [...CUSTOMIZE_GROUPS, ...SETTINGS_GROUPS];
 
-/** Settings changed only from the ribbon. */
+/** Settings changed only from the View popover's top rows (not option panels). */
 const RIBBON_ONLY_OPTIONS = [
   { key: "viewMode", label: "View", redraw: Redraw.fit },
   {
@@ -948,7 +954,7 @@ const RIBBON_ONLY_OPTIONS = [
   { key: "pathMode", label: "Path", redraw: Redraw.fit },
 ];
 
-/** Ribbon "Path" choices (see PathPlanner). */
+/** "Path" choices in the View popover (see PathPlanner). */
 export const PATH_MODES = {
   standard: {
     label: "Craft all",
@@ -1002,7 +1008,7 @@ export function formatOptionValue(option, value) {
  *  - layout: the Layout and Forces sections (engine, direction, alignment, ordering; center / repel / link forces);
  *  - style:  how things look (Nodes, Labels, Edges, Mystic Forge, Highlight, Canvas).
  * Applying a preset resets its slice to defaults, then applies its values; the other slice is untouched. Filters,
- * what you're viewing (ribbon: view, depth, path) and app behaviour (Settings) are never part of a preset.
+ * what you're viewing (View popover: view, depth, path) and app behaviour (Settings) are never part of a preset.
  */
 const groupKeys = (...ids) =>
   CUSTOMIZE_GROUPS.filter((group) => ids.includes(group.id)).flatMap((group) =>

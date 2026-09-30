@@ -3,7 +3,17 @@
     "module": "ESNext",
     "target": "ES2022",
     "checkJs": false,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ]
   },
-  "include": ["web/src/**/*.js", "web/data/**/*.js", "tools/**/*.mjs", "tests/**/*.js"]
+  "include": [
+    "web/src/**/*.js",
+    "web/src/**/*.svelte",
+    "web/data/**/*.js",
+    "tools/**/*.mjs",
+    "tests/**/*.js"
+  ]
 }

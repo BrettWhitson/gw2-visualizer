@@ -1,4 +1,5 @@
 import { FORGE_BADGE_URI } from "../config/constants.js";
+import { edgeSourceRules } from "./edge-sources.js";
 import { GraphView as PrismView } from "prism/graph-view.js";
 import {
   gw2ClassRules,
@@ -18,8 +19,6 @@ export class WebGLGraphView {
   #settings;
   #view;
   #pageRules = {};
-  /** Prism options that win over the settings (a design-branch prototype turning something off). */
-  #optionOverrides = {};
   /** What was last handed to Prism, so unchanged settings don't restyle everything. */
   #sent = { options: "", theme: "", rules: "" };
 
@@ -80,17 +79,9 @@ export class WebGLGraphView {
   }
 
   #syncOptions() {
-    this.#sync(
-      "options",
-      { ...prismOptions(this.#settings.values), ...this.#optionOverrides },
-      (options) => this.#view.setOptions(options),
+    this.#sync("options", prismOptions(this.#settings.values), (options) =>
+      this.#view.setOptions(options),
     );
-  }
-
-  /** Options that override the settings until cleared (`{}`), e.g. `{ pinSelectionLineage: false }`. */
-  setOptionOverrides(overrides) {
-    this.#optionOverrides = overrides ?? {};
-    this.#syncOptions();
   }
 
   /**
@@ -109,10 +100,14 @@ export class WebGLGraphView {
   }
 
   #syncClassRules() {
-    const gw2 = gw2ClassRules(this.#settings.values);
+    const values = this.#settings.values;
+    const gw2 = gw2ClassRules(values);
+    // "Where it comes from" edge colours read the design tokens, so they're resolved here rather than in the pure
+    // prism-settings.
+    const sources = values.edgeColorMode === "source" ? edgeSourceRules() : {};
     const rules = {
       nodes: { ...gw2.nodes, ...this.#pageRules.nodes },
-      edges: { ...gw2.edges, ...this.#pageRules.edges },
+      edges: { ...gw2.edges, ...sources.edges, ...this.#pageRules.edges },
     };
     this.#sync("rules", rules, (value) => this.#view.setClassStyles(value));
   }
@@ -170,6 +165,11 @@ export class WebGLGraphView {
 
   clear() {
     this.#view.clear();
+  }
+
+  /** Stop everything and remove the canvases (a component unmounting). */
+  destroy() {
+    this.#view.destroy();
   }
 
   // ---------------------------------------------------------------- physics (Tether), for developer tools

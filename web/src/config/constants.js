@@ -150,6 +150,29 @@ export const SOURCE_LABELS = {
   generic: "Generic",
 };
 
+/**
+ * Edge colours for Customize → Edges → Color "Where it comes from": an edge takes the colour of where its ingredient
+ * comes from (getSourceCategory). Each follows a design token in css/app.css (`--s-*`); `color` mirrors it for where
+ * CSS can't reach (tests check they match).
+ */
+export const EDGE_SOURCE_STYLES = {
+  craft: { label: "Crafted", token: "s-craft", color: "#6ea0ff" },
+  mf: { label: "Mystic Forge", token: "s-forge", color: "#b28cff" },
+  raw: { label: "Bought / raw", token: "s-buy", color: "#e0a05a" },
+  currency: {
+    label: "Currency",
+    token: "s-vendor",
+    color: "#5cc9a7",
+    pattern: "dashed",
+  },
+  generic: {
+    label: "Generic",
+    token: "s-bound",
+    color: "#6b717c",
+    pattern: "dotted",
+  },
+};
+
 /** Cost heatmap gradient: cheap → mid → expensive. */
 export const COST_HEAT_COLORS = ["#34405a", "#ffb347", "#ff4d3d"];
 export const COST_LOW_LEGEND_COLOR = "#5a6a8a";

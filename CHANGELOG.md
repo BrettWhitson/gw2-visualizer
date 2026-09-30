@@ -3,6 +3,29 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `web/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
+## Unreleased
+
+- **The ribbon is gone: a View popover takes its place** (the **View** button in the header, or V). It holds the
+  layout and style presets, what you're viewing (tree or merged, depth, path) and the everyday layout, style and
+  recipe options. **All settings** opens Customize for every other look option, and App settings covers how the app
+  behaves. The graph gets the room the ribbon took.
+- **Edges show where each ingredient comes from**: crafted, Mystic Forge, bought, currency or generic, each in its own
+  colour, with a key in the legend (click it to highlight those ingredients). It's the new default under Customize →
+  Edges → Color ("Where it comes from"); saved single-colour edges move to it once, and the other colourings are
+  still there.
+- **A KPI strip over the graph** for the item you're crafting: craft cost, what buying it on the Trading Post costs,
+  what selling it brings after the 15% fee, and the profit or loss with its margin.
+- **A minimap** in the graph's bottom-right corner (not on phones): the whole tree at a glance, with the visible area
+  framed; click or drag it to move the view.
+- **Fixed: on phones, the toolbar and side panel stayed collapsed on later visits.** They start collapsed on a small
+  screen for that visit only, but the next change to any setting used to save that too.
+- The legend is the site's first Svelte component (phase 2 of the move to Svelte). It looks and works as before, and
+  now follows setting changes on its own.
+- Development: Svelte 5, with `svelte-check`, ESLint and Prettier covering `.svelte` files in `npm run verify`.
+  Settings announce their changes (`SettingsStore.onChange`), `settings.svelte.js` mirrors them as Svelte state,
+  `islands.js` mounts a component inside a page that isn't Svelte yet, and `GraphCanvas.svelte` hosts Prism for the
+  pages that move over next.
+
 ## 0.11.0 — 2026-09-30
 
 - **Fixed: costs missing on a return visit.** With prices already saved in the browser and still fresh (always the
@@ -11,11 +34,6 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 - **A calmer, more neutral look**, the first step of the new design: neutral greys instead of blue-tinted ones, and
   prices set in tabular figures with small gold, silver and copper coin dots, silver and copper quieter than gold.
   The colours are design tokens in the stylesheet, and the graph takes its node and label colours from them.
-- **Design branch prototypes** (the `design` branch only; experiments from the Hybrid redesign, each switchable in the
-  new **Lab** menu so it can be compared with today's crafting page): edges coloured by where each ingredient comes
-  from, with an edge key in the legend; a **View** popover (V) with the presets and the ribbon's controls in place of
-  the ribbon, and All settings for the rest; a KPI strip with the craft cost, Trading Post price, profit after the 15%
-  fee and margin; and a minimap you can click or drag to move the view.
 - **The site is now built with Vite** (phase 1 of moving to Svelte; nothing looks or works differently). Pages load
   a handful of bundled, content-hashed files instead of about 80 separate modules: the crafting page drops from 82
   requests and 408 KB to 9 requests and 285 KB (gzip, Cytoscape and the Mystic Forge data included). Hashed files are
