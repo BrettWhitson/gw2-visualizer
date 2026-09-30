@@ -23,6 +23,9 @@ const ROOT_FILES = ["LICENSE", "THIRD_PARTY_NOTICES.md"]; // linked from the Abo
 
 rmSync(outputDir, { recursive: true, force: true });
 cpSync(path.join(projectRoot, "public"), outputDir, { recursive: true });
+// Development-only pages (benchmarks) aren't deployed.
+for (const lab of ["lab", "src/lab"])
+  rmSync(path.join(outputDir, lab), { recursive: true, force: true });
 for (const file of ROOT_FILES)
   cpSync(path.join(projectRoot, file), path.join(outputDir, file));
 writeFileSync(path.join(outputDir, ".nojekyll"), ""); // GitHub Pages: serve files as-is (keeps _headers etc.)
