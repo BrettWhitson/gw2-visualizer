@@ -4,6 +4,9 @@
  */
 import { CraftingTreeApp } from "./app.js";
 import { registerServiceWorker } from "./pwa.js";
+import { mountSiteChrome } from "./ui/site-chrome.js";
+
+mountSiteChrome({ page: "crafting" });
 
 function showFatalError(message) {
   const overlay = document.getElementById("overlay");

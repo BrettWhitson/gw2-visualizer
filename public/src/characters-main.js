@@ -1,7 +1,6 @@
 /**
  * Entry point for the Characters page: API key → character list → one character's armory (`#<name>`).
  */
-import { ARENANET_NOTICE } from "./config/constants.js";
 import { ApiKeyStore } from "./core/api-key-store.js";
 import {
   AccountClient,
@@ -13,6 +12,7 @@ import { activeBuild, buildArmory } from "./model/character-armory.js";
 import { armoryHtml, characterListHtml } from "./ui/character-view.js";
 import { escapeHtml, querySelector as $ } from "./utils/dom.js";
 import { registerServiceWorker } from "./pwa.js";
+import { mountSiteChrome } from "./ui/site-chrome.js";
 
 class CharactersPage {
   keys = new ApiKeyStore();
@@ -27,7 +27,6 @@ class CharactersPage {
   renderToken = 0;
 
   start() {
-    $("#pageFooter").textContent = ARENANET_NOTICE;
     $("#keyForm").addEventListener("submit", (event) => {
       event.preventDefault();
       this.connect($("#apiKey").value, $("#rememberKey").checked);
@@ -294,6 +293,7 @@ class CharactersPage {
   }
 }
 
+mountSiteChrome({ page: "characters" });
 const page = new CharactersPage();
 if (["localhost", "127.0.0.1"].includes(location.hostname))
   globalThis.gw2Characters = page; // console access while developing

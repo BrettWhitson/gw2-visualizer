@@ -1,0 +1,1000 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <!-- Keep in sync with _headers (hosts that support headers also get frame-ancestors). -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://render.guildwars2.com; connect-src 'self' https://api.guildwars2.com https://wiki.guildwars2.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'"
+    />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+
+    <title>
+      GW2 Visualizer (unofficial fansite): Guild Wars 2 crafting tree explorer
+    </title>
+    <meta
+      name="description"
+      content="Unofficial fansite. Search any Guild Wars 2 item and explore its full crafting tree: Mystic Forge recipes, trading post costs, buy-vs-craft hints and a shopping list."
+    />
+    <meta name="theme-color" content="#151a24" />
+    <meta name="color-scheme" content="dark" />
+
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link
+      rel="icon"
+      href="icons/icon-192.png"
+      type="image/png"
+      sizes="192x192"
+    />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <link rel="manifest" href="manifest.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="GW2 Visualizer (unofficial fansite)" />
+    <meta
+      property="og:description"
+      content="Interactive Guild Wars 2 crafting trees with Mystic Forge recipes, trading post costs and a shopping list."
+    />
+    <meta property="og:image" content="icons/icon-512.png" />
+    <meta name="twitter:card" content="summary" />
+
+    <!-- Start TLS handshakes early for the API and icon CDN. -->
+    <link rel="preconnect" href="https://api.guildwars2.com" crossorigin />
+    <link rel="preconnect" href="https://render.guildwars2.com" crossorigin />
+    <link rel="modulepreload" href="src/app.js" />
+
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <!-- UI icons (stroke = currentColor), used as <svg class="ico"><use href="#i-…"/></svg>. -->
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      style="display: none"
+      aria-hidden="true"
+    >
+      <symbol id="i-back" viewBox="0 0 24 24">
+        <path d="M19 12H5M11 6l-6 6 6 6" />
+      </symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24">
+        <path
+          d="M19.60 12.00 L21.81 13.95 L21.24 15.83 L18.32 16.22 L17.37 17.37 L17.56 20.31 L15.83 21.24 L13.48 19.45 L12.00 19.60 L10.05 21.81 L8.17 21.24 L7.78 18.32 L6.63 17.37 L3.69 17.56 L2.76 15.83 L4.55 13.48 L4.40 12.00 L2.19 10.05 L2.76 8.17 L5.68 7.78 L6.63 6.63 L6.44 3.69 L8.17 2.76 L10.52 4.55 L12.00 4.40 L13.95 2.19 L15.83 2.76 L16.22 5.68 L17.37 6.63 L20.31 6.44 L21.24 8.17 L19.45 10.52Z"
+        />
+        <circle cx="12" cy="12" r="3.2" />
+      </symbol>
+      <symbol id="i-customize" viewBox="0 0 24 24">
+        <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+        <circle cx="15" cy="7" r="2.2" />
+        <circle cx="9" cy="17" r="2.2" />
+      </symbol>
+      <symbol id="i-export" viewBox="0 0 24 24">
+        <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+      </symbol>
+      <symbol id="i-chevron-up" viewBox="0 0 24 24">
+        <path d="M6 15l6-6 6 6" />
+      </symbol>
+      <symbol id="i-chevron-down" viewBox="0 0 24 24">
+        <path d="M6 9l6 6 6-6" />
+      </symbol>
+      <symbol id="i-reset" viewBox="0 0 24 24">
+        <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4.2h4.2" />
+      </symbol>
+      <symbol id="i-chevron-right" viewBox="0 0 24 24">
+        <path d="M9 6l6 6-6 6" />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14" />
+      </symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14" /></symbol>
+      <symbol id="i-fit" viewBox="0 0 24 24">
+        <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
+      </symbol>
+      <symbol id="i-target" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="7" />
+        <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+        <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+      </symbol>
+      <symbol id="i-arrow-up" viewBox="0 0 24 24">
+        <path d="M12 19V5M6 11l6-6 6 6" />
+      </symbol>
+      <symbol id="i-arrow-down" viewBox="0 0 24 24">
+        <path d="M12 5v14M6 13l6 6 6-6" />
+      </symbol>
+      <symbol id="i-arrow-right" viewBox="0 0 24 24">
+        <path d="M5 12h14M13 6l6 6-6 6" />
+      </symbol>
+      <symbol id="i-arrow-left" viewBox="0 0 24 24">
+        <path d="M19 12H5M11 6l-6 6 6 6" />
+      </symbol>
+      <symbol id="i-clear" viewBox="0 0 24 24">
+        <path d="M18 6 6 18M6 6l12 12" />
+      </symbol>
+      <symbol id="i-radial" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="2.2" fill="currentColor" />
+        <circle cx="12" cy="12" r="5.8" />
+        <circle cx="12" cy="12" r="9.4" stroke-dasharray="2.6 2.4" />
+      </symbol>
+    </svg>
+    <!--
+    Wiring conventions (see src/app.js):
+      data-setting="<key>"   toolbar control bound to a setting (segmented groups use data-value on each button)
+      data-command="<name>"  button that runs an app command
+  -->
+    <a class="skip-link" href="#search">Skip to search</a>
+    <noscript
+      ><p class="noscript">
+        GW2 Visualizer needs JavaScript enabled.
+      </p></noscript
+    >
+
+    <header id="topbar">
+      <div id="searchWrap">
+        <label for="search" class="sr-only">Search items</label>
+        <input
+          id="search"
+          type="search"
+          autocomplete="off"
+          spellcheck="false"
+          enterkeyhint="search"
+          placeholder="Search item name, ID, or chat link…  ( / )"
+        />
+        <div id="results" hidden></div>
+      </div>
+
+      <label class="qty" title="How many of the root item to craft">
+        Qty
+        <input
+          id="rootQty"
+          type="number"
+          min="1"
+          value="1"
+          inputmode="numeric"
+        />
+      </label>
+
+      <div class="spacer"></div>
+      <button
+        type="button"
+        id="btnBack"
+        class="icon"
+        data-command="back"
+        title="Back (Alt+←)"
+        aria-label="Back to previous item"
+        disabled
+      >
+        <svg class="ico" aria-hidden="true" focusable="false">
+          <use href="#i-back"></use>
+        </svg>
+      </button>
+      <button
+        type="button"
+        id="btnClear"
+        class="icon"
+        data-command="clear-graph"
+        title="Clear the graph (X); Back reopens it"
+        aria-label="Clear the graph and return to the start screen"
+        disabled
+      >
+        <svg class="ico" aria-hidden="true" focusable="false">
+          <use href="#i-clear"></use>
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="icon"
+        data-command="settings"
+        title="Settings (,)"
+        aria-label="Settings"
+        aria-haspopup="dialog"
+      >
+        <svg class="ico" aria-hidden="true" focusable="false">
+          <use href="#i-settings"></use>
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="hbtn"
+        data-command="customize"
+        title="Customize the look (layout, nodes, labels, edges…)"
+      >
+        <span aria-hidden="true"
+          ><svg class="ico" aria-hidden="true" focusable="false">
+            <use href="#i-customize"></use></svg
+        ></span>
+        Customize
+      </button>
+      <button
+        type="button"
+        class="hbtn"
+        data-command="export-png"
+        title="Export the graph as a PNG (keeps the legend highlight)"
+      >
+        <span aria-hidden="true"
+          ><svg class="ico" aria-hidden="true" focusable="false">
+            <use href="#i-export"></use></svg
+        ></span>
+        Export PNG
+      </button>
+    </header>
+
+    <div class="ribbon-wrap">
+      <nav id="toolbar" class="ribbon" aria-label="View options">
+        <div class="ribbon-groups">
+          <section class="rgroup" aria-labelledby="rgView">
+            <div class="rctl">
+              <span class="rlabel" id="lblView">Mode</span>
+              <div
+                class="seg"
+                role="group"
+                aria-labelledby="lblView"
+                data-setting="viewMode"
+                title="Tree: every occurrence is its own node. Merged: shared ingredients combined into one node."
+              >
+                <button type="button" data-value="tree">Tree</button>
+                <button type="button" data-value="merged">Merged</button>
+              </div>
+            </div>
+            <div class="rctl num">
+              <label class="rlabel" for="rbDepth">Depth</label>
+              <button
+                type="button"
+                class="step"
+                data-step="-1"
+                aria-label="One level less ( [ )"
+                title="One level less ( [ )"
+              >
+                &minus;
+              </button>
+              <input id="rbDepth" type="range" data-setting="maxDepth" />
+              <button
+                type="button"
+                class="step"
+                data-step="1"
+                aria-label="One level more ( ] )"
+                title="One level more ( ] )"
+              >
+                +
+              </button>
+              <output for="rbDepth" data-output="maxDepth"></output>
+            </div>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgView">View</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="view"
+                title="Reset View to defaults"
+                aria-label="Reset View to defaults"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-toggle="view"
+                aria-expanded="false"
+                aria-controls="ribbonPopout"
+                title="More View options"
+                aria-label="More View options"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-chevron-down"></use>
+                </svg>
+              </button>
+            </div>
+          </section>
+          <section class="rgroup" aria-labelledby="rgRecipes">
+            <div class="rctl">
+              <label class="rlabel" for="rbPath">Path</label>
+              <select
+                id="rbPath"
+                data-setting="pathMode"
+                data-path-select
+              ></select>
+            </div>
+            <div class="rctl">
+              <span class="rlabel">Forge</span>
+              <label
+                class="pill"
+                title="Include Mystic Forge material promotions (T6 materials, lodestones…) as crafts instead of buying them"
+                ><input
+                  type="checkbox"
+                  data-setting="includeForgePromotions"
+                /><span>Promotions</span></label
+              >
+            </div>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgRecipes">Recipes</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="recipes"
+                title="Reset Recipes to defaults"
+                aria-label="Reset Recipes to defaults"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-toggle="recipes"
+                aria-expanded="false"
+                aria-controls="ribbonPopout"
+                title="More Recipes options"
+                aria-label="More Recipes options"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-chevron-down"></use>
+                </svg>
+              </button>
+            </div>
+          </section>
+          <section class="rgroup presets" aria-labelledby="rgPresets">
+            <div class="rctl">
+              <label class="rlabel" for="rbLayoutPreset">Layout</label>
+              <select id="rbLayoutPreset" data-preset-select="layout"></select>
+            </div>
+            <div class="rctl">
+              <label class="rlabel" for="rbStylePreset">Style</label>
+              <select id="rbStylePreset" data-preset-select="style"></select>
+            </div>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgPresets">Presets</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="presets"
+                title="Reset both presets to Standard"
+                aria-label="Reset both presets to Standard"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+            </div>
+          </section>
+          <section class="rgroup layout" aria-labelledby="rgLayout">
+            <div class="rctl">
+              <span class="rlabel" id="lblDirection">Flow</span>
+              <div
+                class="seg icons"
+                role="group"
+                aria-labelledby="lblDirection"
+                data-setting="direction"
+              >
+                <button
+                  type="button"
+                  data-value="BT"
+                  title="Flow upward: raw materials at the bottom, result on top"
+                  aria-label="Flow upward, result on top"
+                >
+                  <svg class="ico" aria-hidden="true" focusable="false">
+                    <use href="#i-arrow-up"></use>
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  data-value="TB"
+                  title="Flow downward: raw materials on top, result at the bottom"
+                  aria-label="Flow downward, result at the bottom"
+                >
+                  <svg class="ico" aria-hidden="true" focusable="false">
+                    <use href="#i-arrow-down"></use>
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  data-value="LR"
+                  title="Flow left to right: raw materials on the left, result on the right"
+                  aria-label="Flow left to right, result on the right"
+                >
+                  <svg class="ico" aria-hidden="true" focusable="false">
+                    <use href="#i-arrow-right"></use>
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  data-value="RL"
+                  title="Flow right to left: raw materials on the right, result on the left"
+                  aria-label="Flow right to left, result on the left"
+                >
+                  <svg class="ico" aria-hidden="true" focusable="false">
+                    <use href="#i-arrow-left"></use>
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  data-value="radial"
+                  title="Radial: result in the centre, ingredients in rings around it"
+                  aria-label="Radial, result in the centre"
+                >
+                  <svg class="ico" aria-hidden="true" focusable="false">
+                    <use href="#i-radial"></use>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="rctl">
+              <label class="rlabel" for="rbEngine">Engine</label>
+              <select id="rbEngine" data-setting="layoutEngine">
+                <option value="layered">Layered</option>
+                <option value="force">Force-directed</option>
+              </select>
+            </div>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgLayout">Layout</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="layout"
+                title="Reset Layout to defaults"
+                aria-label="Reset Layout to defaults"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-toggle="layout"
+                aria-expanded="false"
+                aria-controls="ribbonPopout"
+                title="More Layout options"
+                aria-label="More Layout options"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-chevron-down"></use>
+                </svg>
+              </button>
+            </div>
+          </section>
+          <section class="rgroup layout" aria-labelledby="rgForces">
+            <div class="rctl num">
+              <label class="rlabel" for="rbRepel">Repel</label>
+              <button
+                type="button"
+                class="step"
+                data-step="-1"
+                aria-label="Weaker repel (tighter)"
+                title="Weaker repel (tighter)"
+              >
+                &minus;
+              </button>
+              <input id="rbRepel" type="range" data-setting="repelForce" />
+              <button
+                type="button"
+                class="step"
+                data-step="1"
+                aria-label="Stronger repel (more space)"
+                title="Stronger repel (more space)"
+              >
+                +
+              </button>
+              <output for="rbRepel" data-output="repelForce"></output>
+            </div>
+            <div class="rctl num">
+              <label class="rlabel" for="rbDistance">Distance</label>
+              <button
+                type="button"
+                class="step"
+                data-step="-1"
+                aria-label="Shorter links"
+                title="Shorter links"
+              >
+                &minus;
+              </button>
+              <input id="rbDistance" type="range" data-setting="linkDistance" />
+              <button
+                type="button"
+                class="step"
+                data-step="1"
+                aria-label="Longer links"
+                title="Longer links"
+              >
+                +
+              </button>
+              <output for="rbDistance" data-output="linkDistance"></output>
+            </div>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgForces">Forces</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="forces"
+                title="Reset Forces to defaults"
+                aria-label="Reset Forces to defaults"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-toggle="forces"
+                aria-expanded="false"
+                aria-controls="ribbonPopout"
+                title="More Forces options"
+                aria-label="More Forces options"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-chevron-down"></use>
+                </svg>
+              </button>
+            </div>
+          </section>
+          <section class="rgroup style" aria-labelledby="rgStyle">
+            <div class="rctl">
+              <label class="rlabel" for="rbColor">Color</label>
+              <select id="rbColor" data-setting="nodeColorMode">
+                <option value="rarity">Rarity</option>
+                <option value="source">Craft source</option>
+                <option value="discipline">Discipline</option>
+                <option value="depth">Tier / depth</option>
+                <option value="cost">Cost heatmap</option>
+              </select>
+            </div>
+            <div class="rctl">
+              <label class="rlabel" for="rbEdges">Edges</label>
+              <select id="rbEdges" data-setting="edgeRouting">
+                <option value="taxi">Orthogonal</option>
+                <option value="round-taxi">Rounded</option>
+                <option value="bezier">Curved</option>
+                <option value="straight">Straight</option>
+              </select>
+            </div>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgStyle">Style</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="style"
+                title="Reset Style to defaults"
+                aria-label="Reset Style to defaults"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-toggle="style"
+                aria-expanded="false"
+                aria-controls="ribbonPopout"
+                title="More Style options"
+                aria-label="More Style options"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-chevron-down"></use>
+                </svg>
+              </button>
+            </div>
+          </section>
+          <section class="rgroup style" aria-labelledby="rgLabels">
+            <div class="rctl pills">
+              <label class="pill" title="Show node labels"
+                ><input type="checkbox" data-setting="showLabels" /><span
+                  >Names</span
+                ></label
+              >
+              <label class="pill" title="Show quantities in labels"
+                ><input type="checkbox" data-setting="showQuantities" /><span
+                  >Qty</span
+                ></label
+              >
+              <label class="pill" title="Add a cost line to labels"
+                ><input type="checkbox" data-setting="showCostInLabel" /><span
+                  >Cost</span
+                ></label
+              >
+            </div>
+            <div class="rctl num">
+              <label class="rlabel" for="rbFade">Fade</label>
+              <button
+                type="button"
+                class="step"
+                data-step="-1"
+                aria-label="Labels fade later (less)"
+                title="Labels fade later (less)"
+              >
+                &minus;
+              </button>
+              <input id="rbFade" type="range" data-setting="labelFadeZoom" />
+              <button
+                type="button"
+                class="step"
+                data-step="1"
+                aria-label="Labels fade sooner (more)"
+                title="Labels fade sooner (more)"
+              >
+                +
+              </button>
+              <output for="rbFade" data-output="labelFadeZoom"></output>
+            </div>
+            <div class="rcaption-row">
+              <h2 class="rcaption" id="rgLabels">Labels</h2>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-reset="labels"
+                title="Reset Labels to defaults"
+                aria-label="Reset Labels to defaults"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-reset"></use>
+                </svg>
+              </button>
+              <button
+                type="button"
+                class="rsec-btn"
+                data-section-toggle="labels"
+                aria-expanded="false"
+                aria-controls="ribbonPopout"
+                title="More Labels options"
+                aria-label="More Labels options"
+              >
+                <svg class="ico" aria-hidden="true" focusable="false">
+                  <use href="#i-chevron-down"></use>
+                </svg>
+              </button>
+            </div>
+          </section>
+        </div>
+      </nav>
+      <div
+        id="ribbonPopout"
+        class="ribbon-popout"
+        role="dialog"
+        aria-modal="false"
+        hidden
+      ></div>
+      <button
+        type="button"
+        id="ribbonHandle"
+        class="edge-handle ribbon-handle"
+        data-command="toggle-ribbon"
+        aria-controls="toolbar"
+        aria-expanded="true"
+        title="Hide the toolbar (T)"
+      >
+        <span aria-hidden="true"
+          ><svg class="ico" aria-hidden="true" focusable="false">
+            <use href="#i-chevron-up"></use></svg></span
+        ><span class="sr-only">Hide the toolbar</span>
+      </button>
+    </div>
+
+    <main>
+      <div id="cyWrap">
+        <div
+          id="cy"
+          tabindex="0"
+          role="application"
+          aria-roledescription="crafting graph"
+          aria-label="Crafting tree graph. Arrow keys move between items (up: product, down: ingredients, left/right: siblings), Enter expands or collapses, Home goes to the root."
+          aria-describedby="graphAnnouncer"
+        ></div>
+        <div id="graphAnnouncer" class="sr-only" aria-live="polite"></div>
+        <div id="empty">
+          <h2>Search for an item to build its crafting tree</h2>
+          <p>
+            Try <a href="#" data-query="Gift of Metal">Gift of Metal</a>,
+            <a href="#" data-query="Vision Crystal">Vision Crystal</a>,
+            <a href="#" data-query="Aurene's Bite">Aurene's Bite</a>,
+            <a href="#" data-query="Refined Envoy Helmet"
+              >Refined Envoy Helmet</a
+            >
+          </p>
+          <div id="recent" class="recent" hidden></div>
+          <ul class="hints">
+            <li>
+              <b>Drag</b> background to pan · <b>scroll</b> or pinch to zoom ·
+              drag nodes to move them
+            </li>
+            <li>
+              <b>Hover</b> a node for details · <b>click</b> to select ·
+              <b>double-click</b> to expand/collapse
+            </li>
+            <li>
+              <b>Right-click</b> (long-press on touch) to cycle alternate
+              recipes · <b>Shift+click</b> to make it the root
+            </li>
+            <li>
+              <b>Click legend entries</b> to highlight · double-click to zoom to
+              them
+            </li>
+            <li>
+              <b>Double-click</b> a ribbon slider or control to reset it ·
+              <b>?</b> all shortcuts · <b>,</b> settings
+            </li>
+          </ul>
+        </div>
+        <div id="zoomCtl" role="group" aria-label="Zoom">
+          <button
+            type="button"
+            data-command="zoom-in"
+            title="Zoom in"
+            aria-label="Zoom in"
+          >
+            <svg class="ico" aria-hidden="true" focusable="false">
+              <use href="#i-plus"></use>
+            </svg>
+          </button>
+          <button
+            type="button"
+            data-command="zoom-out"
+            title="Zoom out"
+            aria-label="Zoom out"
+          >
+            <svg class="ico" aria-hidden="true" focusable="false">
+              <use href="#i-minus"></use>
+            </svg>
+          </button>
+          <button
+            type="button"
+            data-command="fit"
+            title="Fit (F)"
+            aria-label="Fit graph to screen"
+          >
+            <svg class="ico" aria-hidden="true" focusable="false">
+              <use href="#i-fit"></use>
+            </svg>
+          </button>
+          <button
+            type="button"
+            data-command="center-root"
+            title="Center root (R)"
+            aria-label="Center on root item"
+          >
+            <svg class="ico" aria-hidden="true" focusable="false">
+              <use href="#i-target"></use>
+            </svg>
+          </button>
+        </div>
+        <div id="legend" role="toolbar" aria-label="Legend filters"></div>
+      </div>
+
+      <div
+        id="panelResizer"
+        class="panel-resizer"
+        role="separator"
+        tabindex="0"
+        aria-orientation="vertical"
+        aria-controls="sidebar"
+        aria-label="Resize the side panel (arrow keys)"
+        title="Drag to resize"
+      ></div>
+      <button
+        type="button"
+        id="panelHandle"
+        class="edge-handle panel-handle"
+        data-command="toggle-sidebar"
+        aria-controls="sidebar"
+        aria-expanded="true"
+        title="Hide the side panel (P)"
+      >
+        <span aria-hidden="true"
+          ><svg class="ico" aria-hidden="true" focusable="false">
+            <use href="#i-chevron-right"></use></svg></span
+        ><span class="sr-only">Hide the side panel</span>
+      </button>
+      <aside id="sidebar" aria-label="Item panels">
+        <div class="tabs" role="tablist" aria-label="Side panel">
+          <button
+            type="button"
+            role="tab"
+            id="tabBtnDetails"
+            aria-controls="tab-details"
+            aria-selected="true"
+            data-tab="details"
+            class="active"
+          >
+            Details
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tabBtnMaterials"
+            aria-controls="tab-materials"
+            aria-selected="false"
+            tabindex="-1"
+            data-tab="materials"
+          >
+            Shopping list
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="tabBtnView"
+            aria-controls="tab-view"
+            aria-selected="false"
+            tabindex="-1"
+            data-tab="view"
+          >
+            Customize
+          </button>
+        </div>
+        <section
+          id="tab-details"
+          role="tabpanel"
+          aria-labelledby="tabBtnDetails"
+          class="tab active"
+        >
+          <p class="muted">Click a node to see details.</p>
+        </section>
+        <section
+          id="tab-materials"
+          role="tabpanel"
+          aria-labelledby="tabBtnMaterials"
+          class="tab"
+        ></section>
+        <section
+          id="tab-view"
+          role="tabpanel"
+          aria-labelledby="tabBtnView"
+          class="tab"
+        ></section>
+      </aside>
+    </main>
+
+    <footer id="status">
+      <span id="statusText" role="status" aria-live="polite">Starting…</span>
+      <span class="status-right"
+        ><span id="busy" class="busy" role="status" hidden
+          >Updating prices…</span
+        ><span id="counts"></span
+      ></span>
+    </footer>
+
+    <div id="tooltip" role="tooltip" hidden></div>
+    <div id="toasts" role="status" aria-live="polite"></div>
+
+    <div
+      id="overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="overlayTitle"
+      hidden
+    >
+      <div class="box">
+        <h2 id="overlayTitle">Loading GW2 data</h2>
+        <p id="ovText">…</p>
+        <div
+          class="bar"
+          role="progressbar"
+          aria-labelledby="overlayTitle"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+        >
+          <div id="ovBar"></div>
+        </div>
+        <button type="button" data-command="retry-load" hidden>
+          Try again
+        </button>
+        <p class="muted small">
+          The first visit downloads the game data (under 1 MB, published daily
+          from the official API). It's cached locally afterwards and refreshed
+          when the game build changes.
+        </p>
+      </div>
+    </div>
+
+    <dialog
+      id="settingsDialog"
+      class="panel-dialog"
+      aria-labelledby="settingsTitle"
+    >
+      <div class="dlg-head">
+        <h2 id="settingsTitle">Settings</h2>
+        <button
+          type="button"
+          class="icon"
+          data-command="close-dialog"
+          aria-label="Close settings"
+        >
+          &#10005;
+        </button>
+      </div>
+      <div class="dlg-body">
+        <p class="muted small dlg-intro">
+          How the app behaves. The graph's look lives in
+          <button type="button" class="linklike" data-command="customize">
+            Customize</button
+          >.
+        </p>
+        <div id="settingsOptions" class="options-panel"></div>
+
+        <section class="dlg-section" aria-labelledby="dataTitle">
+          <h3 id="dataTitle">Game data</h3>
+          <dl id="dataSummary" class="kv"></dl>
+          <div class="btnrow">
+            <button
+              type="button"
+              data-command="refresh-prices"
+              title="Fetch fresh trading post prices for the current tree"
+            >
+              Refresh prices
+            </button>
+            <button
+              type="button"
+              data-command="refresh-data"
+              title="Fetch the latest published game data (recipes and items), ignoring the local copy"
+            >
+              Reload game data
+            </button>
+            <button
+              type="button"
+              class="danger"
+              data-command="clear-cache"
+              title="Delete the locally cached game data"
+            >
+              Clear cache
+            </button>
+          </div>
+        </section>
+
+        <section
+          class="dlg-section"
+          id="shortcutsSection"
+          aria-labelledby="shortcutsTitle"
+        >
+          <h3 id="shortcutsTitle">Keyboard &amp; mouse</h3>
+          <dl class="kv shortcuts">
+            <dt><kbd>/</kbd></dt>
+            <dd>Search</dd>
+            <dt><kbd>F</kbd> · <kbd>R</kbd></dt>
+            <dd>Fit graph · center on the root</dd>
+            <dt><kbd>+</kbd> <kbd>&minus;</kbd></dt>
+            <dd>Zoom</dd>
+            <dt><kbd>[</kbd> <kbd>]</kbd></dt>
+            <dd>One level less / more depth</dd>
+            <dt><kbd>Alt</kbd>+<kbd>&larr;</kbd></dt>
+            <dd>Back to the previous item</dd>
+            <dt><kbd>X</kbd></dt>
+            <dd>Clear the graph (Back reopens it)</dd>
+            <dt><kbd>T</kbd> · <kbd>P</kbd></dt>
+            <dd>
+              Hide / show the toolbar · the side panel (or use the handles on
+              their edges)
+            </dd>
+            <dt>Graph focused (<kbd>Tab</kbd>)</dt>
+            <dd>
+              <kbd>&uarr;</kbd> product · <kbd>&darr;</kbd> first ingredient ·
+              <kbd>&larr;</kbd> <kbd>&rarr;</kbd> siblings ·
+              <kbd>Enter</kbd> expand / collapse · <kbd>Home</kbd> root
+            </dd>
+            <dt><kbd>&minus;</kbd> / <kbd>+</kbd> in the toolbar</dt>
+            <dd>Nudge a slider one step; hold to repeat</dd>
+            <dt><kbd>,</kbd> · <kbd>?</kbd></dt>
+            <dd>Settings · this list</dd>
+            <dt><kbd>Esc</kbd></dt>
+            <dd>Clear legend highlight, then selection</dd>
+            <dt>Click / double-click</dt>
+            <dd>Select a node / expand or collapse it</dd>
+            <dt>Right-click</dt>
+            <dd>Cycle alternate recipes (long-press on touch)</dd>
+            <dt>Shift+click</dt>
+            <dd>Make the node the root</dd>
+            <dt>Double-click a control</dt>
+            <dd>Reset a ribbon control or Customize slider to its default</dd>
+          </dl>
+        </section>
+      </div>
+    </dialog>
+
+    <!-- Vendored UMD libraries (globals: cytoscape, cytoscapeDagre; see npm run vendor). `defer` keeps them in order, before the module. -->
+    <script src="lib/cytoscape.min.js" defer></script>
+    <script src="lib/cytoscape-dagre.min.js" defer></script>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

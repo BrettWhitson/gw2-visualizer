@@ -1,0 +1,119 @@
+/* Shared by the pages that scroll (home, characters): layout, headings and states. Builds on app.css. */
+
+/* These pages scroll instead of filling the window like the graph: undo app.css's fixed-height, clipped html/body. */
+html.page-scroll,
+html.page-scroll body {
+  height: auto;
+  overflow: visible;
+}
+html.page-scroll {
+  overflow-y: auto;
+}
+/* Short pages still keep the footer at the bottom of the window. */
+html.page-scroll body {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.page-scroll main {
+  display: block;
+  flex: 1 0 auto;
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 16px;
+  outline: none;
+}
+.page-title {
+  margin: 4px 0 12px;
+  font-size: 20px;
+}
+.loading,
+.empty,
+.notice {
+  color: var(--muted);
+  padding: 12px 0;
+}
+.notice {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: var(--panel);
+}
+.seg button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #1a1406;
+  font-weight: 600;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1406;
+  font-weight: 600;
+}
+
+/* ---------- home ---------- */
+.page-scroll main.home {
+  max-width: 960px;
+}
+.hero {
+  padding: 32px 0 20px;
+  text-align: center;
+}
+.hero h2 {
+  margin: 0 0 8px;
+  font-size: 30px;
+  font-weight: 600;
+  color: var(--accent2);
+}
+.hero p {
+  max-width: 560px;
+  margin: 0 auto;
+  font-size: 15px;
+  color: var(--muted);
+}
+.tool-cards {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+.tool-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  text-decoration: none;
+}
+.tool-card:hover,
+.tool-card:focus-visible {
+  border-color: var(--accent);
+}
+.tool-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+.tool-text {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.tool-go {
+  margin-top: auto;
+  padding-top: 6px;
+  color: var(--accent2);
+  font-weight: 600;
+}
+.tool-examples {
+  margin: 8px 4px 0;
+  font-size: 12px;
+}
+.home-more {
+  margin-top: 28px;
+  text-align: center;
+}

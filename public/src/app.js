@@ -1,10 +1,8 @@
 import {
-  APP_VERSION,
   ARENANET_NOTICE,
   CACHE_DB_NAME,
   EntityKind,
   RARITY_COLORS,
-  REPOSITORY_URL,
   SITE_TITLE,
   UI_COLORS,
   UNLIMITED_DEPTH,
@@ -206,14 +204,6 @@ export class CraftingTreeApp {
   }
 
   async start() {
-    $("#appVersion").textContent = `v${APP_VERSION}`;
-    if (REPOSITORY_URL) {
-      $("#repositoryLink").href = REPOSITORY_URL;
-      $("#headerRepoLink").href = REPOSITORY_URL;
-    } else {
-      $("#repositoryLink").closest("li")?.remove();
-      $("#headerRepoLink").remove();
-    }
     this.#bindGlobalControls();
     this.optionPanels.forEach((panel) => panel.render());
     this.toolbar.sync();
@@ -501,10 +491,6 @@ export class CraftingTreeApp {
       durationMs: 0,
       action: { label: "Reload", onClick: () => location.reload() },
     });
-  }
-
-  showAbout() {
-    $("#aboutDialog").showModal();
   }
 
   /** The Settings dialog (behaviour, data, shortcuts); `section` scrolls to e.g. the shortcuts list. */
@@ -882,9 +868,6 @@ export class CraftingTreeApp {
         break;
       case "center-root":
         this.graphView.centerOnRoot();
-        break;
-      case "about":
-        this.showAbout();
         break;
       case "retry-load":
         this.#retryInitialLoad();

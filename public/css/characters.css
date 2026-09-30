@@ -1,56 +1,4 @@
-/* Characters page: character list and armory. Shares the tokens and controls in app.css. */
-
-/* This page scrolls instead of filling the window like the graph: undo app.css's fixed-height, clipped html/body. */
-html.page-characters,
-html.page-characters body {
-  height: auto;
-  min-height: 100%;
-  overflow: visible;
-}
-html.page-characters {
-  overflow-y: auto;
-}
-.page-characters main {
-  display: block;
-  flex: 1 0 auto;
-  width: 100%;
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 16px;
-  outline: none;
-}
-.page-title {
-  margin: 4px 0 12px;
-  font-size: 20px;
-}
-.page-footer {
-  padding: 16px;
-  max-width: 1180px;
-  margin: 0 auto;
-}
-.loading,
-.empty,
-.notice {
-  color: var(--muted);
-  padding: 12px 0;
-}
-.notice {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 8px 12px;
-  background: var(--panel);
-}
-.seg button[aria-pressed="true"] {
-  background: var(--accent);
-  color: #1a1406;
-  font-weight: 600;
-}
-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #1a1406;
-  font-weight: 600;
-}
+/* Characters page: character list and armory. Builds on app.css and pages.css. */
 
 /* ---------- key ---------- */
 .key-status {
@@ -523,7 +471,7 @@ button.primary {
   .weapon-row {
     grid-template-columns: minmax(0, 1fr);
   }
-  .page-characters main {
+  .page-scroll main {
     padding: 12px;
   }
   .key-status #changeKey {

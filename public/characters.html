@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="page-characters">
+<html lang="en" class="page-scroll">
   <head>
     <meta charset="utf-8" />
     <meta
@@ -29,6 +29,7 @@
     <link rel="preconnect" href="https://render.guildwars2.com" crossorigin />
 
     <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="css/pages.css" />
     <link rel="stylesheet" href="css/characters.css" />
   </head>
   <body>
@@ -40,25 +41,6 @@
     >
 
     <header id="topbar">
-      <h1 class="brand">
-        <img
-          class="brand-icon"
-          src="icons/icon.svg"
-          alt=""
-          width="26"
-          height="26"
-        />
-        GW2 <span>Visualizer</span>
-        <small
-          class="fansite-tag"
-          title="Unofficial fansite, not affiliated with ArenaNet or NCSOFT"
-          >unofficial fansite</small
-        >
-      </h1>
-      <nav class="page-nav" aria-label="Visualizers">
-        <a href="./">Crafting</a>
-        <a href="characters.html" aria-current="page">Characters</a>
-      </nav>
       <div class="spacer"></div>
       <div id="keyStatus" class="key-status" hidden>
         <span id="keyAccount"></span>
@@ -106,7 +88,7 @@
       <div id="characterContent" aria-live="polite"></div>
     </main>
 
-    <footer id="pageFooter" class="page-footer muted small"></footer>
+    <footer id="status"></footer>
 
     <script type="module" src="src/characters-main.js"></script>
   </body>
