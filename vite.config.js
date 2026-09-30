@@ -46,11 +46,11 @@ function noInlineScripts() {
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * `npm run dev:local` (mode "local") runs against the Prism and Tether checkouts beside this repo instead of the
- * pinned packages, so an edit in ../prism/src or ../tether/src reloads the app at once.
+ * `npm run dev:local` (mode "engines": Vite reserves "local") runs against the Prism and Tether checkouts beside this
+ * repo instead of the pinned packages, so an edit in ../prism/src or ../tether/src reloads the app at once.
  */
 function localEngines(mode) {
-  if (mode !== "local") return {};
+  if (mode !== "engines") return {};
   const engines = ["prism", "tether"].map((name) => ({
     find: new RegExp(`^${name}/`),
     replacement: `${path.resolve(projectRoot, "..", name, "src")}/`,
