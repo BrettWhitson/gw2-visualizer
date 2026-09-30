@@ -26,7 +26,7 @@ import { labelBox, labelFont, layoutLabel } from "./labels.js";
 const MAX_ANIMATED_NODES = 5000;
 
 /**
- * The WebGL engine behind the interface the pages use for GraphView (render, select, lineage, fit, export…), so a
+ * Prism behind the interface the pages use for GraphView (render, select, lineage, fit, export…), so a
  * page can switch renderers without other changes. Layouts come from ../layout/ (the same ones the classic renderer
  * uses), with room for each label as the engine draws it; everything drawn and animated is the engine's.
  */
@@ -85,6 +85,9 @@ export class WebGLGraphView {
         badgeUrl: FORGE_BADGE_URI,
       },
     );
+    // The page's graph container is the accessible surface (role, description, keyboard, live announcements).
+    for (const canvas of [this.graph.canvas, this.graph.labelCanvas])
+      canvas.setAttribute("aria-hidden", "true");
     this.graph.camera.minZoom = ZOOM_LIMITS.min;
     this.graph.camera.maxZoom = ZOOM_LIMITS.max;
     new ResizeObserver(() => {

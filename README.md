@@ -162,23 +162,18 @@ Larger architectural changes that have been weighed but not made. Each is worth 
 - *When:* the Roadmap's extra visualizers (characters, achievements, account) start; several views sharing
   components is where a framework pays for itself.
 
-**Writing our own graph rendering engine** (Canvas 2D or WebGL, e.g. with PixiJS)
-- *For:* layout and the force simulation are already ours, so Cytoscape is mainly the renderer, interaction and
-  style system. A purpose-built WebGL renderer would handle merged views of several thousand nodes smoothly and
-  give full control over edge drawing, flow animation and export.
-- *Against:* hit-testing, text rendering and label fading, pan / zoom, touch gestures, keyboard access, PNG export
-  and the stylesheet all have to be rebuilt and tested; Cytoscape does these well today.
-- *Alternatives:* a WebGL graph library such as sigma.js, or keeping Cytoscape and drawing only the heavy parts
-  (edges, flow animation) on a separate canvas layer.
-- *When:* profiling shows rendering, not layout, is what limits large trees.
-
-**Layout engine choices**
-- The force simulation is custom so it's deterministic and can keep levels and rings. d3-force would bring a
-  well-tested core but still need the structure and collision forces added.
-- The layered layout for the merged view is our own (src/layout/layered.js): ranks, crossing minimisation by
-  barycentre sweeps and transposition, exact per-rank placement. ELK's layered algorithm is the heavyweight
-  alternative if crossings ever need to go lower.
-- Moving the simulation to a Web Worker (or WebAssembly) keeps the page responsive on very large trees; see Next steps.
+**Our own graph engines: Prism and Tether** (replacing Cytoscape)
+- **Prism** (`src/render/`) draws, animates and handles input: WebGL2 instanced drawing of nodes, edges and
+  arrowheads, a label layer, springs for every motion, partial GPU uploads (a frame costs what moves), hit-testing,
+  pan / zoom / pinch, tiled PNG export. It's the Renderer setting's "Prism (preview)"; Classic (Cytoscape) is still
+  the default while Prism proves itself, then Cytoscape goes.
+- **Tether** (`src/layout/`) decides where things go: tidy and radial tree seeds, a layered layout for the merged
+  view (ranks, crossing minimisation by barycentre sweeps and transposition, exact per-rank placement; it replaced
+  dagre), and the physics (a deterministic force simulation with a Barnes-Hut quadtree and a hashed collision grid,
+  allocation-free per tick). Both renderers use it. d3-force would bring a well-tested core but still need the
+  structure and collision forces; ELK's layered algorithm is the heavyweight alternative if crossings need to go
+  lower.
+- Moving the physics to a Web Worker (or WebAssembly) keeps the page responsive on very large trees; see Next steps.
 
 **A small backend**
 - The site is fully static: the daily snapshot covers recipes and items, and visitors fetch prices directly from
@@ -259,8 +254,11 @@ public/                    the web app, served as-is
     data/                  Gw2ApiClient, IndexedDbStore, GameData (+ core-data-sources: snapshot / API),
                            PriceBook, WikiSources, ItemSearchIndex, AccountClient + CharacterCatalogs
     model/                 TreeState, CraftTreeBuilder, PathPlanner, buildGraphModel, character armory
-    graph/                 GraphView, GraphTransition, SmoothWheelZoom, layouts (seeds) + force-simulation,
-                           stylesheet, NodeAppearance, PNG export
+    graph/                 the classic (Cytoscape) renderer: GraphView, GraphTransition, SmoothWheelZoom, stylesheet,
+                           layouts (adapter onto layout/); NodeAppearance, PNG export (shared)
+    render/                Prism, our renderer: WebGLGraph (the engine), WebGLGraphView (the pages' interface),
+                           shaders, springs, instance data, labels, edge geometry, style resolver
+    layout/                Tether, layout and physics: LayoutGraph, tree and layered seeds, the force simulation
     ui/                    site chrome (shared header, footer, About), character view, Toolbar (+ ribbon-sections, RibbonPopout), OptionsPanel (Customize, Settings,
                            popouts), range steppers, Legend, SearchBox,
                            Tooltip, DetailsPanel, ShoppingListPanel, toasts, status bar / overlay / side panel
@@ -274,8 +272,8 @@ TreeState + GameData + PriceBook
    → CraftTreeBuilder.build()        TreeNode tree (one node per ingredient occurrence; PathPlanner decides
                                      buy vs craft and which recipe; costs rolled up)
    → buildGraphModel()               GraphModel (tree or merged view, filters, ordering)
-   → NodeAppearance                  Cytoscape element data (colour, label, classes)
-   → GraphView.render()              layout + one batched transition from the previous graph
+   → NodeAppearance                  element data (colour, label, classes)
+   → graph view .render()            Tether lays it out; Prism (or Classic) morphs from the previous graph
    → Legend / DetailsPanel / ShoppingListPanel refresh
 ```
 

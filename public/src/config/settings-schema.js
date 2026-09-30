@@ -89,7 +89,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   animationEasing: "smooth",
   growNewTrees: true,
   canvasBackground: "gradient", // gradient | dots | grid | plain
-  renderer: "classic", // classic (Cytoscape) | webgl (our own engine, src/render/)
+  renderer: "classic", // classic (Cytoscape) | webgl (Prism, our own engine: src/render/)
   showLegend: true,
   smoothZoom: !prefersReducedMotion,
   zoomSpeed: 1,
@@ -811,10 +811,10 @@ export const CUSTOMIZE_GROUPS = [
         label: "Renderer",
         type: "select",
         redraw: Redraw.none,
-        hint: "Fast draws with the GPU: smooth with thousands of items, with gliding motion and flowing lineages. The page reloads to switch.",
+        hint: "Prism is the app's own GPU renderer: smooth with thousands of items, with gliding motion and flowing lineages. The page reloads to switch.",
         choices: [
           ["classic", "Classic"],
-          ["webgl", "Fast (WebGL, preview)"],
+          ["webgl", "Prism (preview)"],
         ],
       },
     ],

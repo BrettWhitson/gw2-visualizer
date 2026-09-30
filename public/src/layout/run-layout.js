@@ -11,7 +11,8 @@ import { radialTreeLayout, tidyTreeLayout } from "./trees.js";
 const FORCE_REFERENCE = { repel: 8 };
 
 /**
- * Position every node for the current layout settings, synchronously (the renderer animates).
+ * Tether, the app's layout and physics engine (src/layout/). Its entry point: position every node for the current
+ * layout settings, synchronously (the renderer animates).
  *
  * Two stages:
  *  1. a deterministic seed: tidy tree (tree view), our layered layout (merged view) or a radial tree; the force

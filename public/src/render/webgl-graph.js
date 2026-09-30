@@ -32,7 +32,7 @@ import {
 } from "./shaders.js";
 
 /**
- * A graph engine built for this app: WebGL2 draws every node, edge and arrowhead in a handful of instanced calls, a
+ * Prism, the app's graph renderer (src/render/). This is its engine: WebGL2 draws every node, edge and arrowhead in a handful of instanced calls, a
  * 2D canvas on top draws the labels, and springs move everything (nodes, fades, glows, the camera), so any change can
  * interrupt any other and motion stays continuous. Layout is the caller's: nodes arrive with positions.
  *
@@ -264,7 +264,7 @@ export class WebGLGraph {
       record.height = input.height;
       record.hw = input.width / 2;
       record.hh = input.height / 2;
-      this.#applyNodeStyle(record, input.style);
+      this.#applyNodeStyle(record, input.style, { fade: !isNew && animate });
       record.px.set(input.x);
       record.py.set(input.y);
       if (!animate) {
@@ -320,7 +320,7 @@ export class WebGLGraph {
         };
       record.source = source;
       record.target = target;
-      this.#applyEdgeStyle(record, input.style);
+      this.#applyEdgeStyle(record, input.style, { fade: !isNew && animate });
       record.wait =
         isNew && animate
           ? Math.max(source.wait, target.wait) +
@@ -347,11 +347,11 @@ export class WebGLGraph {
   updateStyles(nodeUpdates = [], edgeUpdates = []) {
     for (const { id, style } of nodeUpdates) {
       const record = this.#byId.get(id);
-      if (record) this.#applyNodeStyle(record, style);
+      if (record) this.#applyNodeStyle(record, style, { fade: true });
     }
     for (const { id, style } of edgeUpdates) {
       const record = this.#edgeById.get(id);
-      if (record) this.#applyEdgeStyle(record, style);
+      if (record) this.#applyEdgeStyle(record, style, { fade: true });
     }
     this.#geometryDirty = true;
     this.requestRender();
@@ -373,18 +373,51 @@ export class WebGLGraph {
     this.requestRender();
   }
 
-  #applyNodeStyle(record, style) {
+  /** A node's look. `fade`: blend from the colours on screen to the new ones instead of switching. */
+  #applyNodeStyle(record, style, { fade = false } = {}) {
+    const colors = {
+      fill: [...parseColor(style.fill), style.fillAlpha ?? 1],
+      border: [...parseColor(style.border), 1],
+      aura: style.aura ? [...parseColor(style.aura), 1] : [0, 0, 0, 0],
+      ring: style.ring ? [...parseColor(style.ring), 0.9] : [0, 0, 0, 0],
+    };
+    this.#fadeColors(record, colors, fade);
     record.style = style;
-    record.fill = [...parseColor(style.fill), style.fillAlpha ?? 1];
-    record.border = [...parseColor(style.border), 1];
-    record.aura = style.aura ? [...parseColor(style.aura), 1] : [0, 0, 0, 0];
-    record.ring = style.ring ? [...parseColor(style.ring), 0.9] : [0, 0, 0, 0];
     if (style.icon) this.#loadIcon(style.icon);
   }
 
-  #applyEdgeStyle(record, style) {
+  #applyEdgeStyle(record, style, { fade = false } = {}) {
+    this.#fadeColors(record, { color: parseColor(style.color) }, fade);
     record.style = style;
-    record.color = parseColor(style.color);
+  }
+
+  /**
+   * Set a record's colours (`colors`: field → [r, g, b(, a)]). With `fade`, and when any changed, it starts from what's
+   * on screen (mid-fade included) and blends over one motion duration on a spring.
+   */
+  #fadeColors(record, colors, fade) {
+    const changed = Object.keys(colors).some(
+      (key) => !record[key] || colors[key].some((v, i) => v !== record[key][i]),
+    );
+    if (
+      fade &&
+      changed &&
+      this.#motion.enabled &&
+      record[Object.keys(colors)[0]]
+    ) {
+      const mix = Math.min(1, Math.max(0, record.colorMix?.value ?? 1));
+      const from = {};
+      for (const key of Object.keys(colors)) {
+        const to = record[key],
+          start = record.colorFrom?.[key] ?? to;
+        from[key] = to.map((v, i) => start[i] + (v - start[i]) * mix);
+      }
+      record.colorFrom = from;
+      record.colorMix = new Spring(0, this.#motion.params);
+      record.colorMix.set(1);
+      this.#moving.add(record);
+    }
+    Object.assign(record, colors);
   }
 
   /** Spring targets from state: ghosts fade and shrink, dimmed nodes fade, hovered and dragged ones lift and glow. */
@@ -745,22 +778,28 @@ export class WebGLGraph {
     this.arrowProgram = this.#program(ARROW_VERTEX, ARROW_FRAGMENT);
     this.uniforms = new Map();
 
-    this.nodeVao = gl.createVertexArray();
-    gl.bindVertexArray(this.nodeVao);
-    this.#staticBuffer(0, [-1, -1, 1, -1, -1, 1, 1, 1], 2);
-    this.nodeBuffer = gl.createBuffer();
-    this.#instanceLayout(this.nodeBuffer, [
-      [1, 2],
-      [2, 2],
-      [3, 4],
-      [4, 4],
-      [5, 4],
-      [6, 4],
-      [7, 4],
-      [8, 4],
-      [9, 4],
-      [10, 4],
-    ]);
+    // Nodes, and the lifted ones again (drawn last, over everything).
+    const nodeLayer = () => {
+      const vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      this.#staticBuffer(0, [-1, -1, 1, -1, -1, 1, 1, 1], 2);
+      const buffer = gl.createBuffer();
+      this.#instanceLayout(buffer, [
+        [1, 2],
+        [2, 2],
+        [3, 4],
+        [4, 4],
+        [5, 4],
+        [6, 4],
+        [7, 4],
+        [8, 4],
+        [9, 4],
+        [10, 4],
+      ]);
+      return [vao, buffer];
+    };
+    [this.nodeVao, this.nodeBuffer] = nodeLayer();
+    [this.topNodeVao, this.topNodeBuffer] = nodeLayer();
 
     this.edgeVao = gl.createVertexArray();
     gl.bindVertexArray(this.edgeVao);
@@ -944,6 +983,8 @@ export class WebGLGraph {
     }
     this.#upload(this.nodeBuffer, instances.nodes);
     this.nodeCount = instances.nodes.length / NODE_FLOATS;
+    this.#upload(this.topNodeBuffer, instances.topNodes);
+    this.topNodeCount = instances.topNodes.length / NODE_FLOATS;
     this.stats.uploadMs = performance.now() - started;
     this.stats.partialUpload = partial;
   }
@@ -1040,6 +1081,9 @@ export class WebGLGraph {
           moving = moved | record.scale.step(dt) | record.glow.step(dt);
         } else moving = !!(record.emphasis.step(dt) | 0);
         moving = record.alpha.step(dt) || moving;
+        if (record.colorMix)
+          if (record.colorMix.step(dt)) moving = true;
+          else record.colorMix = record.colorFrom = null; // faded in
         if (!moving) this.#moving.delete(record);
       }
       // Ghosts leave once faded.
@@ -1200,6 +1244,10 @@ export class WebGLGraph {
     else gl.uniform4f(this.#uniform(this.nodeProgram, "badgeRect"), 0, 0, 0, 0);
     gl.bindVertexArray(this.nodeVao);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.nodeCount);
+    if (this.topNodeCount) {
+      gl.bindVertexArray(this.topNodeVao);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.topNodeCount);
+    }
     gl.bindVertexArray(null);
   }
 
@@ -1542,7 +1590,6 @@ export class WebGLGraph {
         : "pointer"
       : "";
     this.handlers.onNodeHover?.(id, event);
-    this.#geometryDirty = true;
     this.requestRender();
   }
 

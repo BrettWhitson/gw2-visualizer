@@ -5,16 +5,26 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 
 ## Unreleased
 
-- **Fast renderer (preview).** **Customize → Canvas → Renderer → Fast** (or `?renderer=webgl`) draws the crafting and
-  What you can craft graphs with the app's own GPU engine instead of Cytoscape. It stays smooth with thousands of items,
-  and everything moves on springs, so a change can interrupt another without jumping: branches unfold from and fold back
-  into their parent, the view glides after a flick, and hover and selection ease in and out. Hovered and selected
-  lineages flow with travelling light pulses. Nodes can be dragged, and the rest of the graph follows. Owned items and
-  better buys glow, collapsed items show a card stack, and Mystic Forge results get a ring and badge. PNG export,
-  legend highlights and every style setting work in it too.
-- **Our own layouts.** The Merged view's layered layout is now the app's own instead of dagre: across five
-  legendaries it lays out about 3× faster with 14% fewer edge crossings. Both renderers share one layout and physics
-  engine, and the Fast renderer no longer needs Cytoscape at all (it's still loaded for the classic one).
+- **Prism, the app's own renderer (preview).** **Customize → Canvas → Renderer → Prism** (or `?renderer=webgl`) draws
+  the crafting and What you can craft graphs on the GPU instead of with Cytoscape. It stays smooth with thousands of
+  items, and everything moves on springs, so a change can interrupt another without jumping: branches unfold from and
+  fold back into their parent, the view glides after a flick, hover and selection ease in and out, and colours blend
+  when they change (prices arriving, another colour mode). Hovered and selected lineages flow with travelling light
+  pulses. Nodes can be dragged, and the rest of the graph follows. Owned items and better buys glow, collapsed items
+  show a card stack, and Mystic Forge results get a ring and badge. PNG export, legend highlights, keyboard navigation,
+  touch (tap, double-tap, long-press, pinch), high-density screens and every style setting work in it too.
+- **Tether, the app's own layout and physics.** Both renderers now lay graphs out with the app's own engine. The
+  Merged view's layered layout replaces dagre, and Prism no longer needs Cytoscape at all (it's still loaded for
+  Classic).
+- **Performance.** Measured in Chrome on the development machine (60 Hz display):
+  - _Drawing:_ Prism holds 60 fps at 1,000, 3,000 and 10,000 items while panning and zooming, using under 1 ms of CPU
+    per frame; its first frame at 10,000 items takes about 90 ms. Classic, for comparison: 0.4 s / 1 s / 8.6 s for
+    the first frame, and at 10,000 items a 2.4 s stall and 84 ms frames on average.
+  - _Animation:_ a frame costs what moves, not the size of the graph. Hovering, selecting or pulsing one item in a
+    10,000-item graph costs about 1 ms per frame (42 ms before this was incremental); flowing lineages about 1 ms.
+  - _Layout:_ the Merged view lays out 2.9× faster than with dagre, with 14% fewer edge crossings overall (five
+    legendaries, six layout settings each). The physics runs 3.7× faster per step at 10,000 items (56 → 15 ms), so a
+    10,000-item tree lays out in about 1.1 s.
 - **Faster pages, saved data.** Account data, Trading Post prices and order books are kept in the browser, so pages
   open on what was saved instead of downloading it again: What you can craft now shows its ranked list in under a
   second on a revisit, with no API requests. **Account menu → Update account data and prices:** _When I refresh_ (the

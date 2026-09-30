@@ -7,13 +7,16 @@ import { cachedColor } from "./color.js";
  *
  * A full `rebuild` writes everything in draw order and remembers where each record went. While the same things are
  * drawn in the same order, `update` rewrites just the records that changed (a hovered node and its edges) in place,
- * so an animated frame costs what moves, not the size of the graph. When the layout of the data would change (a
- * node on top, an edge appearing or bending into a different number of pieces) `update` declines and the caller
- * rebuilds.
+ * so an animated frame costs what moves, not the size of the graph. When the layout of the data would change (an
+ * edge appearing or bending into a different number of pieces) `update` declines and the caller rebuilds.
+ *
+ * Nodes lifted over the rest (selected, hovered, dragged) keep their slot, hidden there, and are drawn again from
+ * `topNodes`, a second small run drawn last: lifting a node rewrites two slots, not the whole order.
  *
  * Node records: { px, py, alpha, scale, glow: { value }, hw, hh, fill, border, aura, ring: [r,g,b,a],
  * glowColor: [r,g,b], style }. Edge records: { source, target, alpha, emphasis: { value }, emphasisState, color,
- * style }. They gain bookkeeping fields (slot, pieceAt, …) from here.
+ * style }. Either may carry a colour fade: `colorMix` ({ value } 0 → 1) from `colorFrom` (the same colour fields) to
+ * the current ones. They gain bookkeeping fields (slot, pieceAt, …) from here.
  */
 
 export const NODE_FLOATS = 36;
@@ -89,11 +92,14 @@ function arrowInset(shape) {
 
 export class InstanceData {
   nodes = new FloatList();
+  /** The lifted nodes again, drawn after everything else. */
+  topNodes = new FloatList(4 * NODE_FLOATS);
   edges = new FloatList();
   /** Arrowhead shape → its instances. */
   arrows = new Map();
   /** Nodes in draw order, and ordered edges with their nodes' edges, as of the last rebuild. */
   #drawnNodes = [];
+  #nodeById = new Map();
   #edgesOf = new Map();
   #top = new Set();
   #layout = null;
@@ -165,20 +171,46 @@ export class InstanceData {
     pieces.markDirty(0, pieces.length);
     for (const list of this.arrows.values()) list.markDirty(0, list.length);
 
-    const drawn = [...ghosts];
-    const lifted = [];
-    for (const record of nodes)
-      (this.#top.has(record.id) ? lifted : drawn).push(record);
-    drawn.push(...lifted);
+    const drawn = [...ghosts, ...nodes];
     this.#drawnNodes = drawn;
+    this.#nodeById = new Map(nodes.map((record) => [record.id, record]));
     const list = this.nodes.clear();
     list.reserve(drawn.length * NODE_FLOATS);
     drawn.forEach((record, index) => {
       record.slot = index;
-      writeNode(list.data, index * NODE_FLOATS, record, iconUv);
+      writeNode(
+        list.data,
+        index * NODE_FLOATS,
+        record,
+        iconUv,
+        this.#isLifted(record),
+      );
     });
     list.length = drawn.length * NODE_FLOATS;
     list.markDirty(0, list.length);
+    this.#writeTop(iconUv);
+  }
+
+  /** Lifted: drawn from topNodes instead of its own slot (ghosts never are). */
+  #isLifted(record) {
+    return !record.ghost && this.#top.has(record.id);
+  }
+
+  /** The lifted nodes, in draw order. */
+  #writeTop(iconUv) {
+    const list = this.topNodes.clear();
+    const lifted = [];
+    for (const id of this.#top) {
+      const record = this.#nodeById.get(id);
+      if (record && !record.ghost) lifted.push(record);
+    }
+    lifted.sort((a, b) => a.slot - b.slot);
+    list.reserve(lifted.length * NODE_FLOATS);
+    lifted.forEach((record, k) =>
+      writeNode(list.data, k * NODE_FLOATS, record, iconUv, false),
+    );
+    list.length = lifted.length * NODE_FLOATS;
+    list.markDirty(0, Math.max(list.length, 1));
   }
 
   /**
@@ -187,9 +219,20 @@ export class InstanceData {
    * already written is then rewritten by it).
    */
   update(records, { top, layout, iconUv }) {
-    if (layout !== this.#layout || !sameSet(top, this.#top)) return false;
+    if (layout !== this.#layout) return false;
     const nodes = [];
     const edges = new Set();
+    let topChanged = false;
+    if (!sameSet(top, this.#top)) {
+      // Nodes that are lifted now, or were: their own slots show or hide them.
+      for (const id of new Set([...this.#top, ...top])) {
+        const record = this.#nodeById.get(id);
+        if (record && this.#drawnNodes[record.slot] === record)
+          nodes.push(record);
+      }
+      this.#top = new Set(top);
+      topChanged = true;
+    }
     for (const record of records) {
       if (!record.px) {
         edges.add(record);
@@ -218,11 +261,15 @@ export class InstanceData {
         this.#writeArrow(arrowAtTarget, edge, false, edge.endArrowAt);
     }
     const data = this.nodes.data;
+    let liftedMoved = topChanged;
     for (const record of nodes) {
       const at = record.slot * NODE_FLOATS;
-      writeNode(data, at, record, iconUv);
+      const lifted = this.#isLifted(record);
+      writeNode(data, at, record, iconUv, lifted);
       this.nodes.markDirty(at, at + NODE_FLOATS);
+      liftedMoved ||= lifted;
     }
+    if (liftedMoved) this.#writeTop(iconUv);
     return true;
   }
 
@@ -241,6 +288,13 @@ export class InstanceData {
     const emphasis = edge.emphasis.value;
     const state = edge.emphasisState;
     let [r, g, b] = edge.color;
+    const mix = colorMixOf(edge);
+    if (mix < 1) {
+      const [fr, fg, fb] = edge.colorFrom.color;
+      r = fr + (r - fr) * mix;
+      g = fg + (g - fg) * mix;
+      b = fb + (b - fb) * mix;
+    }
     let width = style.width;
     // Edges with a standing glow (a best route) keep their colour when a lineage lights them; they still flow.
     if (emphasis > 0 && state && !style.glow) {
@@ -332,28 +386,44 @@ export class InstanceData {
   }
 }
 
-function writeNode(d, at, record, iconUv) {
+/** How far a record's colour fade has got: 1 when there's none. */
+function colorMixOf(record) {
+  const mix = record.colorMix?.value;
+  return mix == null ? 1 : Math.min(1, Math.max(0, mix));
+}
+
+/** One node's instance. `hidden`: drawn from topNodes instead (lifted), so invisible here. */
+function writeNode(d, at, record, iconUv, hidden = false) {
   const style = record.style;
   let o = at;
   const put = (values) => {
     for (let i = 0; i < values.length; i++) d[o++] = values[i];
   };
+  const mix = colorMixOf(record);
+  const from = record.colorFrom;
+  const putColor = (key) => {
+    if (mix >= 1 || !from) return put(record[key]);
+    const to = record[key],
+      start = from[key];
+    for (let i = 0; i < to.length; i++)
+      d[o++] = start[i] + (to[i] - start[i]) * mix;
+  };
   d[o++] = record.px.value;
   d[o++] = record.py.value;
   d[o++] = record.hw;
   d[o++] = record.hh;
-  put(record.fill);
-  put(record.border);
-  put(record.aura);
+  putColor("fill");
+  putColor("border");
+  putColor("aura");
   put(record.glowColor);
   d[o++] = Math.min(1, Math.max(0, record.glow.value));
-  put(record.ring);
+  putColor("ring");
   put((style.icon && iconUv(style.icon)) || NO_ICON);
   d[o++] = style.borderWidth ?? 3;
   d[o++] = SHAPES[style.shape] ?? 1;
   d[o++] = NODE_PATTERNS[style.pattern] ?? 0;
   d[o++] = style.badge ? 1 : 0;
-  d[o++] = Math.max(0, Math.min(1, record.alpha.value));
+  d[o++] = hidden ? 0 : Math.max(0, Math.min(1, record.alpha.value));
   d[o++] = Math.max(0.05, record.scale.value);
   d[o++] = style.iconAlpha ?? 1;
   d[o++] = 0;

@@ -1,5 +1,5 @@
 /**
- * The graph's physics: a force simulation behind every layout, in the spirit of Obsidian's graph view. Four forces,
+ * Tether's physics: a force simulation behind every layout, in the spirit of Obsidian's graph view. Four forces,
  * one slider each, all acting in every direction:
  *
  *  - center:   pulls nodes toward the middle (keeps the graph compact)
@@ -345,30 +345,40 @@ export class ForceSimulation {
     const { x, y, vx, vy } = this;
     const tree = this.#tree;
     tree.build(x, y, this.count);
-    const { mass, cx, cy, size, index, child } = tree;
+    const { mass, cx, cy, size, index, child, internal, stack } = tree;
     const theta2 = BARNES_HUT_THETA * BARNES_HUT_THETA;
-    const stack = tree.stack;
     for (let i = 0; i < this.count; i++) {
-      let top = 0;
+      const xi = x[i],
+        yi = y[i];
+      let forceX = 0,
+        forceY = 0,
+        top = 0;
       stack[top++] = 0;
       while (top) {
         const cell = stack[--top];
-        if (!mass[cell]) continue;
-        const dx = cx[cell] - x[i],
-          dy = cy[cell] - y[i];
-        const distanceSquared = Math.max(dx * dx + dy * dy, 1);
-        const leaf = !tree.internal[cell];
-        if (leaf || (size[cell] * size[cell]) / distanceSquared < theta2) {
-          if (index[cell] === i) continue;
+        const dx = cx[cell] - xi,
+          dy = cy[cell] - yi;
+        let distanceSquared = dx * dx + dy * dy;
+        if (distanceSquared < 1) distanceSquared = 1;
+        // Far enough (the cell looks small from here), or a single point: one push from its centre of mass.
+        if (
+          !internal[cell] ||
+          size[cell] * size[cell] < theta2 * distanceSquared
+        ) {
+          if (index[cell] === i || !mass[cell]) continue;
           const push = (strength * mass[cell]) / distanceSquared;
-          vx[i] -= dx * push;
-          vy[i] -= dy * push;
-        } else
+          forceX += dx * push;
+          forceY += dy * push;
+        } else {
+          const base = cell * 4;
           for (let q = 0; q < 4; q++) {
-            const c = child[cell * 4 + q];
+            const c = child[base + q];
             if (c) stack[top++] = c;
           }
+        }
       }
+      vx[i] -= forceX;
+      vy[i] -= forceY;
     }
   }
 
@@ -575,32 +585,58 @@ export class Quadtree {
 
 // ---------------------------------------------------------------- collision grid
 
-/** A uniform grid of linked lists over points, rebuilt every tick: `first(gx, gy)` then follow `next`. */
-class CollisionGrid {
+/**
+ * A uniform grid of linked lists over points, rebuilt every tick: `first(gx, gy)` then follow `next`. Cells live in
+ * an open-addressing hash table of typed arrays (stamped per build, so nothing is cleared or allocated per tick).
+ */
+export class CollisionGrid {
   constructor(points) {
     this.next = new Int32Array(Math.max(1, points));
-    this.heads = new Map();
+    let size = 16;
+    while (size < points * 2) size *= 2;
+    this.mask = size - 1;
+    this.cellX = new Int32Array(size);
+    this.cellY = new Int32Array(size);
+    this.head = new Int32Array(size);
+    this.stamp = new Uint32Array(size);
+    this.build_ = 0;
   }
 
   build(x, y, count, cellSize) {
-    this.heads.clear();
+    const stamp = ++this.build_;
+    const { cellX, cellY, head, next, mask } = this;
     for (let i = count - 1; i >= 0; i--) {
-      const key = cellKey(
-        Math.floor(x[i] / cellSize),
-        Math.floor(y[i] / cellSize),
-      );
-      const head = this.heads.get(key);
-      this.next[i] = head ?? -1;
-      this.heads.set(key, i);
+      const gx = Math.floor(x[i] / cellSize),
+        gy = Math.floor(y[i] / cellSize);
+      let slot = hashCell(gx, gy) & mask;
+      while (
+        this.stamp[slot] === stamp &&
+        (cellX[slot] !== gx || cellY[slot] !== gy)
+      )
+        slot = (slot + 1) & mask;
+      if (this.stamp[slot] !== stamp) {
+        this.stamp[slot] = stamp;
+        cellX[slot] = gx;
+        cellY[slot] = gy;
+        head[slot] = -1;
+      }
+      next[i] = head[slot];
+      head[slot] = i;
     }
   }
 
   first(gx, gy) {
-    return this.heads.get(cellKey(gx, gy)) ?? -1;
+    const stamp = this.build_;
+    let slot = hashCell(gx, gy) & this.mask;
+    while (this.stamp[slot] === stamp) {
+      if (this.cellX[slot] === gx && this.cellY[slot] === gy)
+        return this.head[slot];
+      slot = (slot + 1) & this.mask;
+    }
+    return -1;
   }
 }
 
-function cellKey(gx, gy) {
-  // Exact for |gx|, |gy| < 2^25: plenty for any graph that fits on screen.
-  return (gx + 33554432) * 67108864 + (gy + 33554432);
+function hashCell(gx, gy) {
+  return Math.imul(gx, 73856093) ^ Math.imul(gy, 19349663);
 }

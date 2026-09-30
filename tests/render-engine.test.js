@@ -345,6 +345,58 @@ test("colours parse from #rrggbb and #rgb", () => {
   assert.equal(parseColor("nonsense").length, 3);
 });
 
+test("colour fades: nodes and edges blend from the old colours to the new ones", () => {
+  const value = (v) => ({ value: v });
+  const node = {
+    id: "n",
+    px: value(0),
+    py: value(0),
+    alpha: value(1),
+    scale: value(1),
+    glow: value(0),
+    hw: 20,
+    hh: 20,
+    fill: [1, 0, 0, 1],
+    border: [1, 1, 1, 1],
+    aura: [0, 0, 0, 0],
+    ring: [0, 0, 0, 0],
+    glowColor: [1, 1, 1],
+    style: {},
+    colorFrom: {
+      fill: [0, 0, 1, 1],
+      border: [1, 1, 1, 1],
+      aura: [0, 0, 0, 0],
+      ring: [0, 0, 0, 0],
+    },
+    colorMix: value(0.25),
+  };
+  const other = { ...node, id: "m", colorFrom: null, colorMix: null };
+  const edge = {
+    id: "e",
+    source: node,
+    target: other,
+    alpha: value(1),
+    emphasis: value(0),
+    color: [0, 1, 0],
+    colorFrom: { color: [1, 0, 0] },
+    colorMix: value(0.5),
+    style: { width: 2 },
+  };
+  const data = new InstanceData();
+  data.rebuild({
+    ghosts: [],
+    nodes: [node, other],
+    edges: [edge],
+    top: [],
+    layout: { routing: "straight" },
+    iconUv: () => null,
+  });
+  const fill = [...data.nodes.data.subarray(4, 8)];
+  assert.deepEqual(fill, [0.25, 0, 0.75, 1], "a quarter of the way to red");
+  const edgeColor = [...data.edges.data.subarray(4, 7)];
+  assert.deepEqual(edgeColor, [0.5, 0.5, 0], "halfway to green");
+});
+
 test("a flick glides at the speed of the last moves; holding still before letting go does not", () => {
   const moves = [0, 16, 32, 48, 64].map((at) => ({ at, dx: 20, dy: -5 }));
   const { vx, vy } = flickVelocity(moves, 70);
@@ -428,19 +480,25 @@ test("instance data: moving a few records rewrites them in place, matching a ful
   full.rebuild(scene);
   assert.deepEqual(snapshot(incremental), snapshot(full));
 
-  // A node lifted on top changes the draw order: that takes a rebuild.
-  assert.equal(
-    incremental.update(new Set([b]), { ...scene, top: ["b"] }),
-    false,
-  );
-  // Selected and hovered being the same node is still one node on top.
-  incremental.rebuild({ ...scene, top: ["b"] });
+  // Lifting a node (hover, selection) needs no rebuild: its slot hides it and the top run draws it last.
+  const lifted = { ...scene, top: ["b"] };
+  assert.equal(incremental.update(new Set(), lifted), true);
+  const alphaAt = (list, slot) => list.data[slot * NODE_FLOATS + 32];
+  assert.equal(alphaAt(incremental.nodes, b.slot), 0, "hidden in its slot");
+  assert.equal(incremental.topNodes.length, NODE_FLOATS);
+  assert.equal(incremental.topNodes.data[0], b.px.value, "drawn on top");
+  const liftedFull = new InstanceData();
+  liftedFull.rebuild(lifted);
+  assert.deepEqual(snapshot(incremental), snapshot(liftedFull));
+  // Selected and hovered being the same node is still one node on top; dropping it shows its slot again.
   assert.equal(
     incremental.update(new Set([b]), { ...scene, top: ["b", "b"] }),
     true,
   );
-  incremental.rebuild(scene);
-  // So does an edge bending into a different number of pieces (b→c was straight)…
+  assert.equal(incremental.update(new Set(), scene), true);
+  assert.equal(alphaAt(incremental.nodes, b.slot), 1);
+  assert.equal(incremental.topNodes.length, 0);
+  // An edge bending into a different number of pieces (b→c was straight) needs a rebuild…
   b.py.value = 95;
   assert.equal(incremental.update(new Set([b]), scene), false);
   // …or fading out of sight.

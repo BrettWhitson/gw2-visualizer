@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { LayoutGraph } from "../public/src/layout/layout-graph.js";
 import { countCrossings, layeredLayout } from "../public/src/layout/layered.js";
-import { Quadtree } from "../public/src/layout/physics.js";
+import { CollisionGrid, Quadtree } from "../public/src/layout/physics.js";
 import { labelBox, layoutLabel } from "../public/src/render/labels.js";
 
 /** Nodes 40 × 40 unless given; the first is the root. Edges as "a>b". */
@@ -140,4 +140,34 @@ test("footprints: a share of the label's overhang on each axis", () => {
   );
   assert.deepEqual(g.footprint(0, 1, 1), { w: 140, h: 60 });
   assert.deepEqual(g.footprint(0, 0.5, 0), { w: 90, h: 40 });
+});
+
+test("collision grid: every point is found in its cell, negative cells and crowded tables included", () => {
+  const count = 500;
+  const x = new Float64Array(count),
+    y = new Float64Array(count);
+  for (let i = 0; i < count; i++) {
+    x[i] = ((i * 37) % 101) * 13 - 600; // spread over negative and positive cells
+    y[i] = ((i * 53) % 97) * 11 - 500;
+  }
+  const grid = new CollisionGrid(count);
+  for (const cellSize of [7, 50]) {
+    grid.build(x, y, count, cellSize); // rebuilt in place: the old cells mustn't leak through
+    const seen = new Set();
+    for (let i = 0; i < count; i++) {
+      const gx = Math.floor(x[i] / cellSize),
+        gy = Math.floor(y[i] / cellSize);
+      const members = [];
+      for (let j = grid.first(gx, gy); j >= 0; j = grid.next[j])
+        members.push(j);
+      assert.ok(members.includes(i), `${i} in its cell`);
+      for (const j of members) {
+        assert.equal(Math.floor(x[j] / cellSize), gx);
+        assert.equal(Math.floor(y[j] / cellSize), gy);
+        seen.add(j);
+      }
+    }
+    assert.equal(seen.size, count);
+    assert.equal(grid.first(1e6, 1e6), -1, "an empty cell");
+  }
 });
