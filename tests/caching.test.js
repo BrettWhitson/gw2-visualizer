@@ -196,9 +196,13 @@ function sessionSetup({ remembered = true, maxAge = () => Infinity } = {}) {
   return { make, calls, cache, tabStorage, advance: (ms) => (now += ms) };
 }
 
-/** Snapshots are written after hashing the key, which takes a few turns: wait for a condition. */
-async function until(condition, turns = 500) {
-  for (let turn = 0; turn < turns && !condition(); turn++) await tick();
+/**
+ * Snapshots are written after hashing the key (real async crypto, slower on a busy CI runner): wait for a condition,
+ * by the clock rather than a count of turns. Uses setImmediate, which the tests' mocked setTimeout doesn't touch.
+ */
+async function until(condition, timeoutMs = 5000) {
+  const deadline = performance.now() + timeoutMs;
+  while (!condition() && performance.now() < deadline) await tick();
   assert.ok(condition(), "timed out waiting");
 }
 
