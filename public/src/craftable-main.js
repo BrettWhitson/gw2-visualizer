@@ -30,19 +30,16 @@ import {
   recipeDisciplines,
   usefulMaterials,
 } from "./model/craftable.js";
-import { GraphView } from "./graph/graph-view.js";
-import { WebGLGraphView } from "./render/webgl-graph-view.js";
+import { chooseGraphView } from "./render/choose-graph-view.js";
 
-/**
- * The experimental WebGL renderer with ?renderer=webgl (see src/render/), when the browser has WebGL2; otherwise the
- * Cytoscape-based GraphView.
- */
-function chooseGraphView() {
-  const wanted =
-    new URLSearchParams(location.search).get("renderer") === "webgl";
-  const supported = !!document.createElement("canvas").getContext("webgl2");
-  return wanted && supported ? WebGLGraphView : GraphView;
-}
+/** Looks for this page's own classes: "+N more" folds are placeholders, and the most profitable routes stand out. */
+const CLASS_STYLES = {
+  nodes: {
+    overflow: { pattern: "dashed", fillAlpha: 0.4 },
+    "best-route": { aura: "#e5b83b", labelPriority: 1 },
+  },
+  edges: { "best-route": { color: "#e5b83b", width: 3, glow: true } },
+};
 import { NodeAppearance } from "./graph/node-appearance.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
 import { registerServiceWorker } from "./pwa.js";
@@ -173,7 +170,7 @@ class CraftablePage {
   }
 
   start() {
-    this.graphView = new (chooseGraphView())({
+    this.graphView = new (chooseGraphView(this.settings.values))({
       container: $("#cy"),
       canvasWrapper: $("#cyWrap"),
       settings: this.graphSettings,
@@ -194,6 +191,7 @@ class CraftablePage {
         onViewportChange: () => ($("#craftTooltip").hidden = true),
       },
     });
+    this.graphView.setClassStyles(CLASS_STYLES);
     this.#bindControls();
     this.account.addEventListener(
       "change",
@@ -793,25 +791,6 @@ class CraftablePage {
       fit,
       anchorNodeId,
     });
-    // "+N more" folds look like placeholders, not items (the shared stylesheet has no rule for them).
-    // Placeholders and the best routes (the shared stylesheet has no rules for either).
-    this.graphView.cy
-      .style()
-      .selector("node.overflow")
-      .style({ "border-style": "dashed", "background-opacity": 0.4 })
-      .selector("node.best-route")
-      .style({
-        "underlay-color": "#e5b83b",
-        "underlay-opacity": 0.35,
-        "underlay-padding": 6,
-      })
-      .selector("edge.best-route")
-      .style({
-        "line-color": "#e5b83b",
-        "target-arrow-color": "#e5b83b",
-        width: 3,
-      })
-      .update();
     $("#craftTooltip").hidden = true; // its node may have moved or gone
     if (this.selectedNodeId && !this.graph.nodesById.has(this.selectedNodeId))
       this.#select(null);

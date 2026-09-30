@@ -26,7 +26,7 @@ import { TreeState } from "./model/tree-state.js";
 import { CraftTreeBuilder, walkTree } from "./model/craft-tree.js";
 import { buildGraphModel } from "./model/graph-model.js";
 import { NodeAppearance } from "./graph/node-appearance.js";
-import { GraphView } from "./graph/graph-view.js";
+import { chooseGraphView } from "./render/choose-graph-view.js";
 import { composeGraphPng } from "./graph/png-exporter.js";
 import { Tooltip } from "./ui/tooltip.js";
 import { DetailsPanel } from "./ui/details-panel.js";
@@ -187,7 +187,7 @@ export class CraftingTreeApp {
       onPick: (itemId) => this.openItem(itemId),
       getRecentItemIds: () => this.recentItems.itemIds,
     });
-    this.graphView = new GraphView({
+    this.graphView = new (chooseGraphView(this.settings.values))({
       container: $("#cy"),
       canvasWrapper: $("#cyWrap"),
       settings: this.settings,
@@ -376,6 +376,10 @@ export class CraftingTreeApp {
    */
   changeSetting(key, value, redraw) {
     this.settings.set(key, value);
+    if (key === "renderer") {
+      location.reload(); // the graph view is built once, at start
+      return;
+    }
     if (key === "viewMode") {
       // Node ids and collapse keys differ between views.
       this.treeState.resetExpansion();

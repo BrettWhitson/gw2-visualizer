@@ -86,6 +86,7 @@ function mountOurs(graph, stage) {
       ),
     },
   );
+  view.setOptions({ labels: { position: "right" } });
   view.setGraph({
     nodes: graph.nodes.map((node) => ({
       id: node.id,
@@ -93,17 +94,55 @@ function mountOurs(graph, stage) {
       y: node.y,
       width: NODE_SIZE,
       height: NODE_SIZE,
-      color: node.color,
-      icon: node.icon,
-      label: node.label,
-      priority: node.depth === 0 ? 1 : 0,
+      style: {
+        shape: "round-rectangle",
+        fill: "#1a2030",
+        fillAlpha: 1,
+        border: node.color,
+        borderWidth: 3,
+        pattern: "solid",
+        iconAlpha: 1,
+        aura: null,
+        ring: null,
+        badge: false,
+        icon: node.icon,
+        label: node.label,
+        fontSize: 11,
+        bold: node.depth === 0,
+        labelPriority: node.depth === 0 ? 1 : 0,
+      },
     })),
-    edges: graph.edges.map((edge) => ({ ...edge, color: "#3b4558" })),
+    edges: graph.edges.map((edge) => ({
+      ...edge,
+      style: {
+        color: "#3b4558",
+        width: 1.6,
+        alpha: 1,
+        pattern: null,
+        arrowAtSource: null,
+        arrowAtTarget: "triangle",
+        arrowScale: 1,
+        label: "",
+        glow: false,
+      },
+    })),
     routing: "taxi",
     flowAxis: "x",
   });
-  view.fit();
+  view.fitView({ animate: false });
   return {
+    /** Light every edge with flowing pulses (the costliest edge effect). */
+    flow: (on) =>
+      view.setEdgeEmphasis(
+        on
+          ? new Map(
+              graph.edges.map((edge) => [
+                edge.id,
+                { color: "#62a4da", flow: 1 },
+              ]),
+            )
+          : null,
+      ),
     destroy: () => {
       view.destroy();
       element.remove();
@@ -178,6 +217,7 @@ function mountCytoscape(graph, stage, mode) {
       cy.viewport({ zoom, pan: { x: panX, y: panY } }),
     view: () => ({ zoom: cy.zoom(), panX: cy.pan().x, panY: cy.pan().y }),
     drawMs: () => null,
+    flow: null,
   };
 }
 
@@ -292,6 +332,11 @@ async function loadIcons() {
   $("#status").textContent = "";
 }
 
+let flowing = false;
+$("#flow").addEventListener("click", () => {
+  flowing = !flowing;
+  current?.flow?.(flowing);
+});
 $("#show").addEventListener("click", () =>
   show($("#renderer").value, Number($("#size").value)),
 );
@@ -305,6 +350,7 @@ $("#runAll").addEventListener("click", async () => {
   $("#status").textContent = "Done.";
 });
 globalThis.renderBench = {
+  flow: (on) => current?.flow?.(on),
   benchmark,
   show,
   results,

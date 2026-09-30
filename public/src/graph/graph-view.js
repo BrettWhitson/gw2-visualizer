@@ -45,6 +45,8 @@ export class GraphView {
   #physicsFrame = 0;
   /** @type {import('./graph-transition.js').GraphTransition | null} */
   #transition = null;
+  /** A page's own class rules, as Cytoscape style rules (see setClassStyles). */
+  #classRules = [];
 
   /**
    * @param {{ container: HTMLElement, canvasWrapper: HTMLElement, settings: import('../core/settings-store.js').SettingsStore,
@@ -217,11 +219,51 @@ export class GraphView {
     this.#showPinnedLineage({ force: true }); // flow / pinning settings may have changed
   }
 
+  /**
+   * Looks for a page's own classes, in the renderer-neutral terms both views share (see render/style-resolver.js):
+   * { nodes: { className: { pattern, border, borderWidth, fillAlpha, aura } }, edges: { className: { color, width } } }
+   */
+  setClassStyles(rules) {
+    const nodeRule = (rule) => ({
+      ...(rule.pattern && {
+        "border-style": rule.pattern === "stack" ? "double" : rule.pattern,
+      }),
+      ...(rule.border && { "border-color": rule.border }),
+      ...(rule.borderWidth != null && { "border-width": rule.borderWidth }),
+      ...(rule.fillAlpha != null && { "background-opacity": rule.fillAlpha }),
+      ...(rule.aura && {
+        "underlay-color": rule.aura,
+        "underlay-opacity": 0.35,
+        "underlay-padding": 6,
+      }),
+    });
+    const edgeRule = (rule) => ({
+      ...(rule.color && {
+        "line-color": rule.color,
+        "source-arrow-color": rule.color,
+        "target-arrow-color": rule.color,
+      }),
+      ...(rule.width != null && { width: rule.width }),
+    });
+    this.#classRules = [
+      ...Object.entries(rules?.nodes ?? {}).map(([name, rule]) => ({
+        selector: `node.${name}`,
+        style: nodeRule(rule),
+      })),
+      ...Object.entries(rules?.edges ?? {}).map(([name, rule]) => ({
+        selector: `edge.${name}`,
+        style: edgeRule(rule),
+      })),
+    ];
+    this.#applyStyle();
+  }
+
   /** Install the stylesheet for the current settings, skipping the (whole-graph) restyle when nothing changed. */
   #applyStyle() {
-    const sheet = buildStylesheet(this.#values, {
-      labelOpacity: this.#labelOpacity,
-    });
+    const sheet = [
+      ...buildStylesheet(this.#values, { labelOpacity: this.#labelOpacity }),
+      ...this.#classRules,
+    ];
     const key = JSON.stringify(sheet);
     if (key === this.#appliedStyleKey) return;
     this.#appliedStyleKey = key;

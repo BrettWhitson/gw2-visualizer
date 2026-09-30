@@ -1,154 +1,74 @@
 import { Camera } from "./camera.js";
 import { SpatialGrid } from "./spatial-grid.js";
 import { AtlasPacker } from "./atlas-packer.js";
-import { arrowHead, edgePoints, pointsBounds } from "./edge-geometry.js";
+import {
+  arrowTemplate,
+  edgeRoute,
+  pointAlong,
+  pointsBounds,
+  polylineLength,
+} from "./edge-geometry.js";
+import { Spring, springFor } from "./spring.js";
+import {
+  ARROW_FRAGMENT,
+  ARROW_VERTEX,
+  EDGE_FRAGMENT,
+  EDGE_VERTEX,
+  NODE_FRAGMENT,
+  NODE_VERTEX,
+} from "./shaders.js";
 
 /**
- * A graph renderer built for this app's graphs: WebGL2 draws every node and edge in a few instanced calls, and a 2D
- * canvas on top draws the labels. It only draws when something changes, culls what's off screen, and thins labels so
- * they never overlap. Layout is the caller's: nodes arrive with positions.
+ * A graph engine built for this app: WebGL2 draws every node, edge and arrowhead in a handful of instanced calls, a
+ * 2D canvas on top draws the labels, and springs move everything (nodes, fades, glows, the camera), so any change can
+ * interrupt any other and motion stays continuous. Layout is the caller's: nodes arrive with positions.
  *
- *   const graph = new WebGLGraph(container, { onNodeTap, onNodeDoubleTap, onNodeHover, onBackgroundTap });
- *   graph.setGraph({ nodes, edges, routing: "taxi", flowAxis: "x" });
- *   graph.fit();
+ *   const graph = new WebGLGraph(container, { onNodeTap, onNodeHover, onNodeDrag… });
+ *   graph.setGraph({ nodes, edges, routing: "taxi", flowAxis: "x" }, { animate: true, spawnFrom });
+ *   graph.fitView({ animate: true });
  *
- * Node: { id, x, y, width, height, color (border, "#rrggbb"), fill?, icon? (url), label?, labelColor?, priority? }
- * Edge: { id, source, target, color?, width? (px), arrow? (at the target) }
+ * Node: { id, x, y, width, height, style } and Edge: { id, source, target, style }, styles from style-resolver.js.
+ * Interaction state (hover, selection, emphasis, dimming, lineage) is set with the methods below and animated here.
  */
 
 const ICON_SIZE = 64; // atlas cell, pixels
 const ATLAS_SIZE = 2048; // 1024 icons
-const LABEL_FONT = '600 13px "Segoe UI", system-ui, sans-serif';
-const LABEL_LINE_HEIGHT = 16;
-const LABEL_MIN_ZOOM = 0.35; // labels fade out below this, like the crafting page's default
+const LABEL_FONT_FAMILY = '"Segoe UI", system-ui, sans-serif';
+const LABEL_RENDER_SCALE = 2; // label bitmaps are drawn at 2× and scaled down
 const DOUBLE_TAP_MS = 300;
+const LONG_PRESS_MS = 550;
+const DRAG_THRESHOLD_PX = 4;
+const GLIDE_FRICTION_S = 0.28; // time constant for the camera's glide after a flick
+const COLORS = {
+  selected: "#f0c46a",
+  hover: "#cfd8ea",
+  labelText: "#e3e6ec",
+  edgeLabelText: "#8a93a6",
+  labelBackdrop: "rgba(11, 14, 20, 0.8)",
+  edgeLabelBackdrop: "rgba(13, 16, 23, 0.9)",
+};
+const SHAPES = {
+  rectangle: 0,
+  "round-rectangle": 1,
+  ellipse: 2,
+  hexagon: 3,
+  octagon: 4,
+  "round-diamond": 5,
+  diamond: 5,
+};
+const NODE_PATTERNS = { solid: 0, dashed: 1, dotted: 2, stack: 3 };
+const EDGE_PATTERNS = { dashed: 1, dotted: 2 };
+const NODE_FLOATS = 36;
+const EDGE_FLOATS = 16;
+const ARROW_FLOATS = 9;
 
-const NODE_VERTEX = `#version 300 es
-layout(location=0) in vec2 corner;
-layout(location=1) in vec2 center;
-layout(location=2) in vec2 halfSize; // "half" is reserved in GLSL ES
-layout(location=3) in vec4 fill;
-layout(location=4) in vec4 border;
-layout(location=5) in float borderWidth;
-layout(location=6) in vec4 iconRect;
-uniform mat3 view;
-uniform float zoom;
-out vec2 local;
-out vec2 vHalf;
-out vec4 vFill;
-out vec4 vBorder;
-out float vBorderWidth;
-out vec4 vIcon;
-void main() {
-  // One pixel of room around the box for the anti-aliased edge.
-  vec2 grown = halfSize + vec2(1.0 / zoom);
-  local = corner * grown;
-  vHalf = halfSize;
-  vFill = fill;
-  vBorder = border;
-  vBorderWidth = borderWidth;
-  vIcon = iconRect;
-  vec3 clip = view * vec3(center + local, 1.0);
-  gl_Position = vec4(clip.xy, 0.0, 1.0);
-}`;
-
-const NODE_FRAGMENT = `#version 300 es
-precision highp float;
-in vec2 local;
-in vec2 vHalf;
-in vec4 vFill;
-in vec4 vBorder;
-in float vBorderWidth;
-in vec4 vIcon;
-uniform float zoom;
-uniform sampler2D icons;
-out vec4 color;
-float roundedBox(vec2 p, vec2 b, float r) {
-  vec2 q = abs(p) - b + r;
-  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
-}
-void main() {
-  float radius = min(vHalf.x, vHalf.y) * 0.22;
-  float distancePx = roundedBox(local, vHalf, radius) * zoom;
-  float inside = clamp(0.5 - distancePx, 0.0, 1.0);
-  if (inside <= 0.0) discard;
-  float borderPx = max(1.0, vBorderWidth * zoom);
-  vec4 body = vFill;
-  if (vIcon.z > 0.0) {
-    // The icon fills the box inside the border, inset a little.
-    vec2 inner = vHalf - vec2((vBorderWidth + 2.0));
-    vec2 uv = (local / max(inner, vec2(0.001))) * 0.5 + 0.5;
-    if (all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0)))) {
-      vec4 texel = texture(icons, mix(vIcon.xy, vIcon.zw, uv));
-      body = vec4(mix(body.rgb, texel.rgb, texel.a), max(body.a, texel.a * vFill.a));
-    }
-  }
-  float onBorder = clamp(distancePx + borderPx + 0.5, 0.0, 1.0);
-  color = mix(body, vBorder, onBorder);
-  color.a *= inside;
-  color.rgb *= color.a; // premultiplied
-}`;
-
-const EDGE_VERTEX = `#version 300 es
-layout(location=0) in vec2 corner; // x: along (0..1), y: across (-1..1)
-layout(location=1) in vec2 from;
-layout(location=2) in vec2 to;
-layout(location=3) in vec4 lineColor;
-layout(location=4) in float widthPx;
-uniform mat3 view;
-uniform vec2 viewport; // CSS pixels
-out vec4 vColor;
-out float across;
-out float vWidth;
-void main() {
-  vec3 a = view * vec3(from, 1.0);
-  vec3 b = view * vec3(to, 1.0);
-  vec2 aPx = a.xy * viewport * 0.5;
-  vec2 bPx = b.xy * viewport * 0.5;
-  vec2 direction = bPx - aPx;
-  float segmentLength = max(length(direction), 0.0001);
-  vec2 normal = vec2(-direction.y, direction.x) / segmentLength;
-  float halfWidth = widthPx * 0.5 + 1.0; // + a pixel for anti-aliasing
-  // Each piece runs half a width past its ends, so the corners of taxi edges join squarely.
-  vec2 extend = direction / segmentLength * (corner.x * 2.0 - 1.0) * widthPx * 0.5;
-  vec2 px = mix(aPx, bPx, corner.x) + normal * corner.y * halfWidth + extend;
-  gl_Position = vec4(px / (viewport * 0.5), 0.0, 1.0);
-  vColor = lineColor;
-  across = corner.y * halfWidth;
-  vWidth = widthPx;
-}`;
-
-const EDGE_FRAGMENT = `#version 300 es
-precision highp float;
-in vec4 vColor;
-in float across;
-in float vWidth;
-out vec4 color;
-void main() {
-  float alpha = clamp(vWidth * 0.5 + 0.5 - abs(across), 0.0, 1.0);
-  color = vec4(vColor.rgb * vColor.a * alpha, vColor.a * alpha);
-}`;
-
-const TRIANGLE_VERTEX = `#version 300 es
-layout(location=0) in vec2 point;
-layout(location=1) in vec4 triangleColor;
-uniform mat3 view;
-out vec4 vColor;
-void main() {
-  vec3 clip = view * vec3(point, 1.0);
-  gl_Position = vec4(clip.xy, 0.0, 1.0);
-  vColor = triangleColor;
-}`;
-
-const TRIANGLE_FRAGMENT = `#version 300 es
-precision highp float;
-in vec4 vColor;
-out vec4 color;
-void main() { color = vec4(vColor.rgb * vColor.a, vColor.a); }`;
-
-/** "#rrggbb" → [r, g, b] in 0..1. */
-function rgb(hex) {
-  const value = parseInt(String(hex ?? "#888888").slice(1, 7), 16);
+/** "#rrggbb" (or "#rgb") → [r, g, b] in 0..1. */
+export function parseColor(hex) {
+  let text = String(hex ?? "#888888").trim();
+  if (text.length === 4)
+    text = "#" + [...text.slice(1)].map((c) => c + c).join("");
+  const value = parseInt(text.slice(1, 7), 16);
+  if (Number.isNaN(value)) return [0.53, 0.53, 0.53];
   return [
     ((value >> 16) & 255) / 255,
     ((value >> 8) & 255) / 255,
@@ -158,170 +78,650 @@ function rgb(hex) {
 
 export class WebGLGraph {
   camera = new Camera();
-  /** Timings of the last draw, for profiling. */
-  stats = { drawMs: 0, labels: 0, visibleNodes: 0 };
+  /** Timings of the last frame, for profiling. */
+  stats = { drawMs: 0, labels: 0, visibleNodes: 0, animating: 0 };
+
+  /** Live nodes, in draw order, and the ones leaving (fading into their destination). */
   #nodes = [];
+  #ghosts = [];
+  #byId = new Map();
   #edges = [];
-  #indexById = new Map();
+  #edgeById = new Map();
+  #layout = {
+    routing: "straight",
+    flowAxis: "y",
+    cornerRadius: 10,
+    curvature: 1,
+  };
+  #labels = {
+    position: "right",
+    backdrop: true,
+    fadeZoom: 0.35,
+    maxWidth: 120,
+    overflow: "wrap",
+  };
+  #motion = { enabled: true, params: springFor(450), durationMs: 450 };
+  #input = { smoothZoom: true, zoomSpeed: 1, draggable: true };
+  #dimAlpha = 0.18;
+  #flowSpeed = 1;
+
   #grid = new SpatialGrid(200);
-  #dimmed = null; // Set of node ids drawn faded, or null
-  #highlighted = new Set();
+  #gridDirty = true;
+  #geometryDirty = true;
   #selected = null;
-  #hovered = -1;
+  #hovered = null;
+  #dragged = null;
+  #dimmed = null;
+  #emphasis = new Map(); // node id → colour
+  #labelFocus = new Set();
+  #edgeEmphasis = new Map(); // edge id → { color, flow, boost }
+  #moving = new Set(); // node / edge records with springs in motion
+  #tickers = new Set();
+
   #frame = 0;
+  #lastFrameTime = 0;
+  #startTime = performance.now();
+  #zoomTarget = null;
+  #cameraSprings = null;
+  #glide = null;
+
   #iconSlots = new Map(); // url → { u0, v0, u1, v1 } | "loading" | "failed"
   #iconPacker = new AtlasPacker(ATLAS_SIZE, 2);
-  #labelCache = new Map(); // text|color → canvas
-  #zoomTarget = null;
+  #atlasDirty = false;
+  #iconRefresh = 0;
+  #badgeUrl = null;
+  #labelCache = new Map();
+  #measureContext = null;
+  #arrowGroups = new Map(); // shape → { vao, buffer, templateCount, count }
 
   /**
    * @param {HTMLElement} container  the graph fills it
-   * @param {{ onNodeTap?: (id: string, event: PointerEvent) => void, onNodeDoubleTap?: (id: string) => void,
-   *           onNodeHover?: (id: string | null, event: PointerEvent) => void, onBackgroundTap?: () => void,
-   *           onViewportChange?: () => void }} [handlers]
-   * @param {{ preserveDrawingBuffer?: boolean }} [options]  keep each frame readable (screenshots, tests); a little slower
+   * @param {{ onNodeTap?, onNodeDoubleTap?, onNodeContextTap?, onNodeHover?, onPointerMove?, onBackgroundTap?,
+   *           onViewportChange?, onNodeDragStart?, onNodeDrag?, onNodeDragEnd? }} [handlers]
+   * @param {{ preserveDrawingBuffer?: boolean, badgeUrl?: string }} [options]
    */
   constructor(
     container,
     handlers = {},
-    { preserveDrawingBuffer = false } = {},
+    { preserveDrawingBuffer = false, badgeUrl = null } = {},
   ) {
     this.container = container;
     this.handlers = handlers;
     if (getComputedStyle(container).position === "static")
       container.style.position = "relative"; // the canvases are positioned inside it
     this.canvas = document.createElement("canvas");
-    this.labels = document.createElement("canvas");
-    for (const canvas of [this.canvas, this.labels])
+    this.labelCanvas = document.createElement("canvas");
+    for (const canvas of [this.canvas, this.labelCanvas])
       Object.assign(canvas.style, {
         position: "absolute",
         inset: "0",
         width: "100%",
         height: "100%",
       });
-    this.labels.style.pointerEvents = "none";
-    container.append(this.canvas, this.labels);
+    this.canvas.style.touchAction = "none";
+    this.canvas.setAttribute("role", "img");
+    this.canvas.setAttribute("aria-label", "Graph");
+    this.labelCanvas.style.pointerEvents = "none";
+    container.append(this.canvas, this.labelCanvas);
     const gl = this.canvas.getContext("webgl2", {
-      antialias: false,
+      antialias: true,
       premultipliedAlpha: true,
       alpha: true,
       preserveDrawingBuffer,
     });
     if (!gl) throw new Error("WebGL2 isn't available");
     this.gl = gl;
-    this.labelContext = this.labels.getContext("2d");
+    this.labelContext = this.labelCanvas.getContext("2d");
     this.#setUpGl();
     this.#bindInput();
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.resize();
+    if (badgeUrl) {
+      this.#badgeUrl = badgeUrl;
+      this.#loadIcon(badgeUrl);
+    }
+  }
+
+  // ---------------------------------------------------------------- options
+
+  /**
+   * @param {{ motion?: { enabled?: boolean, durationMs?: number, feel?: string }, dimAlpha?: number,
+   *           flowSpeed?: number, smoothZoom?: boolean, zoomSpeed?: number, draggable?: boolean,
+   *           labels?: Partial<{ position: string, backdrop: boolean, fadeZoom: number, maxWidth: number,
+   *           overflow: string }> }} options
+   */
+  setOptions(options) {
+    if (options.motion) {
+      const motion = { ...this.#motion, ...options.motion };
+      const params = springFor(motion.durationMs, motion.feel);
+      // Springs share one params object: update it in place so moving values pick up the change.
+      Object.assign(this.#motion.params, params);
+      this.#motion = { ...motion, params: this.#motion.params };
+    }
+    if (options.dimAlpha != null) this.#dimAlpha = options.dimAlpha;
+    if (options.flowSpeed != null) this.#flowSpeed = options.flowSpeed;
+    for (const key of ["smoothZoom", "zoomSpeed", "draggable"])
+      if (options[key] != null) this.#input[key] = options[key];
+    if (options.labels) {
+      this.#labels = { ...this.#labels, ...options.labels };
+      this.#labelCache.clear();
+    }
+    for (const record of [...this.#nodes, ...this.#ghosts])
+      this.#retargetNode(record);
+    this.#geometryDirty = true;
+    this.requestRender();
+  }
+
+  get motionEnabled() {
+    return this.#motion.enabled;
   }
 
   // ---------------------------------------------------------------- data
 
-  /** Replace the graph. Positions are world units; the view is left where it is (call fit() to frame it). */
-  setGraph({
-    nodes,
-    edges,
-    routing = "straight",
-    flowAxis = "y",
-    labelPosition = "right",
-  }) {
-    this.labelPosition = labelPosition;
-    this.#nodes = nodes.map((node) => ({
-      ...node,
-      hw: node.width / 2,
-      hh: node.height / 2,
-    }));
-    this.#indexById = new Map(
-      this.#nodes.map((node, index) => [node.id, index]),
-    );
-    const cell = Math.max(
-      100,
-      ...this.#nodes.slice(0, 50).map((n) => n.width * 3),
-    );
-    this.#grid = new SpatialGrid(cell);
-    this.#nodes.forEach((node, index) =>
-      this.#grid.insert(index, {
-        x1: node.x - node.hw,
-        y1: node.y - node.hh,
-        x2: node.x + node.hw,
-        y2: node.y + node.hh,
-      }),
-    );
-    this.#edges = edges
-      .map((edge) => {
-        const source = this.#nodes[this.#indexById.get(edge.source)];
-        const target = this.#nodes[this.#indexById.get(edge.target)];
-        if (!source || !target) return null;
-        return {
-          ...edge,
-          points: edgePoints(source, target, routing, flowAxis),
+  /**
+   * Replace the graph. Nodes that stay keep their place on screen and glide to their new position; with `animate`,
+   * new nodes grow out of `spawnFrom` (id → point) after `delays` (id → ms), and removed nodes fade into `ghostTo`
+   * (id → point). Without it everything snaps. The camera isn't moved (see fitView / moveCamera).
+   *
+   * @param {{ nodes: object[], edges: object[], routing?: string, flowAxis?: string, cornerRadius?: number,
+   *           curvature?: number }} graph
+   * @param {{ animate?: boolean, spawnFrom?: Map<string, {x: number, y: number}>, delays?: Map<string, number>,
+   *           ghostTo?: Map<string, {x: number, y: number}> }} [transition]
+   */
+  setGraph(graph, { animate = false, spawnFrom, delays, ghostTo } = {}) {
+    animate &&= this.#motion.enabled;
+    this.#layout = {
+      routing: graph.routing ?? "straight",
+      flowAxis: graph.flowAxis ?? "y",
+      cornerRadius: graph.cornerRadius ?? 10,
+      curvature: graph.curvature ?? 1,
+    };
+    const params = this.#motion.params;
+    const previous = this.#byId;
+    const next = new Map();
+    const nodes = [];
+    // A node coming back while it's still fading out is picked up where it is.
+    const returning = new Map(this.#ghosts.map((ghost) => [ghost.id, ghost]));
+    for (const input of graph.nodes) {
+      let record = previous.get(input.id) ?? returning.get(input.id);
+      returning.delete(input.id);
+      const isNew = !record;
+      if (isNew) {
+        const start = (animate && spawnFrom?.get(input.id)) || input;
+        record = {
+          id: input.id,
+          px: new Spring(start.x, params, 0.05), // world units: well under a pixel
+          py: new Spring(start.y, params, 0.05),
+          alpha: new Spring(animate ? 0 : 1, params),
+          scale: new Spring(animate ? 0.55 : 1, params),
+          glow: new Spring(0, params),
+          glowColor: [1, 1, 1],
+          wait: 0,
         };
-      })
-      .filter(Boolean);
-    for (const node of this.#nodes) if (node.icon) this.#loadIcon(node.icon);
-    this.#hovered = -1;
-    this.#uploadGeometry();
+      }
+      record.ghost = false;
+      record.width = input.width;
+      record.height = input.height;
+      record.hw = input.width / 2;
+      record.hh = input.height / 2;
+      this.#applyNodeStyle(record, input.style);
+      record.px.set(input.x);
+      record.py.set(input.y);
+      if (!animate) {
+        record.px.snap(input.x);
+        record.py.snap(input.y);
+      }
+      record.wait = isNew && animate ? (delays?.get(input.id) ?? 0) / 1000 : 0;
+      this.#retargetNode(record);
+      if (!animate) {
+        record.alpha.snap(record.alpha.target);
+        record.scale.snap(record.scale.target);
+      }
+      next.set(input.id, record);
+      nodes.push(record);
+      this.#moving.add(record);
+    }
+    // Leaving nodes become ghosts: they glide into their destination and fade out, then are dropped.
+    for (const [id, record] of previous) {
+      if (next.has(id)) continue;
+      if (!animate) continue;
+      record.ghost = true;
+      const destination = ghostTo?.get(id);
+      if (destination) {
+        record.px.set(destination.x);
+        record.py.set(destination.y);
+      }
+      this.#retargetNode(record);
+      this.#ghosts.push(record);
+      this.#moving.add(record);
+    }
+    this.#ghosts = animate
+      ? this.#ghosts.filter((ghost) => !next.has(ghost.id))
+      : [];
+    this.#nodes = nodes;
+    this.#byId = next;
+
+    const previousEdges = this.#edgeById;
+    this.#edgeById = new Map();
+    this.#edges = [];
+    for (const input of graph.edges) {
+      const source = next.get(input.source),
+        target = next.get(input.target);
+      if (!source || !target) continue;
+      let record = previousEdges.get(input.id);
+      const isNew =
+        !record || record.source !== source || record.target !== target;
+      if (isNew)
+        record = {
+          id: input.id,
+          alpha: new Spring(animate ? 0 : 1, params),
+          emphasis: new Spring(0, params),
+          wait: 0,
+        };
+      record.source = source;
+      record.target = target;
+      this.#applyEdgeStyle(record, input.style);
+      record.wait =
+        isNew && animate
+          ? Math.max(source.wait, target.wait) +
+            (this.#motion.durationMs / 1000) * 0.45
+          : 0;
+      this.#retargetEdge(record);
+      if (!animate) record.alpha.snap(record.alpha.target);
+      this.#edgeById.set(input.id, record);
+      this.#edges.push(record);
+      this.#moving.add(record);
+    }
+    if (this.#hovered && !next.has(this.#hovered)) this.#hovered = null;
+    if (this.#selected && !next.has(this.#selected)) this.#selected = null;
+    this.#dragged = null;
+    this.canvas.setAttribute(
+      "aria-label",
+      `Graph of ${nodes.length} item${nodes.length === 1 ? "" : "s"}`,
+    );
+    this.#geometryDirty = this.#gridDirty = true;
     this.requestRender();
   }
 
-  /** Nodes drawn faded (everything else normal), e.g. to spotlight a lineage; null for none. */
-  setDimmed(ids) {
-    this.#dimmed = ids ? new Set(ids) : null;
-    this.#uploadGeometry();
+  /** Restyle nodes and edges in place (no movement): [{ id, style }]. */
+  updateStyles(nodeUpdates = [], edgeUpdates = []) {
+    for (const { id, style } of nodeUpdates) {
+      const record = this.#byId.get(id);
+      if (record) this.#applyNodeStyle(record, style);
+    }
+    for (const { id, style } of edgeUpdates) {
+      const record = this.#edgeById.get(id);
+      if (record) this.#applyEdgeStyle(record, style);
+    }
+    this.#geometryDirty = true;
     this.requestRender();
   }
 
-  setHighlighted(ids) {
-    this.#highlighted = new Set(ids ?? []);
-    this.#uploadGeometry();
+  /**
+   * Move nodes (a force simulation, a drag): entries of [id, x, y]. They jump there: whatever is calling this is
+   * already animating them.
+   */
+  moveNodes(entries) {
+    for (const [id, x, y] of entries) {
+      const record = this.#byId.get(id);
+      if (!record) continue;
+      record.px.snap(x);
+      record.py.snap(y);
+    }
+    this.#geometryDirty = this.#gridDirty = true;
     this.requestRender();
   }
+
+  #applyNodeStyle(record, style) {
+    record.style = style;
+    record.fill = [...parseColor(style.fill), style.fillAlpha ?? 1];
+    record.border = [...parseColor(style.border), 1];
+    record.aura = style.aura ? [...parseColor(style.aura), 1] : [0, 0, 0, 0];
+    record.ring = style.ring ? [...parseColor(style.ring), 0.9] : [0, 0, 0, 0];
+    if (style.icon) this.#loadIcon(style.icon);
+  }
+
+  #applyEdgeStyle(record, style) {
+    record.style = style;
+    record.color = parseColor(style.color);
+  }
+
+  /** Spring targets from state: ghosts fade and shrink, dimmed nodes fade, hovered and dragged ones lift and glow. */
+  #retargetNode(record) {
+    const id = record.id;
+    const dimmed = !record.ghost && this.#dimmed?.has(id);
+    record.alpha.set(record.ghost ? 0 : dimmed ? this.#dimAlpha : 1);
+    record.scale.set(
+      record.ghost
+        ? 0.35
+        : id === this.#dragged
+          ? 1.12
+          : id === this.#hovered
+            ? 1.06
+            : 1,
+    );
+    let glow = 0,
+      color = COLORS.hover;
+    if (!record.ghost) {
+      if (id === this.#selected) {
+        glow = 0.9;
+        color = COLORS.selected;
+      } else if (this.#emphasis.has(id)) {
+        glow = 0.8;
+        color = this.#emphasis.get(id);
+      } else if (id === this.#hovered || id === this.#dragged) glow = 0.35;
+    }
+    if (glow > 0) record.glowColor = parseColor(color);
+    record.glow.set(glow);
+    this.#moving.add(record);
+  }
+
+  #retargetEdge(record) {
+    const emphasis = this.#edgeEmphasis.get(record.id);
+    const dimmed =
+      !emphasis &&
+      this.#dimmed &&
+      (this.#dimmed.has(record.source.id) ||
+        this.#dimmed.has(record.target.id));
+    record.alpha.set(dimmed ? this.#dimAlpha : 1);
+    record.emphasis.set(emphasis ? 1 : 0);
+    if (emphasis) record.emphasisState = emphasis;
+    this.#moving.add(record);
+  }
+
+  // ---------------------------------------------------------------- interaction state
 
   select(id) {
-    this.#selected = id;
-    this.#uploadGeometry();
+    const previous = this.#selected;
+    this.#selected = id ?? null;
+    for (const nodeId of [previous, this.#selected]) {
+      const record = nodeId && this.#byId.get(nodeId);
+      if (record) this.#retargetNode(record);
+    }
     this.requestRender();
   }
 
-  bounds() {
-    if (!this.#nodes.length) return { x1: 0, y1: 0, x2: 1, y2: 1 };
+  get selected() {
+    return this.#selected;
+  }
+
+  /** Nodes drawn faded (their edges too, unless emphasised); null for none. */
+  setDimmed(ids) {
+    this.#dimmed = ids ? new Set(ids) : null;
+    for (const record of this.#nodes) this.#retargetNode(record);
+    for (const record of this.#edges) this.#retargetEdge(record);
+    this.requestRender();
+  }
+
+  /** Nodes that glow in a colour (legend highlights, flashes): Map id → colour, or null. */
+  setEmphasis(colorsById) {
+    const changed = new Set([
+      ...this.#emphasis.keys(),
+      ...(colorsById?.keys() ?? []),
+    ]);
+    this.#emphasis = new Map(colorsById ?? []);
+    for (const id of changed) {
+      const record = this.#byId.get(id);
+      if (record) this.#retargetNode(record);
+    }
+    this.requestRender();
+  }
+
+  /** Nodes whose labels stay visible however far out you zoom (e.g. a hovered lineage). */
+  setLabelFocus(ids) {
+    this.#labelFocus = new Set(ids ?? []);
+    this.requestRender();
+  }
+
+  /** Edges drawn in a colour, wider, optionally with flow: Map id → { color, boost?, flow? (+1 → target, −1 → source) }. */
+  setEdgeEmphasis(stateById) {
+    this.#edgeEmphasis = new Map(stateById ?? []);
+    for (const record of this.#edges) this.#retargetEdge(record);
+    this.requestRender();
+  }
+
+  /** A kick to a node's glow: it flares and settles back (springs make this a velocity impulse). */
+  pulse(id) {
+    const record = this.#byId.get(id);
+    if (!record || !this.#motion.enabled) return;
+    if (record.glow.target === 0)
+      record.glowColor = parseColor(COLORS.selected);
+    record.glow.velocity += 9;
+    record.scale.velocity += 1.2;
+    this.#moving.add(record);
+    this.requestRender();
+  }
+
+  /** Run `tick(dt)` every frame until it returns false (physics, custom animations). */
+  addTicker(tick) {
+    this.#tickers.add(tick);
+    this.requestRender();
+    return () => this.#tickers.delete(tick);
+  }
+
+  // ---------------------------------------------------------------- queries
+
+  hasNode(id) {
+    return this.#byId.has(id);
+  }
+
+  nodeIds() {
+    return [...this.#byId.keys()];
+  }
+
+  /** Where a node is headed (its layout position), or null. */
+  positionOf(id) {
+    const record = this.#byId.get(id);
+    return record ? { x: record.px.target, y: record.py.target } : null;
+  }
+
+  /** Where a node is right now (world units, mid-animation included), or null. */
+  livePositionOf(id) {
+    const record = this.#byId.get(id);
+    return record ? { x: record.px.value, y: record.py.value } : null;
+  }
+
+  /** Change how edges are routed (a style setting) without replacing the graph. */
+  setRouting({ routing, flowAxis, cornerRadius, curvature }) {
+    this.#layout = {
+      routing: routing ?? this.#layout.routing,
+      flowAxis: flowAxis ?? this.#layout.flowAxis,
+      cornerRadius: cornerRadius ?? this.#layout.cornerRadius,
+      curvature: curvature ?? this.#layout.curvature,
+    };
+    this.#geometryDirty = true;
+    this.requestRender();
+  }
+
+  /** Where a node is on screen right now (CSS pixels), or null. */
+  screenPositionOf(id) {
+    const record = this.#byId.get(id);
+    return record
+      ? this.camera.toScreen(record.px.value, record.py.value)
+      : null;
+  }
+
+  /** World box around the given nodes' final positions (all nodes by default). */
+  bounds(ids = null) {
+    const records = ids
+      ? [...ids].map((id) => this.#byId.get(id)).filter(Boolean)
+      : this.#nodes;
+    if (!records.length) return { x1: 0, y1: 0, x2: 1, y2: 1 };
     return pointsBounds(
-      this.#nodes.flatMap((n) => [
-        { x: n.x - n.hw, y: n.y - n.hh },
-        { x: n.x + n.hw, y: n.y + n.hh },
+      records.flatMap((r) => [
+        { x: r.px.target - r.hw, y: r.py.target - r.hh },
+        { x: r.px.target + r.hw, y: r.py.target + r.hh },
       ]),
     );
   }
 
-  /** Bring a node to the middle of the view, keeping the zoom. */
-  centerOn(id) {
-    const node = this.#nodes[this.#indexById.get(id)];
-    if (!node) return;
-    this.camera.panX = this.width / 2 - node.x * this.camera.zoom;
-    this.camera.panY = this.height / 2 - node.y * this.camera.zoom;
-    this.requestRender();
-  }
+  // ---------------------------------------------------------------- camera
 
-  fit() {
-    this.camera.fit(this.bounds(), this.width, this.height);
+  /**
+   * Move the camera to { zoom, panX, panY }. Animated moves ride springs on the view's centre and (log) zoom, so they
+   * can be retargeted mid-flight; any direct input (wheel, drag) takes over at once.
+   */
+  moveCamera({ zoom, panX, panY }, { animate = true } = {}) {
+    zoom = Math.min(this.camera.maxZoom, Math.max(this.camera.minZoom, zoom));
+    const centreX = (this.width / 2 - panX) / zoom;
+    const centreY = (this.height / 2 - panY) / zoom;
     this.#zoomTarget = null;
+    this.#glide = null;
+    if (!animate || !this.#motion.enabled || !this.width) {
+      this.#cameraSprings = null;
+      Object.assign(this.camera, { zoom, panX, panY });
+      this.#viewportChanged();
+      return;
+    }
+    const params = springFor(Math.min(this.#motion.durationMs, 520), "smooth");
+    const current = this.#cameraSprings ?? {
+      x: new Spring(
+        (this.width / 2 - this.camera.panX) / this.camera.zoom,
+        params,
+      ),
+      y: new Spring(
+        (this.height / 2 - this.camera.panY) / this.camera.zoom,
+        params,
+      ),
+      z: new Spring(Math.log(this.camera.zoom), params),
+    };
+    // Close enough is a third of a pixel at the zoom it's headed for.
+    current.x.precision = current.y.precision = 0.3 / zoom;
+    current.x.set(centreX);
+    current.y.set(centreY);
+    current.z.set(Math.log(zoom));
+    this.#cameraSprings = current;
     this.requestRender();
   }
 
-  zoomBy(factor) {
-    this.camera.zoomAround(factor, this.width / 2, this.height / 2);
+  /** The camera that fits `bounds` (default: every node) with `padding` pixels to spare. */
+  viewFor(bounds = this.bounds(), { padding = 40, maxZoom = 1.6 } = {}) {
+    const camera = new Camera({
+      minZoom: this.camera.minZoom,
+      maxZoom: this.camera.maxZoom,
+    });
+    camera.fit(bounds, this.width, this.height, {
+      padding,
+      maxFitZoom: maxZoom,
+    });
+    return { zoom: camera.zoom, panX: camera.panX, panY: camera.panY };
+  }
+
+  fitView({ animate = true, ids = null, padding = 40, maxZoom = 1.6 } = {}) {
+    if (!this.width || !this.height) return;
+    this.moveCamera(this.viewFor(this.bounds(ids), { padding, maxZoom }), {
+      animate,
+    });
+  }
+
+  /** Zoom around the middle of the view. */
+  zoomBy(factor, { animate = true } = {}) {
+    const base = this.#cameraTarget();
+    const zoom = Math.min(
+      this.camera.maxZoom,
+      Math.max(this.camera.minZoom, base.zoom * factor),
+    );
+    const ratio = zoom / base.zoom;
+    const cx = this.width / 2,
+      cy = this.height / 2;
+    this.moveCamera(
+      {
+        zoom,
+        panX: cx - (cx - base.panX) * ratio,
+        panY: cy - (cy - base.panY) * ratio,
+      },
+      { animate },
+    );
+  }
+
+  /** Put a node in the middle of the view (at `zoom`, or the current zoom). */
+  centerOn(id, { zoom = null, animate = true } = {}) {
+    const position = this.positionOf(id);
+    if (!position) return;
+    const z = zoom ?? this.#cameraTarget().zoom;
+    this.moveCamera(
+      {
+        zoom: z,
+        panX: this.width / 2 - position.x * z,
+        panY: this.height / 2 - position.y * z,
+      },
+      { animate },
+    );
+  }
+
+  /** Pan (not zoom) just enough to bring a node on screen with `margin` pixels to spare. */
+  reveal(id, { margin = 60, animate = true } = {}) {
+    const position = this.positionOf(id);
+    if (!position) return;
+    const view = this.#cameraTarget();
+    const x = position.x * view.zoom + view.panX,
+      y = position.y * view.zoom + view.panY;
+    const dx =
+      x < margin
+        ? margin - x
+        : x > this.width - margin
+          ? this.width - margin - x
+          : 0;
+    const dy =
+      y < margin
+        ? margin - y
+        : y > this.height - margin
+          ? this.height - margin - y
+          : 0;
+    if (dx || dy)
+      this.moveCamera(
+        { zoom: view.zoom, panX: view.panX + dx, panY: view.panY + dy },
+        { animate },
+      );
+  }
+
+  /** Where the camera is headed (or is, when it isn't moving). */
+  #cameraTarget() {
+    const springs = this.#cameraSprings;
+    if (!springs)
+      return {
+        zoom: this.camera.zoom,
+        panX: this.camera.panX,
+        panY: this.camera.panY,
+      };
+    const zoom = Math.exp(springs.z.target);
+    return {
+      zoom,
+      panX: this.width / 2 - springs.x.target * zoom,
+      panY: this.height / 2 - springs.y.target * zoom,
+    };
+  }
+
+  /** The camera's destination, for callers that plan relative to it. */
+  get cameraTarget() {
+    return this.#cameraTarget();
+  }
+
+  #stopCamera() {
+    this.#cameraSprings = null;
+    this.#glide = null;
+  }
+
+  #viewportChanged() {
+    this.handlers.onViewportChange?.();
     this.requestRender();
   }
 
   resize() {
     const dpr = globalThis.devicePixelRatio || 1;
-    this.width = this.container.clientWidth;
-    this.height = this.container.clientHeight;
-    for (const canvas of [this.canvas, this.labels]) {
-      canvas.width = Math.max(1, Math.round(this.width * dpr));
-      canvas.height = Math.max(1, Math.round(this.height * dpr));
+    const width = this.container.clientWidth,
+      height = this.container.clientHeight;
+    // Keep what's in the middle in the middle.
+    if (this.width && width && height) {
+      this.camera.panX += (width - this.width) / 2;
+      this.camera.panY += (height - this.height) / 2;
+    }
+    this.width = width;
+    this.height = height;
+    for (const canvas of [this.canvas, this.labelCanvas]) {
+      canvas.width = Math.max(1, Math.round(width * dpr));
+      canvas.height = Math.max(1, Math.round(height * dpr));
     }
     this.dpr = dpr;
     this.requestRender();
@@ -329,9 +729,11 @@ export class WebGLGraph {
 
   destroy() {
     cancelAnimationFrame(this.#frame);
+    clearTimeout(this.#iconRefresh);
     this.resizeObserver.disconnect();
     this.canvas.remove();
-    this.labels.remove();
+    this.labelCanvas.remove();
+    this.gl.getExtension("WEBGL_lose_context")?.loseContext();
   }
 
   // ---------------------------------------------------------------- GL setup
@@ -340,9 +742,9 @@ export class WebGLGraph {
     const gl = this.gl;
     this.nodeProgram = this.#program(NODE_VERTEX, NODE_FRAGMENT);
     this.edgeProgram = this.#program(EDGE_VERTEX, EDGE_FRAGMENT);
-    this.triangleProgram = this.#program(TRIANGLE_VERTEX, TRIANGLE_FRAGMENT);
+    this.arrowProgram = this.#program(ARROW_VERTEX, ARROW_FRAGMENT);
+    this.uniforms = new Map();
 
-    // Nodes: a unit quad drawn once per node instance.
     this.nodeVao = gl.createVertexArray();
     gl.bindVertexArray(this.nodeVao);
     this.#staticBuffer(0, [-1, -1, 1, -1, -1, 1, 1, 1], 2);
@@ -352,11 +754,14 @@ export class WebGLGraph {
       [2, 2],
       [3, 4],
       [4, 4],
-      [5, 1],
+      [5, 4],
       [6, 4],
+      [7, 4],
+      [8, 4],
+      [9, 4],
+      [10, 4],
     ]);
 
-    // Edge pieces: a quad per segment.
     this.edgeVao = gl.createVertexArray();
     gl.bindVertexArray(this.edgeVao);
     this.#staticBuffer(0, [0, -1, 1, -1, 0, 1, 1, 1], 2);
@@ -365,21 +770,12 @@ export class WebGLGraph {
       [1, 2],
       [2, 2],
       [3, 4],
-      [4, 1],
+      [4, 4],
+      [5, 4],
     ]);
-
-    // Arrowheads: plain triangles.
-    this.triangleVao = gl.createVertexArray();
-    gl.bindVertexArray(this.triangleVao);
-    this.triangleBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.triangleBuffer);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 24, 0);
-    gl.enableVertexAttribArray(1);
-    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 24, 8);
     gl.bindVertexArray(null);
 
-    // Icon atlas: a 2D canvas the icons are drawn into, uploaded as one texture.
+    // Icon atlas: a 2D canvas the icons are drawn into, uploaded as one texture (premultiplied, mipmapped).
     this.atlasCanvas = document.createElement("canvas");
     this.atlasCanvas.width = this.atlasCanvas.height = ATLAS_SIZE;
     this.atlasContext = this.atlasCanvas.getContext("2d");
@@ -404,6 +800,7 @@ export class WebGLGraph {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
   }
@@ -425,6 +822,14 @@ export class WebGLGraph {
     if (!gl.getProgramParameter(program, gl.LINK_STATUS))
       throw new Error(gl.getProgramInfoLog(program));
     return program;
+  }
+
+  #uniform(program, name) {
+    let byName = this.uniforms.get(program);
+    if (!byName) this.uniforms.set(program, (byName = new Map()));
+    if (!byName.has(name))
+      byName.set(name, this.gl.getUniformLocation(program, name));
+    return byName.get(name);
   }
 
   #staticBuffer(location, data, size) {
@@ -450,90 +855,228 @@ export class WebGLGraph {
     }
   }
 
+  /** One VAO per arrow shape: its template mesh plus an instance buffer of tips. */
+  #arrowGroup(shape) {
+    let group = this.#arrowGroups.get(shape);
+    if (group) return group;
+    const gl = this.gl;
+    const template = arrowTemplate(shape);
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    this.#staticBuffer(0, template.triangles.flat(), 2);
+    const buffer = gl.createBuffer();
+    this.#instanceLayout(buffer, [
+      [1, 2],
+      [2, 2],
+      [3, 4],
+      [4, 1],
+    ]);
+    gl.bindVertexArray(null);
+    group = {
+      vao,
+      buffer,
+      vertices: template.triangles.length,
+      inset: template.inset,
+      count: 0,
+    };
+    this.#arrowGroups.set(shape, group);
+    return group;
+  }
+
   // ---------------------------------------------------------------- geometry
 
-  /** Instance data for every node, edge piece and arrowhead (states such as dimming are baked in). */
+  /** Arrowhead size in CSS pixels for an edge of `width`. */
+  #arrowSize(style) {
+    return (7 + style.width * 2.2) * (style.arrowScale ?? 1);
+  }
+
+  /** Rebuild every instance buffer from the records (positions, springs and states baked in). */
   #uploadGeometry() {
     const gl = this.gl;
-    const dimmed = this.#dimmed;
-    const alphaOf = (id) => (dimmed && dimmed.has(id) ? 0.18 : 1);
+    const layout = this.#layout;
 
-    const nodeData = new Float32Array(this.#nodes.length * 17);
-    this.#nodes.forEach((node, index) => {
-      const alpha = alphaOf(node.id);
-      const [br, bg, bb] = rgb(
-        node.id === this.#selected || this.#highlighted.has(node.id)
-          ? "#ffd166"
-          : node.color,
-      );
-      const [fr, fg, fb] = rgb(node.fill ?? "#1a2030");
-      const slot = node.icon ? this.#iconSlots.get(node.icon) : null;
-      const icon =
-        slot && typeof slot === "object"
-          ? [slot.u0, slot.v0, slot.u1, slot.v1]
-          : [0, 0, 0, 0];
-      nodeData.set(
-        [
-          node.x,
-          node.y,
-          node.hw,
-          node.hh,
-          fr,
-          fg,
-          fb,
-          alpha,
-          br,
-          bg,
-          bb,
-          alpha,
-          node.id === this.#selected ? 4 : (node.borderWidth ?? 3),
-          ...icon,
-        ],
-        index * 17,
-      );
-    });
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.nodeBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, nodeData, gl.DYNAMIC_DRAW);
-    this.nodeCount = this.#nodes.length;
-
+    // Edges first: their routes depend on the nodes' current positions and sizes.
+    const arrowData = new Map();
     const pieces = [];
-    const triangles = [];
+    const emphasised = [];
+    const ordered = [];
     for (const edge of this.#edges) {
-      const [r, g, b] = rgb(edge.color ?? "#3b4558");
+      if (edge.emphasis.value > 0.01) emphasised.push(edge);
+      else ordered.push(edge);
+    }
+    ordered.push(...emphasised); // highlighted lineages draw on top
+    for (const edge of ordered) {
+      const { source, target, style } = edge;
       const alpha =
-        dimmed && (dimmed.has(edge.source) || dimmed.has(edge.target))
-          ? 0.15
-          : 1;
-      const points = edge.points;
-      for (let i = 1; i < points.length; i++)
+        edge.alpha.value *
+        Math.min(source.alpha.value, target.alpha.value) *
+        (style.alpha ?? 1);
+      edge.points = null;
+      if (alpha < 0.004) continue;
+      const points = edgeRoute(
+        {
+          x: source.px.value,
+          y: source.py.value,
+          hw: source.hw * source.scale.value,
+          hh: source.hh * source.scale.value,
+        },
+        {
+          x: target.px.value,
+          y: target.py.value,
+          hw: target.hw * target.scale.value,
+          hh: target.hh * target.scale.value,
+        },
+        layout,
+      );
+      edge.points = points;
+      if (points.length < 2) continue;
+      const emphasis = edge.emphasis.value;
+      const state = edge.emphasisState;
+      let [r, g, b] = edge.color;
+      let width = style.width;
+      // Edges with a standing glow (a best route) keep their colour when a lineage lights them; they still flow.
+      if (emphasis > 0 && state && !style.glow) {
+        const [er, eg, eb] = parseColor(state.color);
+        r += (er - r) * emphasis;
+        g += (eg - g) * emphasis;
+        b += (eb - b) * emphasis;
+        width += (state.boost ?? 1) * emphasis;
+      }
+      const flow = emphasis > 0.5 && state?.flow ? state.flow : 0;
+      const pattern = flow ? 0 : (EDGE_PATTERNS[style.pattern] ?? 0);
+      const glow = style.glow ? 1 : emphasis * 0.6;
+      const arrowSize = this.#arrowSize({ ...style, width });
+      const startArrow = style.arrowAtSource
+        ? this.#arrowGroup(style.arrowAtSource)
+        : null;
+      const endArrow = style.arrowAtTarget
+        ? this.#arrowGroup(style.arrowAtTarget)
+        : null;
+      const trimStart = startArrow ? startArrow.inset * arrowSize : 0;
+      const trimEnd = endArrow ? endArrow.inset * arrowSize : 0;
+      let distance = 0;
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1],
+          c = points[i];
         pieces.push(
-          points[i - 1].x,
-          points[i - 1].y,
-          points[i].x,
-          points[i].y,
+          a.x,
+          a.y,
+          c.x,
+          c.y,
           r,
           g,
           b,
           alpha,
-          edge.width ?? 1.6,
+          width,
+          distance,
+          pattern,
+          flow,
+          i === 1 ? trimStart : 0,
+          i === points.length - 1 ? trimEnd : 0,
+          glow,
+          0,
         );
-      if (edge.arrow !== false) {
-        const tip = points[points.length - 1];
-        const from = points[points.length - 2];
-        for (const corner of arrowHead(from, tip, 9))
-          triangles.push(corner.x, corner.y, r, g, b, alpha);
+        distance += Math.hypot(c.x - a.x, c.y - a.y);
       }
+      const addArrow = (shape, from, tip) => {
+        let list = arrowData.get(shape);
+        if (!list) arrowData.set(shape, (list = []));
+        list.push(
+          tip.x,
+          tip.y,
+          tip.x - from.x,
+          tip.y - from.y,
+          r,
+          g,
+          b,
+          alpha,
+          arrowSize,
+        );
+      };
+      if (startArrow) addArrow(style.arrowAtSource, points[1], points[0]);
+      if (endArrow) addArrow(style.arrowAtTarget, points.at(-2), points.at(-1));
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, this.edgeBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(pieces), gl.DYNAMIC_DRAW);
-    this.edgePieceCount = pieces.length / 9;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.triangleBuffer);
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
-      new Float32Array(triangles),
-      gl.DYNAMIC_DRAW,
+    this.edgePieceCount = pieces.length / EDGE_FLOATS;
+    for (const [shape, group] of this.#arrowGroups) {
+      const list = arrowData.get(shape) ?? [];
+      gl.bindBuffer(gl.ARRAY_BUFFER, group.buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(list), gl.DYNAMIC_DRAW);
+      group.count = list.length / ARROW_FLOATS;
+    }
+
+    // Nodes: leaving ones underneath, the hovered / selected / dragged ones on top.
+    const top = [];
+    const drawn = [...this.#ghosts];
+    for (const record of this.#nodes) {
+      if (
+        record.id === this.#selected ||
+        record.id === this.#hovered ||
+        record.id === this.#dragged
+      )
+        top.push(record);
+      else drawn.push(record);
+    }
+    drawn.push(...top);
+    const data = new Float32Array(drawn.length * NODE_FLOATS);
+    let offset = 0;
+    for (const record of drawn) {
+      const style = record.style;
+      const slot = style.icon ? this.#iconSlots.get(style.icon) : null;
+      const icon =
+        slot && typeof slot === "object"
+          ? [slot.u0, slot.v0, slot.u1, slot.v1]
+          : [0, 0, 0, 0];
+      const glow = Math.max(0, record.glow.value);
+      data.set(
+        [
+          record.px.value,
+          record.py.value,
+          record.hw,
+          record.hh,
+          ...record.fill,
+          ...record.border,
+          ...record.aura,
+          ...record.glowColor,
+          Math.min(1, glow),
+          ...record.ring,
+          ...icon,
+          style.borderWidth ?? 3,
+          SHAPES[style.shape] ?? 1,
+          NODE_PATTERNS[style.pattern] ?? 0,
+          style.badge ? 1 : 0,
+          Math.max(0, Math.min(1, record.alpha.value)),
+          Math.max(0.05, record.scale.value),
+          style.iconAlpha ?? 1,
+          0,
+        ],
+        offset,
+      );
+      offset += NODE_FLOATS;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.nodeBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+    this.nodeCount = drawn.length;
+    this.#geometryDirty = false;
+  }
+
+  #rebuildGrid() {
+    const cell = Math.max(
+      100,
+      ...this.#nodes.slice(0, 50).map((n) => n.width * 3),
     );
-    this.triangleVertexCount = triangles.length / 6;
+    this.#grid = new SpatialGrid(cell);
+    this.#nodes.forEach((record, index) => {
+      if (record.style.events === false) return;
+      this.#grid.insert(index, {
+        x1: record.px.value - record.hw,
+        y1: record.py.value - record.hh,
+        x2: record.px.value + record.hw,
+        y2: record.py.value + record.hh,
+      });
+    });
+    this.#gridDirty = false;
   }
 
   #loadIcon(url) {
@@ -561,36 +1104,117 @@ export class WebGLGraph {
     image.src = url;
   }
 
-  #atlasDirty = false;
-  #iconRefresh = 0;
-
-  /** Icons arrive one by one: re-upload the atlas and node data at most every 100 ms, not per icon. */
+  /** Icons arrive one by one: refresh the atlas and node data at most every 100 ms, not per icon. */
   #scheduleIconRefresh() {
     if (this.#iconRefresh) return;
     this.#iconRefresh = setTimeout(() => {
       this.#iconRefresh = 0;
-      this.#uploadGeometry();
+      this.#geometryDirty = true;
       this.requestRender();
     }, 100);
   }
 
-  // ---------------------------------------------------------------- drawing
+  // ---------------------------------------------------------------- the frame loop
 
   requestRender() {
     if (this.#frame) return;
-    this.#frame = requestAnimationFrame(() => {
+    this.#frame = requestAnimationFrame((time) => {
       this.#frame = 0;
-      this.#draw();
+      this.#step(time);
     });
   }
 
-  #draw() {
+  /** Advance every animation by the time since the last frame, draw, and keep going while anything moves. */
+  #step(time) {
     const started = performance.now();
-    if (this.#zoomTarget) this.#stepZoom();
+    const dt = this.#lastFrameTime
+      ? Math.min(0.05, Math.max(0.001, (time - this.#lastFrameTime) / 1000))
+      : 1 / 60;
+    this.#lastFrameTime = time;
+    let active = false;
+
+    if (this.#zoomTarget) active = this.#stepWheelZoom(dt) || active;
+    if (this.#cameraSprings) active = this.#stepCamera(dt) || active;
+    if (this.#glide) active = this.#stepGlide(dt) || active;
+    for (const tick of [...this.#tickers]) {
+      if (tick(dt)) active = true;
+      else this.#tickers.delete(tick);
+    }
+    if (this.#moving.size) {
+      for (const record of [...this.#moving]) {
+        if (record.wait > 0) {
+          record.wait -= dt;
+          continue;
+        }
+        let moving;
+        if (record.px) {
+          const moved = record.px.step(dt) | record.py.step(dt);
+          if (moved) this.#gridDirty = true;
+          moving = moved | record.scale.step(dt) | record.glow.step(dt);
+        } else moving = !!(record.emphasis.step(dt) | 0);
+        moving = record.alpha.step(dt) || moving;
+        if (!moving) this.#moving.delete(record);
+      }
+      this.#geometryDirty = true;
+      // Ghosts leave once faded.
+      const leaving = this.#ghosts.filter(
+        (g) => g.alpha.value > 0.01 && this.#moving.has(g),
+      );
+      if (leaving.length !== this.#ghosts.length) this.#ghosts = leaving;
+      active ||= this.#moving.size > 0;
+    }
+    const flowing = [...this.#edgeEmphasis.values()].some(
+      (state) => state.flow,
+    );
+    this.stats.animating = this.#moving.size;
+
+    this.#draw();
+    this.stats.drawMs = performance.now() - started;
+    if (active || flowing) this.requestRender();
+    else this.#lastFrameTime = 0;
+  }
+
+  #stepWheelZoom(dt) {
+    const target = this.#zoomTarget;
+    const ratio = target.zoom / this.camera.zoom;
+    if (Math.abs(Math.log(ratio)) < 0.002) {
+      this.camera.zoomAround(ratio, target.x, target.y);
+      this.#zoomTarget = null;
+    } else
+      this.camera.zoomAround(
+        Math.pow(ratio, 1 - Math.exp(-dt / 0.07)),
+        target.x,
+        target.y,
+      );
+    this.handlers.onViewportChange?.();
+    return !!this.#zoomTarget;
+  }
+
+  #stepCamera(dt) {
+    const springs = this.#cameraSprings;
+    const moving = springs.x.step(dt) | springs.y.step(dt) | springs.z.step(dt);
+    const zoom = Math.exp(springs.z.value);
+    this.camera.zoom = zoom;
+    this.camera.panX = this.width / 2 - springs.x.value * zoom;
+    this.camera.panY = this.height / 2 - springs.y.value * zoom;
+    this.handlers.onViewportChange?.();
+    if (!moving) this.#cameraSprings = null;
+    return !!moving;
+  }
+
+  #stepGlide(dt) {
+    const glide = this.#glide;
+    this.camera.panBy(glide.vx * dt, glide.vy * dt);
+    const decay = Math.exp(-dt / GLIDE_FRICTION_S);
+    glide.vx *= decay;
+    glide.vy *= decay;
+    this.handlers.onViewportChange?.();
+    if (Math.hypot(glide.vx, glide.vy) < 8) this.#glide = null;
+    return !!this.#glide;
+  }
+
+  #draw() {
     const gl = this.gl;
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
     if (this.#atlasDirty) {
       gl.bindTexture(gl.TEXTURE_2D, this.iconTexture);
       gl.texSubImage2D(
@@ -605,274 +1229,643 @@ export class WebGLGraph {
       gl.generateMipmap(gl.TEXTURE_2D);
       this.#atlasDirty = false;
     }
-    const view = this.camera.clipMatrix(this.width, this.height);
+    if (this.#geometryDirty) this.#uploadGeometry();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    this.#drawScene({
+      camera: this.camera,
+      width: this.width,
+      height: this.height,
+      pixelRatio: this.dpr,
+    });
+    const context = this.labelContext;
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, this.labelCanvas.width, this.labelCanvas.height);
+    context.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.#drawLabels(context, {
+      camera: this.camera,
+      width: this.width,
+      height: this.height,
+    });
+  }
+
+  /** Edges, arrowheads and nodes for `camera` into the bound framebuffer, `width` × `height` CSS pixels. */
+  #drawScene({ camera, width, height, pixelRatio, lineScale = pixelRatio }) {
+    const gl = this.gl;
+    const view = camera.clipMatrix(width, height);
+    const viewportX = width * pixelRatio,
+      viewportY = height * pixelRatio;
+    const time = (performance.now() - this.#startTime) / 1000;
 
     gl.useProgram(this.edgeProgram);
-    gl.uniformMatrix3fv(
-      gl.getUniformLocation(this.edgeProgram, "view"),
-      false,
-      view,
-    );
+    gl.uniformMatrix3fv(this.#uniform(this.edgeProgram, "view"), false, view);
     gl.uniform2f(
-      gl.getUniformLocation(this.edgeProgram, "viewport"),
-      this.width,
-      this.height,
+      this.#uniform(this.edgeProgram, "viewport"),
+      viewportX,
+      viewportY,
     );
+    gl.uniform1f(
+      this.#uniform(this.edgeProgram, "zoomPx"),
+      camera.zoom * pixelRatio,
+    );
+    gl.uniform1f(this.#uniform(this.edgeProgram, "pixelScale"), lineScale);
+    gl.uniform1f(this.#uniform(this.edgeProgram, "time"), time);
+    gl.uniform1f(this.#uniform(this.edgeProgram, "flowSpeed"), this.#flowSpeed);
     gl.bindVertexArray(this.edgeVao);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.edgePieceCount);
 
-    gl.useProgram(this.triangleProgram);
-    gl.uniformMatrix3fv(
-      gl.getUniformLocation(this.triangleProgram, "view"),
-      false,
-      view,
+    gl.useProgram(this.arrowProgram);
+    gl.uniformMatrix3fv(this.#uniform(this.arrowProgram, "view"), false, view);
+    gl.uniform2f(
+      this.#uniform(this.arrowProgram, "viewport"),
+      viewportX,
+      viewportY,
     );
-    gl.bindVertexArray(this.triangleVao);
-    gl.drawArrays(gl.TRIANGLES, 0, this.triangleVertexCount);
+    gl.uniform1f(this.#uniform(this.arrowProgram, "pixelScale"), lineScale);
+    for (const group of this.#arrowGroups.values()) {
+      if (!group.count) continue;
+      gl.bindVertexArray(group.vao);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, group.vertices, group.count);
+    }
 
     gl.useProgram(this.nodeProgram);
-    gl.uniformMatrix3fv(
-      gl.getUniformLocation(this.nodeProgram, "view"),
-      false,
-      view,
-    );
+    gl.uniformMatrix3fv(this.#uniform(this.nodeProgram, "view"), false, view);
     gl.uniform1f(
-      gl.getUniformLocation(this.nodeProgram, "zoom"),
-      this.camera.zoom,
+      this.#uniform(this.nodeProgram, "pxWorld"),
+      1 / (camera.zoom * pixelRatio),
     );
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.iconTexture);
-    gl.uniform1i(gl.getUniformLocation(this.nodeProgram, "icons"), 0);
+    gl.uniform1i(this.#uniform(this.nodeProgram, "icons"), 0);
+    const badge = this.#badgeUrl && this.#iconSlots.get(this.#badgeUrl);
+    if (badge && typeof badge === "object")
+      gl.uniform4f(
+        this.#uniform(this.nodeProgram, "badgeRect"),
+        badge.u0,
+        badge.v0,
+        badge.u1,
+        badge.v1,
+      );
+    else gl.uniform4f(this.#uniform(this.nodeProgram, "badgeRect"), 0, 0, 0, 0);
     gl.bindVertexArray(this.nodeVao);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, this.nodeCount);
     gl.bindVertexArray(null);
+  }
 
-    this.#drawLabels();
-    this.stats.drawMs = performance.now() - started;
-    if (this.#zoomTarget) this.requestRender();
+  // ---------------------------------------------------------------- labels
+
+  /** How visible ordinary labels are at `zoom`: fully from 1.6 × the fade zoom, gone at it. */
+  #labelOpacity(zoom) {
+    const fade = this.#labels.fadeZoom;
+    if (!fade) return 1;
+    return Math.min(1, Math.max(0, (zoom - fade) / (fade * 0.6)));
   }
 
   /**
-   * Labels on the 2D layer: only nodes on screen, only when zoomed in enough to read them, and never on top of each
-   * other: higher-priority labels (root, selected, hovered, then larger) claim their space first.
+   * Labels on the 2D layer (context already scaled to CSS pixels). On screen they're thinned so they never overlap:
+   * higher-priority labels (hovered, selected, lineage, root…) claim their space first. `all` draws every label with
+   * no thinning (image export).
    */
-  #drawLabels() {
-    const context = this.labelContext;
-    const dpr = this.dpr;
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.clearRect(0, 0, this.labels.width, this.labels.height);
-    this.stats.labels = 0;
-    const zoom = this.camera.zoom;
-    const visible = this.#grid.query(
-      this.camera.visibleWorld(this.width, this.height, 50),
-    );
+  #drawLabels(context, { camera, width, height, all = false }) {
+    if (this.#gridDirty) this.#rebuildGrid();
+    const zoom = camera.zoom;
+    const visible = all
+      ? new Set(this.#nodes.keys())
+      : this.#grid.query(camera.visibleWorld(width, height, 80));
     this.stats.visibleNodes = visible.size;
-    if (zoom < LABEL_MIN_ZOOM) return;
-    const opacity = Math.min(1, (zoom - LABEL_MIN_ZOOM) / 0.15);
-    const scale = Math.min(1.6, Math.max(0.75, zoom)); // text grows with zoom, within readable limits
-    const priority = (index) => {
-      const node = this.#nodes[index];
-      if (node.id === this.#selected || index === this.#hovered) return 1e9;
-      return (node.priority ?? 0) * 1e6 + node.width;
-    };
-    const order = [...visible].sort((a, b) => priority(b) - priority(a));
-    const taken = [];
-    context.globalAlpha = opacity;
-    for (const index of order) {
-      const node = this.#nodes[index];
-      if (!node.label) continue;
-      const image = this.#labelImage(node.label, node.labelColor ?? "#e3e6ec");
-      const width = (image.width / 2) * scale,
-        height = (image.height / 2) * scale;
-      const box =
-        this.labelPosition === "below"
-          ? (() => {
-              const screen = this.camera.toScreen(node.x, node.y + node.hh);
-              return {
-                x1: screen.x - width / 2,
-                y1: screen.y + 3,
-                x2: screen.x + width / 2,
-                y2: screen.y + 3 + height,
-              };
-            })()
-          : (() => {
-              const screen = this.camera.toScreen(node.x + node.hw, node.y);
-              return {
-                x1: screen.x + 4,
-                y1: screen.y - height / 2,
-                x2: screen.x + 4 + width,
-                y2: screen.y + height / 2,
-              };
-            })();
-      if (
-        box.x1 > this.width ||
-        box.x2 < 0 ||
-        box.y1 > this.height ||
-        box.y2 < 0
-      )
-        continue;
-      if (
-        taken.some(
-          (other) =>
-            box.x1 < other.x2 &&
-            other.x1 < box.x2 &&
-            box.y1 < other.y2 &&
-            other.y1 < box.y2,
-        )
-      )
-        continue;
-      taken.push(box);
-      context.globalAlpha = this.#dimmed?.has(node.id)
-        ? opacity * 0.2
-        : opacity;
-      context.drawImage(
-        image,
-        box.x1 * dpr,
-        box.y1 * dpr,
-        width * dpr,
-        height * dpr,
-      );
+    this.stats.labels = 0;
+    const baseOpacity = all ? 1 : this.#labelOpacity(zoom);
+    const priority = (record) =>
+      record.id === this.#hovered || record.id === this.#dragged
+        ? 1e9
+        : record.id === this.#selected
+          ? 1e8
+          : this.#labelFocus.has(record.id)
+            ? 1e7
+            : this.#emphasis.has(record.id)
+              ? 1e6
+              : (record.style.labelPriority ?? 0) * 1e5 + record.width;
+    const candidates = [];
+    for (const index of visible) {
+      const record = this.#nodes[index];
+      if (!record?.style.label) continue;
+      const pinned =
+        (record.style.labelPriority ?? 0) > 0 ||
+        record.id === this.#hovered ||
+        record.id === this.#selected ||
+        this.#labelFocus.has(record.id) ||
+        this.#emphasis.has(record.id);
+      const opacity =
+        (pinned ? 1 : baseOpacity) * Math.min(1, record.alpha.value * 1.2);
+      if (opacity < 0.02) continue;
+      candidates.push({ record, opacity, rank: priority(record) });
+    }
+    if (!all) candidates.sort((a, b) => b.rank - a.rank);
+    const taken = new SpatialGrid(120);
+    let takenCount = 0;
+    for (const { record, opacity } of candidates) {
+      const style = record.style;
+      const image = this.#labelImage(style.label, {
+        fontSize: style.fontSize ?? 11,
+        bold: style.bold,
+        color: COLORS.labelText,
+        backdrop: this.#labels.backdrop ? COLORS.labelBackdrop : null,
+        wrapWidth: this.#labels.maxWidth,
+        overflow: this.#labels.overflow,
+      });
+      // Text is world-sized (it scales with the layout's spacing), within readable limits.
+      const scale = all ? zoom : Math.min(2, Math.max(0.8, zoom));
+      const w = (image.width / LABEL_RENDER_SCALE) * scale,
+        h = (image.height / LABEL_RENDER_SCALE) * scale;
+      const s = record.scale.value;
+      const x = record.px.value,
+        y = record.py.value;
+      const gap = 5 * scale;
+      let anchor;
+      switch (this.#labels.position) {
+        case "below":
+          anchor = camera.toScreen(x, y + record.hh * s);
+          anchor = { x1: anchor.x - w / 2, y1: anchor.y + gap };
+          break;
+        case "above":
+          anchor = camera.toScreen(x, y - record.hh * s);
+          anchor = { x1: anchor.x - w / 2, y1: anchor.y - gap - h };
+          break;
+        case "left":
+          anchor = camera.toScreen(x - record.hw * s, y);
+          anchor = { x1: anchor.x - gap - w, y1: anchor.y - h / 2 };
+          break;
+        case "center":
+          anchor = camera.toScreen(x, y);
+          anchor = { x1: anchor.x - w / 2, y1: anchor.y - h / 2 };
+          break;
+        default:
+          anchor = camera.toScreen(x + record.hw * s, y);
+          anchor = { x1: anchor.x + gap, y1: anchor.y - h / 2 };
+      }
+      const box = {
+        x1: anchor.x1,
+        y1: anchor.y1,
+        x2: anchor.x1 + w,
+        y2: anchor.y1 + h,
+      };
+      if (!all) {
+        if (box.x1 > width || box.x2 < 0 || box.y1 > height || box.y2 < 0)
+          continue;
+        if (taken.query(box).size) continue;
+        taken.insert(takenCount++, box);
+      }
+      context.globalAlpha = opacity;
+      context.drawImage(image, box.x1, box.y1, w, h);
       this.stats.labels++;
+    }
+
+    // Edge labels (quantities) at each edge's midpoint, once they're big enough to read; they give way to node labels.
+    for (const edge of this.#edges) {
+      const style = edge.style;
+      if (!style.label || !edge.points) continue;
+      if (!all && (style.fontSize ?? 10) * zoom < 7.5) break;
+      const alpha =
+        edge.alpha.value *
+        Math.min(edge.source.alpha.value, edge.target.alpha.value) *
+        (all ? 1 : baseOpacity);
+      if (alpha < 0.05) continue;
+      const middle = pointAlong(edge.points, polylineLength(edge.points) / 2);
+      const screen = camera.toScreen(middle.x, middle.y);
+      if (
+        !all &&
+        (screen.x < -50 ||
+          screen.x > width + 50 ||
+          screen.y < -20 ||
+          screen.y > height + 20)
+      )
+        continue;
+      const image = this.#labelImage(style.label, {
+        fontSize: style.fontSize ?? 10,
+        color: COLORS.edgeLabelText,
+        backdrop: COLORS.edgeLabelBackdrop,
+      });
+      const w = (image.width / LABEL_RENDER_SCALE) * zoom,
+        h = (image.height / LABEL_RENDER_SCALE) * zoom;
+      const box = {
+        x1: screen.x - w / 2,
+        y1: screen.y - h / 2,
+        x2: screen.x + w / 2,
+        y2: screen.y + h / 2,
+      };
+      if (!all) {
+        if (taken.query(box).size) continue;
+        taken.insert(takenCount++, box);
+      }
+      context.globalAlpha = alpha;
+      context.drawImage(image, box.x1, box.y1, w, h);
     }
     context.globalAlpha = 1;
   }
 
-  /** A label drawn once at 2× into its own canvas, with a dark backdrop, then reused every frame. */
-  #labelImage(text, color) {
-    const key = `${color}|${text}`;
+  /** A label drawn once at 2× into its own canvas (with its backdrop pill or text outline), then reused. */
+  #labelImage(
+    text,
+    {
+      fontSize,
+      bold = false,
+      color,
+      backdrop,
+      wrapWidth = 0,
+      overflow = "wrap",
+    },
+  ) {
+    const key = `${fontSize}|${bold}|${color}|${backdrop}|${wrapWidth}|${overflow}|${text}`;
     let image = this.#labelCache.get(key);
     if (image) return image;
-    const lines = String(text).split("\n");
+    if (this.#labelCache.size > 4000) this.#labelCache.clear();
+    const font = `${bold ? 700 : 600} ${fontSize}px ${LABEL_FONT_FAMILY}`;
     const measure = (this.#measureContext ??= document
       .createElement("canvas")
       .getContext("2d"));
-    measure.font = LABEL_FONT;
+    measure.font = font;
+    const lines = wrapLabel(
+      String(text),
+      wrapWidth,
+      overflow,
+      (t) => measure.measureText(t).width,
+    );
+    const lineHeight = Math.round(fontSize * 1.3);
+    const padX = 4,
+      padY = 2;
     const width =
       Math.ceil(
-        Math.max(...lines.map((line) => measure.measureText(line).width)),
-      ) + 8;
-    const height = lines.length * LABEL_LINE_HEIGHT + 4;
+        Math.max(1, ...lines.map((line) => measure.measureText(line).width)),
+      ) +
+      padX * 2;
+    const height = lines.length * lineHeight + padY * 2;
     image = document.createElement("canvas");
-    image.width = width * 2;
-    image.height = height * 2;
+    image.width = width * LABEL_RENDER_SCALE;
+    image.height = height * LABEL_RENDER_SCALE;
     const context = image.getContext("2d");
-    context.scale(2, 2);
-    context.fillStyle = "rgba(11, 14, 20, 0.78)";
-    context.beginPath();
-    context.roundRect?.(0, 0, width, height, 3);
-    context.fill();
-    context.font = LABEL_FONT;
+    context.scale(LABEL_RENDER_SCALE, LABEL_RENDER_SCALE);
+    context.font = font;
+    context.textBaseline = "middle";
+    if (backdrop) {
+      context.fillStyle = backdrop;
+      context.beginPath();
+      context.roundRect(0, 0, width, height, Math.min(6, height / 2));
+      context.fill();
+    } else {
+      context.strokeStyle = COLORS.labelBackdrop;
+      context.lineWidth = 3;
+      context.lineJoin = "round";
+      lines.forEach((line, i) =>
+        context.strokeText(line, padX, padY + lineHeight * (i + 0.5)),
+      );
+    }
     context.fillStyle = color;
-    context.textBaseline = "top";
     lines.forEach((line, i) =>
-      context.fillText(line, 4, 3 + i * LABEL_LINE_HEIGHT),
+      context.fillText(line, padX, padY + lineHeight * (i + 0.5)),
     );
     this.#labelCache.set(key, image);
     return image;
   }
 
-  #measureContext = null;
+  // ---------------------------------------------------------------- export
+
+  /**
+   * The whole graph as a canvas at `scale` (world units → pixels), every label drawn, over `background` (a CSS
+   * colour, or null for transparent). Rendered in tiles, so it can be larger than the GPU's own limits.
+   */
+  renderToCanvas({
+    scale = 1,
+    background = null,
+    padding = 30,
+    maxSide = 16000,
+  } = {}) {
+    if (this.#geometryDirty) this.#uploadGeometry();
+    const nodeBounds = this.bounds();
+    const labelRoom = this.#labels.maxWidth + 20;
+    const bounds = {
+      x1:
+        nodeBounds.x1 -
+        padding -
+        (this.#labels.position === "left" ? labelRoom : 0),
+      y1: nodeBounds.y1 - padding - 30,
+      x2:
+        nodeBounds.x2 +
+        padding +
+        (this.#labels.position === "right" ? labelRoom : 0),
+      y2:
+        nodeBounds.y2 + padding + (this.#labels.position === "below" ? 50 : 0),
+    };
+    scale = Math.min(
+      scale,
+      maxSide / (bounds.x2 - bounds.x1),
+      maxSide / (bounds.y2 - bounds.y1),
+    );
+    const width = Math.max(1, Math.ceil((bounds.x2 - bounds.x1) * scale));
+    const height = Math.max(1, Math.ceil((bounds.y2 - bounds.y1) * scale));
+    const output = document.createElement("canvas");
+    output.width = width;
+    output.height = height;
+    const context = output.getContext("2d");
+
+    const gl = this.gl;
+    const tile = Math.min(2048, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      tile,
+      tile,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    );
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      texture,
+      0,
+    );
+    const [br, bg, bb] = background ? parseColor(background) : [0, 0, 0];
+    const pixels = new Uint8Array(tile * tile * 4);
+    const camera = new Camera({ minZoom: 0, maxZoom: Infinity });
+    camera.zoom = scale;
+    try {
+      for (let ty = 0; ty < height; ty += tile)
+        for (let tx = 0; tx < width; tx += tile) {
+          const w = Math.min(tile, width - tx),
+            h = Math.min(tile, height - ty);
+          camera.panX = -bounds.x1 * scale - tx;
+          camera.panY = -bounds.y1 * scale - ty;
+          gl.viewport(0, 0, w, h);
+          gl.clearColor(br, bg, bb, background ? 1 : 0);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          this.#drawScene({
+            camera,
+            width: w,
+            height: h,
+            pixelRatio: 1,
+            lineScale: scale,
+          });
+          gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+          const imageData = context.createImageData(w, h);
+          for (let row = 0; row < h; row++) {
+            const from = (h - 1 - row) * w * 4; // GL rows run bottom-up
+            for (let i = 0; i < w * 4; i += 4) {
+              const alpha = pixels[from + i + 3];
+              const unpremultiply = alpha ? 255 / alpha : 0;
+              const to = row * w * 4 + i;
+              imageData.data[to] = Math.min(
+                255,
+                pixels[from + i] * unpremultiply,
+              );
+              imageData.data[to + 1] = Math.min(
+                255,
+                pixels[from + i + 1] * unpremultiply,
+              );
+              imageData.data[to + 2] = Math.min(
+                255,
+                pixels[from + i + 2] * unpremultiply,
+              );
+              imageData.data[to + 3] = alpha;
+            }
+          }
+          context.putImageData(imageData, tx, ty);
+        }
+    } finally {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.deleteFramebuffer(framebuffer);
+      gl.deleteTexture(texture);
+    }
+    camera.panX = -bounds.x1 * scale;
+    camera.panY = -bounds.y1 * scale;
+    this.#drawLabels(context, { camera, width, height, all: true });
+    this.requestRender(); // the screen's framebuffer was left alone, but redraw to be safe
+    return output;
+  }
 
   // ---------------------------------------------------------------- input
+
+  #nodeAt(event) {
+    if (this.#gridDirty) this.#rebuildGrid();
+    const rect = this.canvas.getBoundingClientRect();
+    const world = this.camera.toWorld(
+      event.clientX - rect.left,
+      event.clientY - rect.top,
+    );
+    const index = this.#grid.hit(world.x, world.y);
+    return index >= 0 ? this.#nodes[index] : null;
+  }
+
+  #setHovered(record, event) {
+    const id = record?.id ?? null;
+    if (id === this.#hovered) return;
+    const previous = this.#hovered && this.#byId.get(this.#hovered);
+    this.#hovered = id;
+    if (previous) this.#retargetNode(previous);
+    if (record) this.#retargetNode(record);
+    this.canvas.style.cursor = record
+      ? this.#input.draggable
+        ? "grab"
+        : "pointer"
+      : "";
+    this.handlers.onNodeHover?.(id, event);
+    this.#geometryDirty = true;
+    this.requestRender();
+  }
 
   #bindInput() {
     const canvas = this.canvas;
     const pointers = new Map();
-    let dragged = false,
-      lastTap = { id: null, at: 0 },
-      pinchDistance = 0;
+    let gesture = null; // { kind: "pan" | "node" | "drag" | "pinch", … }
+    let lastTap = { id: null, at: 0 };
+    let longPress = 0;
+    let samples = []; // recent pan moves for the glide
 
-    const nodeAt = (event) => {
+    const local = (event) => {
       const rect = canvas.getBoundingClientRect();
-      const world = this.camera.toWorld(
-        event.clientX - rect.left,
-        event.clientY - rect.top,
-      );
-      return this.#grid.hit(world.x, world.y);
+      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
     };
 
     canvas.addEventListener(
       "wheel",
       (event) => {
         event.preventDefault();
-        const rect = canvas.getBoundingClientRect();
-        // Smooth zoom: aim for a target and ease toward it over a few frames.
-        const factor = Math.exp(-event.deltaY * 0.0015);
+        this.#stopCamera();
+        const unit =
+          event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
+        const pixels = Math.max(-240, Math.min(240, event.deltaY * unit));
+        const boost = event.ctrlKey ? 5 : 1; // trackpad pinch arrives as ctrl+wheel with small deltas
+        const factor = Math.exp(
+          -pixels * 0.0018 * this.#input.zoomSpeed * boost,
+        );
+        const point = local(event);
+        if (!this.#input.smoothZoom) {
+          this.camera.zoomAround(factor, point.x, point.y);
+          this.#viewportChanged();
+          return;
+        }
+        // Smooth zoom: aim for a target and ease toward it.
         const base = this.#zoomTarget?.zoom ?? this.camera.zoom;
         this.#zoomTarget = {
           zoom: Math.min(
             this.camera.maxZoom,
             Math.max(this.camera.minZoom, base * factor),
           ),
-          x: event.clientX - rect.left,
-          y: event.clientY - rect.top,
+          ...point,
         };
         this.requestRender();
       },
       { passive: false },
     );
 
+    canvas.addEventListener("contextmenu", (event) => {
+      const record = this.#nodeAt(event);
+      if (!record) return;
+      event.preventDefault();
+      this.handlers.onNodeContextTap?.(record.id, event);
+    });
+
     canvas.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 && event.pointerType === "mouse") return;
       canvas.setPointerCapture(event.pointerId);
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-      dragged = false;
+      this.#stopCamera();
+      this.#zoomTarget = null;
+      clearTimeout(longPress);
       if (pointers.size === 2) {
         const [a, b] = [...pointers.values()];
-        pinchDistance = Math.hypot(a.x - b.x, a.y - b.y);
+        gesture = { kind: "pinch", distance: Math.hypot(a.x - b.x, a.y - b.y) };
+        return;
       }
+      const record = this.#nodeAt(event);
+      const start = { x: event.clientX, y: event.clientY };
+      samples = [];
+      if (record) {
+        const world = this.camera.toWorld(local(event).x, local(event).y);
+        gesture = {
+          kind: "node",
+          record,
+          start,
+          grab: { x: world.x - record.px.value, y: world.y - record.py.value },
+        };
+        if (event.pointerType !== "mouse")
+          longPress = setTimeout(() => {
+            if (gesture?.kind !== "node") return;
+            gesture = { kind: "done" };
+            this.handlers.onNodeContextTap?.(record.id, event);
+          }, LONG_PRESS_MS);
+      } else gesture = { kind: "pan", start };
     });
+
     canvas.addEventListener("pointermove", (event) => {
       const previous = pointers.get(event.pointerId);
       if (!previous) {
         this.handlers.onPointerMove?.(event);
-        const index = nodeAt(event);
-        if (index !== this.#hovered) {
-          this.#hovered = index;
-          canvas.style.cursor = index >= 0 ? "pointer" : "";
-          this.handlers.onNodeHover?.(
-            index >= 0 ? this.#nodes[index].id : null,
-            event,
-          );
-          this.requestRender();
-        }
+        this.#setHovered(this.#nodeAt(event), event);
         return;
       }
       const current = { x: event.clientX, y: event.clientY };
       pointers.set(event.pointerId, current);
-      if (pointers.size === 2) {
+      if (!gesture) return;
+      if (gesture.kind === "pinch" && pointers.size === 2) {
         const [a, b] = [...pointers.values()];
         const distance = Math.hypot(a.x - b.x, a.y - b.y);
         const rect = canvas.getBoundingClientRect();
-        if (pinchDistance)
+        if (gesture.distance)
           this.camera.zoomAround(
-            distance / pinchDistance,
+            distance / gesture.distance,
             (a.x + b.x) / 2 - rect.left,
             (a.y + b.y) / 2 - rect.top,
           );
-        pinchDistance = distance;
-      } else {
+        gesture.distance = distance;
+        this.#viewportChanged();
+        return;
+      }
+      const moved = Math.hypot(
+        current.x - gesture.start?.x,
+        current.y - gesture.start?.y,
+      );
+      if (gesture.kind === "node" && moved > DRAG_THRESHOLD_PX) {
+        clearTimeout(longPress);
+        if (this.#input.draggable && gesture.record.style.events !== false) {
+          gesture.kind = "drag";
+          this.#dragged = gesture.record.id;
+          this.#setHovered(null, event);
+          this.#retargetNode(gesture.record);
+          canvas.style.cursor = "grabbing";
+          this.handlers.onNodeDragStart?.(gesture.record.id);
+        } else gesture = { kind: "pan", start: gesture.start };
+      }
+      if (gesture.kind === "drag") {
+        const point = local(event);
+        const world = this.camera.toWorld(point.x, point.y);
+        const x = world.x - gesture.grab.x,
+          y = world.y - gesture.grab.y;
+        gesture.record.px.snap(x);
+        gesture.record.py.snap(y);
+        this.#geometryDirty = this.#gridDirty = true;
+        this.handlers.onNodeDrag?.(gesture.record.id, x, y);
+        this.requestRender();
+      } else if (gesture.kind === "pan") {
         const dx = current.x - previous.x,
           dy = current.y - previous.y;
-        if (Math.abs(dx) + Math.abs(dy) > 0) dragged ||= Math.hypot(dx, dy) > 2;
+        if (moved > DRAG_THRESHOLD_PX) gesture.moved = true;
         this.camera.panBy(dx, dy);
+        const now = performance.now();
+        samples.push({ at: now, dx, dy });
+        samples = samples.filter((sample) => now - sample.at < 90);
+        this.#viewportChanged();
       }
-      this.handlers.onViewportChange?.();
-      this.requestRender();
     });
-    const release = (event) => {
+
+    const finish = (event, cancelled) => {
       pointers.delete(event.pointerId);
-      if (pointers.size < 2) pinchDistance = 0;
-    };
-    canvas.addEventListener("pointerup", (event) => {
-      const wasDrag = dragged;
-      release(event);
-      if (wasDrag) return;
-      const index = nodeAt(event);
-      if (index < 0) {
+      clearTimeout(longPress);
+      if (!gesture) return;
+      if (gesture.kind === "pinch") {
+        if (pointers.size === 0) gesture = null;
+        return;
+      }
+      const ended = gesture;
+      gesture = null;
+      if (ended.kind === "drag") {
+        this.#dragged = null;
+        this.#retargetNode(ended.record);
+        canvas.style.cursor = "grab";
+        this.handlers.onNodeDragEnd?.(ended.record.id);
+        return;
+      }
+      if (cancelled || ended.kind === "done") return;
+      if (ended.kind === "pan") {
+        if (ended.moved) {
+          // Let go mid-flick: the view glides on and slows down.
+          const span =
+            samples.length > 1 ? samples.at(-1).at - samples[0].at : 0;
+          if (span > 10 && this.#motion.enabled) {
+            const dx = samples.reduce((sum, s) => sum + s.dx, 0),
+              dy = samples.reduce((sum, s) => sum + s.dy, 0);
+            const vx = (dx / span) * 1000,
+              vy = (dy / span) * 1000;
+            if (Math.hypot(vx, vy) > 120) {
+              this.#glide = { vx, vy };
+              this.requestRender();
+            }
+          }
+          return;
+        }
         this.handlers.onBackgroundTap?.();
         return;
       }
-      const id = this.#nodes[index].id;
+      // A tap on a node.
+      const id = ended.record.id;
       const now = performance.now();
       if (lastTap.id === id && now - lastTap.at < DOUBLE_TAP_MS) {
         lastTap = { id: null, at: 0 };
@@ -881,24 +1874,42 @@ export class WebGLGraph {
         lastTap = { id, at: now };
         this.handlers.onNodeTap?.(id, event);
       }
-    });
-    canvas.addEventListener("pointercancel", release);
-    canvas.addEventListener("pointerleave", () => {
-      if (this.#hovered >= 0) {
-        this.#hovered = -1;
-        this.handlers.onNodeHover?.(null, null);
-        this.requestRender();
-      }
+    };
+    canvas.addEventListener("pointerup", (event) => finish(event, false));
+    canvas.addEventListener("pointercancel", (event) => finish(event, true));
+    canvas.addEventListener("pointerleave", (event) => {
+      if (!pointers.has(event.pointerId)) this.#setHovered(null, null);
     });
   }
+}
 
-  #stepZoom() {
-    const target = this.#zoomTarget;
-    const ratio = target.zoom / this.camera.zoom;
-    if (Math.abs(Math.log(ratio)) < 0.002) {
-      this.camera.zoomAround(ratio, target.x, target.y);
-      this.#zoomTarget = null;
-    } else this.camera.zoomAround(Math.pow(ratio, 0.3), target.x, target.y);
-    this.handlers.onViewportChange?.();
+/**
+ * Break a label into lines no wider than `maxWidth` (by `measure`), keeping its own line breaks. "ellipsis" keeps each
+ * line to one row, cut with "…". Pure apart from the measuring function.
+ */
+export function wrapLabel(text, maxWidth, overflow, measure) {
+  const lines = [];
+  for (const paragraph of text.split("\n")) {
+    if (!maxWidth || measure(paragraph) <= maxWidth) {
+      lines.push(paragraph);
+      continue;
+    }
+    if (overflow === "ellipsis") {
+      let cut = paragraph;
+      while (cut.length > 1 && measure(cut + "…") > maxWidth)
+        cut = cut.slice(0, -1);
+      lines.push(cut.trimEnd() + "…");
+      continue;
+    }
+    let line = "";
+    for (const word of paragraph.split(" ")) {
+      const candidate = line ? `${line} ${word}` : word;
+      if (line && measure(candidate) > maxWidth) {
+        lines.push(line);
+        line = word;
+      } else line = candidate;
+    }
+    if (line) lines.push(line);
   }
+  return lines;
 }

@@ -5,10 +5,17 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 
 ## Unreleased
 
+- **Fast renderer (preview).** **Customize → Canvas → Renderer → Fast** (or `?renderer=webgl`) draws the crafting and
+  What you can craft graphs with the app's own GPU engine instead of Cytoscape. It stays smooth with thousands of items,
+  and everything moves on springs, so a change can interrupt another without jumping: branches unfold from and fold back
+  into their parent, the view glides after a flick, and hover and selection ease in and out. Hovered and selected
+  lineages flow with travelling light pulses. Nodes can be dragged, and the rest of the graph follows. Owned items and
+  better buys glow, collapsed items show a card stack, and Mystic Forge results get a ring and badge. PNG export,
+  legend highlights and every style setting work in it too.
 - **Faster pages, saved data.** Account data, Trading Post prices and order books are kept in the browser, so pages
   open on what was saved instead of downloading it again: What you can craft now shows its ranked list in under a
-  second on a revisit, with no API requests. **Account menu → Update account data and prices:** *When I refresh* (the
-  default: nothing is refetched until you press Refresh) or *Automatically* (saved data shows at once and anything
+  second on a revisit, with no API requests. **Account menu → Update account data and prices:** _When I refresh_ (the
+  default: nothing is refetched until you press Refresh) or _Automatically_ (saved data shows at once and anything
   older than five minutes refreshes in the background). Account data is saved only where the key is (in the browser if
   remembered, otherwise for the tab) and is deleted when you forget the key; the key itself is never saved with it.
 - What you can craft shows its ranking as soon as profits are known and refines it with order-book depth afterwards,
