@@ -84,6 +84,29 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 - Characters: **Share image** exports the current template's gear as a PNG to download or copy, as Compact rows or
   Full detail cards. It shows gear only: no attribute totals, account name or wallet.
 - A key that isn't remembered is now kept for the browser tab, so it carries across pages until the tab closes.
+- **Prism and Tether are their own open-source projects** ([Prism](https://github.com/BrettWhitson/prism),
+  [Tether](https://github.com/BrettWhitson/tether)); the app uses pinned versions of both.
+- **Fixes from a full audit before release:**
+  - _Prices:_ a price or order-book request that fails (API down, rate-limited, offline) no longer marks items as
+    "not tradeable" or "no buyers" and saves that; the previous price is kept, and pages say "price unavailable,
+    refresh to retry". Saved prices from several tabs are merged instead of overwriting each other.
+  - _What you can craft:_ Trading Post fees are worked out per item (5% + 10%, at least 1 copper each), so cheap items
+    no longer show profits they can't make; a partial sale is costed for what actually sells; **Only what my
+    characters can craft** now checks every step of the route, not just the last recipe; recomputing (prices
+    arriving, Refresh) keeps the graph as you left it; items with no buyers no longer show "Loss 0c"; the list, tabs
+    and graph work from the keyboard.
+  - _Crafting:_ Background, Hover highlight, Smooth zoom, Zoom speed and the Mystic Forge indicator take effect at
+    once in Prism; resetting or a preset that changes the Renderer switches it; the "Updating prices" indicator
+    clears when the graph is cleared.
+  - _Characters:_ the key field is emptied after connecting or forgetting; a key without the `builds` permission
+    says so instead of showing a bare character; switching tabs, sets or views keeps focus and scroll; runes, sigils,
+    jewels and infusions link to their crafting trees; tooltips with links can be reached from the keyboard.
+  - _Account:_ a network hiccup while restoring a saved key no longer forgets it (the account menu offers Retry); a
+    key you didn't ask to remember stays out of long-term storage even with several tabs open; storage-full errors no
+    longer hang a page.
+  - _Graphs:_ the picture comes back after the graphics driver resets; a second finger during a drag ends the drag
+    cleanly; floating graphs always come to rest (within about 4 seconds) and settle the same on every machine;
+    node-size changes apply at once; PNG export reports a failure instead of stalling.
 
 ## 0.9.0 — 2026-09-29
 

@@ -42,13 +42,15 @@
 
     <main class="craftable">
       <aside id="craftList" class="craft-list" aria-label="What you can craft">
-        <div class="craft-tabs" role="tablist">
+        <div class="craft-tabs" role="tablist" aria-label="Lists">
           <button
             type="button"
             role="tab"
             id="tabCraftable"
             data-list="craftable"
             aria-selected="true"
+            aria-controls="craftResults"
+            tabindex="0"
           >
             Craftable <span class="count" data-count="craftable"></span>
           </button>
@@ -58,6 +60,8 @@
             id="tabMaterials"
             data-list="materials"
             aria-selected="false"
+            aria-controls="craftResults"
+            tabindex="-1"
           >
             Your materials <span class="count" data-count="materials"></span>
           </button>
@@ -97,7 +101,18 @@
           >
         </div>
         <div id="craftData" class="craft-data" hidden></div>
-        <div id="craftResults" class="craft-results" role="tabpanel"></div>
+        <div
+          id="craftAnnouncer"
+          class="sr-only"
+          role="status"
+          aria-live="polite"
+        ></div>
+        <div
+          id="craftResults"
+          class="craft-results"
+          role="tabpanel"
+          aria-labelledby="tabCraftable"
+        ></div>
       </aside>
 
       <section class="craft-graph" aria-label="What it can become">
@@ -107,8 +122,10 @@
             tabindex="0"
             role="application"
             aria-roledescription="craftable graph"
-            aria-label="What the selected item can become. Double-click a node to show what it can make in turn."
+            aria-label="What the selected item can become. Double-click a node to show what it can make in turn. With the keyboard: arrow keys move between items, Enter shows or hides what one makes, Home goes back to the start."
+            aria-describedby="graphAnnouncer"
           ></div>
+          <div id="graphAnnouncer" class="sr-only" aria-live="polite"></div>
           <div id="graphEmpty" class="graph-empty"></div>
           <div class="graph-layout seg" role="group" aria-label="Layout">
             <button

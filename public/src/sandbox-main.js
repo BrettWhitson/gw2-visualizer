@@ -507,10 +507,15 @@ function bindActions() {
     fit: () => view.fit(),
     export: () => {
       const link = document.createElement("a");
-      link.href = view.toPngDataUri({
-        scale: 1,
-        backgroundColor: UI_COLORS.canvas,
-      });
+      try {
+        link.href = view.toPngDataUri({
+          scale: 1,
+          backgroundColor: UI_COLORS.canvas,
+        });
+      } catch (error) {
+        status(`PNG export failed: ${error.message}`); // lost GPU context, or too big a canvas
+        return;
+      }
       link.download = `sandbox-${graphOptions.shape}-${graphOptions.seed}.png`;
       link.click();
     },

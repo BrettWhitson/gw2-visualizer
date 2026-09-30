@@ -15,8 +15,8 @@ const FORCE_REFERENCE = { repel: 8 };
  * Tether's entry point: position every node for the layout settings, synchronously (the renderer animates).
  *
  * Two layouts, each in two stages:
- *  - directional tree: a tidy tree, or the layered layout (for `layered: true`, or a graph that isn't a
- *    tree), then the physics with a pull toward each node's level;
+ *  - directional tree: a tidy tree (over a spanning tree: a node with several parents sits under the first), or the
+ *    layered layout (for `layered: true`, the way to lay out a DAG, or a graph without a root), then the physics with a pull toward each node's level;
  *  - radial: a radial tree (the root in the centre, one ring per depth), then the physics with a pull toward each
  *    node's ring.
  * The physics (physics.js) uses the four force settings and the tuning (tuning.js). For the Floating physics mode the
@@ -66,7 +66,7 @@ export function runLayout(graph, s, { tuning, settle = true } = {}) {
     });
   }
 
-  // Directional tree: seed with the tidy tree, or the layered layout (asked for, or the graph isn't a tree).
+  // Directional tree: seed with the tidy tree, or the layered layout (asked for, or no root to grow a tree from).
   const horizontal = isHorizontalDirection(s.direction);
   const growth = treeDirection(s.direction); // root → leaves
   const seeded =

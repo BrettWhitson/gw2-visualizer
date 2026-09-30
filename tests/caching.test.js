@@ -324,3 +324,315 @@ test("clearing prices isn't undone by the saved copy", async () => {
   await book.ensure([1]);
   assert.equal(book.getQuote(1).buy, 99, "fetched fresh, not the saved 10");
 });
+
+// ---------------------------------------------------------------- failed fetches, merging, pruning
+
+/** Price API stand-in: ids in `failing` are in a batch that failed; ids in `untradeable` are left out of the answer. */
+function flakyPriceApi({ untradeable = [] } = {}) {
+  const api = {
+    failing: new Set(),
+    price: 10,
+    getPrices: async (ids, { failedIds } = {}) => {
+      const answered = [];
+      for (const id of ids)
+        if (api.failing.has(id)) failedIds?.add(id);
+        else if (!untradeable.includes(id))
+          answered.push({ id, buy: api.price, sell: api.price + 1 });
+      return answered;
+    },
+  };
+  return api;
+}
+
+test("a price batch that fails keeps the previous quote, and isn't saved as untradeable", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const store = memoryStore();
+  let now = 1000;
+  const api = flakyPriceApi({ untradeable: [3] });
+  const book = new PriceBook(api, {
+    store,
+    maxAge: () => Infinity,
+    now: () => now,
+  });
+  await book.ensure([1, 2, 3]);
+  now = 2000;
+  api.price = 20;
+  api.failing = new Set([2]);
+  await book.ensure([1, 2, 3], { force: true });
+  assert.equal(book.getQuote(1).buy, 20, "the batch that came is used");
+  assert.equal(book.getQuote(2).buy, 10, "the failed one keeps its quote");
+  assert.equal(book.oldestFetchedAt([2]), 1000, "…and its age");
+  assert.equal(book.fetchFailed(2), true);
+  assert.equal(book.getQuote(3), null, "absent from an answer: untradeable");
+  assert.equal(book.fetchFailed(3), false);
+  t.mock.timers.tick(1000);
+  await until(() => store.map.get("prices")?.quotes.length === 3);
+  const saved = new Map(
+    store.map.get("prices").quotes.map((entry) => [entry[0], entry]),
+  );
+  assert.deepEqual(saved.get(2), [2, 1000, 10, 11], "saved as it was");
+  assert.deepEqual(saved.get(3), [3, 2000, null, null]);
+});
+
+test("a price never fetched that fails is asked for again, even with manual updates", async () => {
+  const api = flakyPriceApi();
+  api.failing = new Set([5]);
+  const book = new PriceBook(api, { maxAge: () => Infinity });
+  await book.ensure([5]);
+  assert.equal(book.has(5), false, "not taken for untradeable");
+  api.failing.clear();
+  await book.ensure([5]);
+  assert.equal(book.getQuote(5).buy, 10);
+  assert.equal(book.fetchFailed(5), false);
+});
+
+test("saving prices keeps another tab's newer quotes; clearing replaces them", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const store = memoryStore();
+  let now = 1000;
+  const api = flakyPriceApi();
+  const options = { store, maxAge: () => Infinity, now: () => now };
+  const tabA = new PriceBook(api, options);
+  await tabA.ensure([1, 2]);
+  t.mock.timers.tick(1000);
+  await until(() => store.map.has("prices"));
+
+  const tabB = new PriceBook(api, options);
+  now = 2000;
+  api.price = 20;
+  await tabB.ensure([1], { force: true });
+  t.mock.timers.tick(1000);
+  await until(() =>
+    store.map.get("prices").quotes.some(([id, at]) => id === 1 && at === 2000),
+  );
+
+  now = 3000;
+  api.price = 30;
+  await tabA.ensure([2], { force: true }); // tabA still holds its own older quote for 1
+  t.mock.timers.tick(1000);
+  await until(() =>
+    store.map.get("prices").quotes.some(([id, at]) => id === 2 && at === 3000),
+  );
+  const saved = new Map(
+    store.map.get("prices").quotes.map((entry) => [entry[0], entry]),
+  );
+  assert.deepEqual(saved.get(1), [1, 2000, 20, 21], "tab B's newer quote");
+  assert.deepEqual(saved.get(2), [2, 3000, 30, 31]);
+
+  tabA.clear();
+  t.mock.timers.tick(1000);
+  await until(() => store.map.get("prices").quotes.length === 0);
+});
+
+test("a save when the page goes away starts writing at once, merged with what was stored", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const store = memoryStore();
+  await store.set("prices", { version: 1, quotes: [[9, 500, 7, 8]] });
+  let writes = 0;
+  const set = store.set.bind(store);
+  store.set = (key, value) => {
+    writes++;
+    return set(key, value);
+  };
+  let pageHide;
+  const had = globalThis.addEventListener;
+  globalThis.addEventListener = (type, listener) => {
+    if (type === "pagehide") pageHide = listener;
+  };
+  t.after(() => (globalThis.addEventListener = had));
+  const book = new PriceBook(flakyPriceApi(), {
+    store,
+    maxAge: () => Infinity,
+    now: () => 1000,
+  });
+  await book.ensure([1]); // restores the stored copy, then fetches 1; the save waits on its debounce
+  assert.equal(writes, 0);
+  pageHide();
+  assert.equal(writes, 1, "written without waiting for anything");
+  const saved = new Map(
+    store.map.get("prices").quotes.map((entry) => [entry[0], entry]),
+  );
+  assert.ok(saved.has(1) && saved.has(9));
+});
+
+test("a disposed price book stops listening for the page going away", (t) => {
+  const listeners = new Set();
+  const had = {
+    add: globalThis.addEventListener,
+    remove: globalThis.removeEventListener,
+  };
+  globalThis.addEventListener = (type, listener) => listeners.add(listener);
+  globalThis.removeEventListener = (type, listener) =>
+    listeners.delete(listener);
+  t.after(() => {
+    globalThis.addEventListener = had.add;
+    globalThis.removeEventListener = had.remove;
+  });
+  const book = new PriceBook(flakyPriceApi(), { store: memoryStore() });
+  assert.equal(listeners.size, 1);
+  book.dispose();
+  book.dispose();
+  assert.equal(listeners.size, 0);
+});
+
+test("an order book batch that fails keeps the previous book", async () => {
+  let failing = false;
+  let calls = 0;
+  const api = {
+    getBuyOrders: async (ids, { failedIds } = {}) => {
+      calls++;
+      if (failing) {
+        for (const id of ids) failedIds?.add(id);
+        return new Map();
+      }
+      return new Map(
+        ids
+          .filter((id) => id !== 9)
+          .map((id) => [id, [{ unitPrice: 5, quantity: 1 }]]),
+      );
+    },
+  };
+  const books = new OrderBooks(api, {
+    store: memoryStore(),
+    maxAge: () => Infinity,
+  });
+  await books.get([7, 9]);
+  failing = true;
+  const again = await books.get([7, 8], { force: true });
+  assert.deepEqual(again.get(7), [{ unitPrice: 5, quantity: 1 }], "kept");
+  assert.deepEqual(again.get(8), [], "unknown: nothing to show yet");
+  assert.equal(books.fetchFailed(8), true);
+  failing = false;
+  await books.get([8]);
+  assert.equal(calls, 3, "a failed id is asked for again, even in manual mode");
+  assert.equal(books.fetchFailed(8), false);
+  assert.deepEqual(
+    (await books.get([9])).get(9),
+    [],
+    "absent from an answer: nobody's buying",
+  );
+  assert.equal(calls, 3, "…and that is remembered");
+});
+
+test("saved order books are capped, newest first, and old ones dropped", async () => {
+  const store = memoryStore();
+  let now = 0;
+  const api = {
+    getBuyOrders: async (ids) =>
+      new Map(ids.map((id) => [id, [{ unitPrice: 1, quantity: 1 }]])),
+  };
+  const manual = new OrderBooks(api, {
+    store,
+    maxAge: () => Infinity,
+    now: () => now,
+  });
+  await manual.get([-1]);
+  now = 1;
+  await manual.get(Array.from({ length: 5000 }, (_, i) => i));
+  await tick();
+  const savedIds = new Set(store.map.get("orderBooks").books.map(([id]) => id));
+  assert.equal(savedIds.size, 5000);
+  assert.equal(savedIds.has(-1), false, "the oldest is dropped");
+
+  const autoStore = memoryStore();
+  const auto = new OrderBooks(api, {
+    store: autoStore,
+    maxAge: () => 5 * MINUTE,
+    now: () => now,
+  });
+  await auto.get([1]);
+  now += 60 * MINUTE;
+  await auto.get([2]);
+  await tick();
+  assert.deepEqual(
+    autoStore.map.get("orderBooks").books.map(([id]) => id),
+    [2],
+    "an hour old at a 5-minute max age: not worth keeping",
+  );
+});
+
+// ---------------------------------------------------------------- account session robustness
+
+test("characters failing to load leave the rest usable, and are retried", async () => {
+  const setup = sessionSetup();
+  let charactersFail = true;
+  const client = {
+    tokenInfo: async () => ({ permissions: ["account", "characters"] }),
+    account: async () => ({ name: "Test.1234" }),
+    characters: async () => {
+      if (charactersFail) throw new Error("timeout");
+      return [
+        { name: "Hero", crafting: [{ discipline: "Chef", rating: 400 }] },
+      ];
+    },
+  };
+  const first = setup.make();
+  first.createClient = () => client;
+  assert.equal(await first.restore(), true);
+  assert.equal(first.status, "ready");
+  assert.equal(first.characters, null);
+  assert.equal(first.charactersUnavailable, true, "unknown, not 'none'");
+  await until(() => setup.cache.map.get("accountSnapshot")?.partial === true);
+
+  charactersFail = false;
+  const second = setup.make();
+  second.createClient = () => client;
+  await second.restore();
+  await until(() => second.craftingLevels.get("Chef")?.rating === 400);
+  assert.equal(second.charactersUnavailable, false);
+});
+
+test("a saved key that couldn't reach the API is kept, so a retry works", async () => {
+  const setup = sessionSetup();
+  let down = true;
+  const session = setup.make();
+  session.createClient = () => ({
+    tokenInfo: async () => {
+      if (down) throw new Error("HTTP 503");
+      return { permissions: ["account"] };
+    },
+    account: async () => ({ name: "Test.1234" }),
+  });
+  assert.equal(await session.restore(), false);
+  assert.equal(session.status, "error");
+  assert.equal(session.key, KEY, "still known");
+  down = false;
+  assert.equal(await session.refresh(), true);
+  assert.equal(session.status, "ready");
+});
+
+test("a saved key the API rejects isn't kept for a retry", async () => {
+  const setup = sessionSetup();
+  const session = setup.make();
+  session.createClient = () => ({
+    tokenInfo: async () => {
+      throw Object.assign(new Error("HTTP 401"), { status: 401 });
+    },
+    account: async () => ({ name: "Test.1234" }),
+  });
+  await session.restore();
+  assert.equal(session.status, "error");
+  assert.equal(session.key, null);
+  assert.equal(await session.refresh(), false);
+});
+
+test("a tab snapshot too big for sessionStorage is kept without the characters", async () => {
+  const setup = sessionSetup({ remembered: false });
+  const setItem = setup.tabStorage.setItem;
+  setup.tabStorage.setItem = (key, value) => {
+    if (value.length > 400) throw new Error("QuotaExceededError");
+    setItem(key, value);
+  };
+  const session = setup.make();
+  session.createClient = () => ({
+    tokenInfo: async () => ({ permissions: ["account", "characters"] }),
+    account: async () => ({ name: "Test.1234" }),
+    characters: async () => [{ name: "Hero", filler: "x".repeat(500) }],
+  });
+  await session.restore();
+  assert.equal(session.characters.length, 1, "this page still has them");
+  await until(() => setup.tabStorage.map.has("gw2ct.accountSnapshot"));
+  const saved = JSON.parse(setup.tabStorage.map.get("gw2ct.accountSnapshot"));
+  assert.equal(saved.raw.characters, null);
+  assert.equal(saved.partial, true, "so the next page fetches them again");
+});

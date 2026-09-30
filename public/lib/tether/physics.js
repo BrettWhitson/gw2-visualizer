@@ -144,14 +144,17 @@ export class ForceSimulation {
    * Bring the graph truly to rest at `heat` (floating graphs: the drag heat), so waking it at that heat later only
    * moves what's disturbed. Cooling alone freezes the graph once its forces get too weak to move anything, before it
    * has reached balance; waking it then sends everything toward the balance it never reached. Ends cold (alpha 0).
+   * The work is capped in node-ticks (settleWork), not time, so the same graph settles the same on any machine.
    */
   equilibrate(heat = this.tuning.dragHeat) {
     this.alpha = this.alphaTarget = heat;
-    const deadline = performance.now() + this.tuning.settleBudgetMs;
-    for (let k = 0; k < this.tuning.settleTicks; k++) {
+    const ticks = Math.min(
+      this.tuning.settleTicks,
+      Math.ceil(this.tuning.settleWork / Math.max(1, this.count)),
+    );
+    for (let k = 0; k < ticks; k++) {
       this.tick(0);
       if (this.motion < this.tuning.stillness) break;
-      if (k % 16 === 15 && performance.now() > deadline) break;
     }
     this.alpha = this.alphaTarget = 0;
     return this;
@@ -519,6 +522,13 @@ export class ForceSimulation {
         ) {
           if (index[cell] === i || !mass[cell]) continue;
           const push = (strength * mass[cell]) / distanceSquared;
+          if (dx === 0 && dy === 0) {
+            // Right on top of it: push apart in a direction fixed by the node's index, or they'd never separate.
+            const angle = i * 2.399963229728653;
+            forceX += Math.cos(angle) * push;
+            forceY += Math.sin(angle) * push;
+            continue;
+          }
           forceX += dx * push;
           forceY += dy * push;
         } else {

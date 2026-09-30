@@ -226,6 +226,13 @@ test("old layout engines become the two layouts: concentric → radial, force-di
   store = new SettingsStore();
   assert.equal(store.values.direction, "radial");
   assert.equal(store.values.physicsMode, "floating");
+  // The oldest key for the engine, from before it was called layoutEngine.
+  installFakeLocalStorage({
+    "gw2ct.settings.v2": JSON.stringify({ engine: "concentric" }),
+  });
+  store = new SettingsStore();
+  assert.equal(store.values.direction, "radial");
+  assert.ok(!("engine" in store.values));
 });
 
 test("saved density and spacing settings become equivalent forces", async () => {

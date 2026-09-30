@@ -18,14 +18,29 @@ export class ApiKeyStore {
     return read(this.sessionStorage) ?? read(this.storage);
   }
 
-  /** Whether the key is kept across visits. */
-  isRemembered() {
-    return !!read(this.storage);
+  /**
+   * Whether `key` (by default this tab's key) is the one kept across visits. Not merely "a key is saved": with several
+   * tabs open, another tab may have remembered a different key while this one keeps its own for the tab.
+   */
+  isRemembered(key = this.get()) {
+    const saved = read(this.storage);
+    return !!saved && saved === key;
   }
 
+  /**
+   * Keep the key (for the tab, or across visits when `remember`). The other copy is removed only once the key is
+   * safely written; if remembering it fails, it's kept for the tab instead.
+   * @returns {boolean} whether it was kept where asked
+   */
   set(key, { remember }) {
-    write(remember ? this.storage : this.sessionStorage, key);
-    write(remember ? this.sessionStorage : this.storage, null);
+    const target = remember ? this.storage : this.sessionStorage,
+      other = remember ? this.sessionStorage : this.storage;
+    if (write(target, key)) {
+      write(other, null);
+      return true;
+    }
+    if (remember) write(this.sessionStorage, key);
+    return false;
   }
 
   clear() {
@@ -42,11 +57,14 @@ function read(storage) {
   }
 }
 
+/** @returns {boolean} whether it was written */
 function write(storage, value) {
+  if (!storage) return false;
   try {
-    if (value) storage?.setItem(STORAGE_KEY, value);
-    else storage?.removeItem(STORAGE_KEY);
+    if (value) storage.setItem(STORAGE_KEY, value);
+    else storage.removeItem(STORAGE_KEY);
+    return true;
   } catch {
-    /* private mode: nothing to keep */
+    return false; // private mode or quota: nothing to keep
   }
 }

@@ -59,6 +59,8 @@ export class GraphView {
   #stopTicker = null;
   #hoverTimer = 0;
   #pinnedNodeId = null;
+  /** The node held by a drag (pointer or beginDrag), so a render mid-drag can hand it to the new layout. */
+  #heldId = null;
   #lineage = { nodeId: null, isPinned: false, dimmed: null };
   #highlightIds = null;
   #flashIds = null;
@@ -70,7 +72,7 @@ export class GraphView {
    * @param {{ container: HTMLElement, canvasWrapper?: HTMLElement, options?: Partial<typeof DEFAULT_OPTIONS>,
    *           theme?: Partial<typeof DEFAULT_THEME>, handlers?: object,
    *           rendererOptions?: { preserveDrawingBuffer?: boolean, badgeUrl?: string, colors?: object } }} config
-   *   handlers: onNodeTap(id, event), onNodeDoubleTap(id), onNodeContextTap(id), onBackgroundTap(),
+   *   handlers: onNodeTap(id, event), onNodeDoubleTap(id, event), onNodeContextTap(id, event), onBackgroundTap(),
    *   onNodeHoverStart(id, event), onNodeHoverEnd(), onPointerMove(event), onViewportChange()
    *   canvasWrapper: the element whose CSS background follows pan and zoom (see syncBackground)
    */
@@ -91,8 +93,8 @@ export class GraphView {
       container,
       {
         onNodeTap: (id, event) => handlers.onNodeTap?.(id, event),
-        onNodeDoubleTap: (id) => handlers.onNodeDoubleTap?.(id),
-        onNodeContextTap: (id) => handlers.onNodeContextTap?.(id),
+        onNodeDoubleTap: (id, event) => handlers.onNodeDoubleTap?.(id, event),
+        onNodeContextTap: (id, event) => handlers.onNodeContextTap?.(id, event),
         onBackgroundTap: () => handlers.onBackgroundTap?.(),
         onNodeHover: (id, event) =>
           id
@@ -120,8 +122,9 @@ export class GraphView {
   }
 
   /**
-   * Change any options. Looks apply at once; layout and physics options (direction, layered, physicsMode, the
-   * forces) apply from the next render().
+   * Change any options. Looks apply at once, node sizes (nodeSizeScale, rootSizeScale) and label wrapping included;
+   * layout and physics options (direction, layered, physicsMode, the forces) apply from the next render(), as does
+   * the room the layout leaves for the new sizes and labels.
    */
   setOptions(patch) {
     Object.assign(this.#options, patch);
@@ -147,7 +150,7 @@ export class GraphView {
 
   /**
    * Looks for the caller's own classes (see style.js):
-   * { nodes: { className: { pattern, border, borderWidth, fillAlpha, aura, ring, badge, labelPriority } },
+   * { nodes: { className: { pattern, border, borderWidth, fillAlpha, aura, ring, badge, labelPriority, events } },
    *   edges: { className: { color, width, glow, pattern } } }
    */
   setClassStyles(rules) {
@@ -298,6 +301,14 @@ export class GraphView {
     const view = this.#targetView({ fit, anchorNodeId, anchorScreen });
     if (view) graph.moveCamera(view, { animate });
     if (floatIn && this.#physics.floatIn()) this.#drive();
+    // A node still held (a drag through the render) is handed to the new layout, which the rest of the graph rests on
+    // from now; if the node went, setGraph let go of it.
+    if (this.#heldId != null && this.#nodes.has(this.#heldId))
+      this.#grab(this.#heldId, { fromLayout: true });
+    // The selection survives a render when its node does: so does its lineage.
+    if (this.#pinnedNodeId && !this.#nodes.has(this.#pinnedNodeId))
+      this.#pinnedNodeId = null;
+    this.#showPinnedLineage();
   }
 
   /** Links from the root to each node, following edges (for growing a new graph level by level). */
@@ -382,12 +393,19 @@ export class GraphView {
 
   #positionOf = (id) => this.graph.livePositionOf(id);
 
-  #grab(id) {
+  /** @param {{ fromLayout?: boolean }} [options]  fromLayout: the other nodes start from the layout, not the screen */
+  #grab(id, { fromLayout = false } = {}) {
+    this.#heldId = id;
     this.#stopPhysics();
     this.#physics.grab(id, {
       ids: this.graph.nodeIds(),
       links: [...this.#edges.values()],
-      positionOf: this.#positionOf,
+      positionOf: fromLayout
+        ? (nodeId) =>
+            nodeId === id
+              ? this.graph.livePositionOf(nodeId)
+              : this.graph.positionOf(nodeId)
+        : this.#positionOf,
     });
     this.#drive();
   }
@@ -398,6 +416,7 @@ export class GraphView {
   }
 
   #release(id) {
+    if (this.#heldId === id) this.#heldId = null;
     this.#physics.release(id);
     this.#drive();
   }
@@ -421,17 +440,24 @@ export class GraphView {
     };
   }
 
-  /** Remove everything: no nodes, no running animation or physics. */
+  /** Remove everything: no nodes, no running animation or physics, no selection, highlight or flash. */
   clear() {
     this.#clearTimers();
     this.#stopPhysics();
     this.#physics.simulation = null;
     this.#lineage = { nodeId: null, isPinned: false, dimmed: null };
+    this.#pinnedNodeId = null;
+    this.#highlightIds = this.#flashIds = null;
     this.#nodes = new Map();
     this.#edges = new Map();
     this.#parentOf = new Map();
     this.#indexEdges();
     this.graph.setGraph({ nodes: [], edges: [] });
+    this.graph.select(null);
+    this.graph.setDimmed(null);
+    this.graph.setEmphasis(null);
+    this.graph.setEdgeEmphasis(null);
+    this.graph.setLabelFocus(null);
   }
 
   /** Stop everything and remove the canvases. */
@@ -593,9 +619,11 @@ export class GraphView {
 
   // ---------------------------------------------------------------- selection & highlights
 
+  /** Select a node; null (or an id that isn't in the graph) for none. */
   select(nodeId) {
-    this.graph.select(nodeId || null);
-    this.#pinnedNodeId = nodeId || null;
+    if (!this.hasNode(nodeId)) nodeId = null;
+    this.graph.select(nodeId);
+    this.#pinnedNodeId = nodeId;
     if (!this.#lineage.nodeId || this.#lineage.isPinned)
       this.#showPinnedLineage();
   }
@@ -624,9 +652,10 @@ export class GraphView {
     }, durationMs);
   }
 
-  /** These nodes glow and everything else fades (e.g. a legend entry). Null or empty clears it. */
+  /** These nodes glow and everything else fades (e.g. a legend entry): any iterable of ids. Null or empty clears it. */
   setHighlightedNodes(nodeIds) {
-    this.#highlightIds = nodeIds?.size ? new Set(nodeIds) : null;
+    const ids = new Set(nodeIds ?? []);
+    this.#highlightIds = ids.size ? ids : null;
     this.#syncEmphasis();
     this.#syncDimmed();
   }

@@ -10,17 +10,24 @@ export function chunkArray(array, size) {
 }
 
 /**
- * Run async tasks with at most `concurrency` in flight.
+ * Run async tasks with at most `concurrency` in flight. The first task to throw rejects the whole run, and no further
+ * tasks are started (those already running finish on their own).
  * @param {Array<() => Promise<unknown>>} tasks
  * @param {number} concurrency
  * @param {(completed: number, total: number) => void} [onProgress]
  */
 export async function runWithConcurrency(tasks, concurrency, onProgress) {
   let nextIndex = 0,
-    completed = 0;
+    completed = 0,
+    failed = false;
   const worker = async () => {
-    while (nextIndex < tasks.length) {
-      await tasks[nextIndex++]();
+    while (!failed && nextIndex < tasks.length) {
+      try {
+        await tasks[nextIndex++]();
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
       onProgress?.(++completed, tasks.length);
     }
   };

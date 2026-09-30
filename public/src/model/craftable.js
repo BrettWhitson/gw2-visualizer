@@ -60,12 +60,17 @@ class Ledger {
 export class CraftPlanner {
   /** @type {Map<number, number>} item id → how many can be made (memo) */
   #counts = new Map();
+  /** @type {Map<number, import('../types.js').Recipe | null>} item id → the recipe a one-unit plan uses (memo) */
+  #recipes = new Map();
 
   /**
    * @param {{ getRecipes: (itemId: number) => import('../types.js').Recipe[],
    *           getConsumers: (itemId: number) => Set<number>,
    *           owned: Map<number, number>, wallet?: Map<number, number>,
-   *           includePromotions?: boolean }} options
+   *           includePromotions?: boolean,
+   *           recipeAllowed?: (recipe: import('../types.js').Recipe) => boolean }} options
+   *   recipeAllowed: recipes it returns false for are never used, at any step of a plan (e.g. no character has the
+   *   crafting level for them)
    */
   constructor({
     getRecipes,
@@ -73,6 +78,7 @@ export class CraftPlanner {
     owned,
     wallet = new Map(),
     includePromotions = false,
+    recipeAllowed = () => true,
   }) {
     this.getConsumers = getConsumers;
     this.owned = owned;
@@ -81,6 +87,7 @@ export class CraftPlanner {
       getRecipes(itemId).filter(
         (recipe) =>
           (includePromotions || !recipe.isPromotion) &&
+          recipeAllowed(recipe) &&
           Number.isInteger(recipe.outputCount) &&
           recipe.outputCount >= 1 &&
           recipe.ingredients.every(
@@ -122,9 +129,26 @@ export class CraftPlanner {
     return count;
   }
 
-  /** The recipe a plan for one unit would use (the first that works), or null. */
+  /** The recipe a plan for one unit would use (the first that works), or null (memoised). */
   recipeFor(itemId) {
-    return this.#craftOnly(itemId, 1) ?? null;
+    if (!this.#recipes.has(itemId))
+      this.#recipes.set(itemId, this.#craftOnly(itemId, 1) ?? null);
+    return this.#recipes.get(itemId);
+  }
+
+  /**
+   * The products of an item that really use it: craftable (in `craftable`) and made, in the plan for one, by a recipe
+   * with the item as a direct ingredient. A product whose other recipe uses it doesn't count.
+   */
+  productsUsing(itemId, craftable) {
+    return [...this.getConsumers(itemId)].filter(
+      (id) =>
+        craftable.has(id) &&
+        this.recipeFor(id)?.ingredients.some(
+          (ingredient) =>
+            ingredient.type === "Item" && ingredient.id === itemId,
+        ),
+    );
   }
 
   /**
@@ -330,8 +354,8 @@ export function buildForwardGraph(
   const nodesById = new Map();
   const edges = [];
   const productsOf = (itemId) =>
-    [...planner.getConsumers(itemId)]
-      .filter((id) => craftable.has(id))
+    planner
+      .productsUsing(itemId, craftable)
       .sort((a, b) => rank(b) - rank(a) || a - b);
 
   const addNode = (itemId, path, depth, ancestors) => {
@@ -389,11 +413,14 @@ export function buildForwardGraph(
         edgeId: `${path}->${childPath}`,
         sourceId: path,
         targetId: childPath,
+        // How many one craft uses; 0 (no label) if unknown.
         quantity:
           planner
             .recipeFor(productId)
-            ?.ingredients.find((ingredient) => ingredient.id === itemId)
-            ?.count ?? 1,
+            ?.ingredients.find(
+              (ingredient) =>
+                ingredient.type === "Item" && ingredient.id === itemId,
+            )?.count ?? 0,
       });
     });
     const hidden = products.length - shown.length;
@@ -455,9 +482,7 @@ export function usefulMaterials(planner, craftable) {
   const materials = [];
   for (const [itemId, owned] of planner.owned) {
     if (!(owned > 0)) continue;
-    let productCount = 0;
-    for (const consumerId of planner.getConsumers(itemId))
-      if (craftable.has(consumerId)) productCount++;
+    const productCount = planner.productsUsing(itemId, craftable).length;
     if (productCount) materials.push({ itemId, owned, productCount });
   }
   return materials;
@@ -528,39 +553,66 @@ export function chooseLayout(graph, preference = "auto") {
 
 // ---------------------------------------------------------------- profit
 
-/** What a Trading Post sale leaves you: the listing and exchange fees take 15%, instant sales included. */
-export const TRADING_POST_NET = 0.85;
+/** The Trading Post's fees on a sale: a listing fee and an exchange fee, each a share of the price. */
+export const TRADING_POST_FEES = { listing: 0.05, exchange: 0.1 };
 const COIN_ID = 1;
 
 /**
+ * What selling one unit at `price` copper leaves you after the Trading Post's fees. Each fee is charged per unit with a
+ * 1 copper minimum (documented game rules). The game doesn't document how a fraction of a copper is rounded, so each
+ * fee is rounded up: that can understate a profit by a copper, never overstate one. Never below 0: a 2c item nets
+ * nothing.
+ */
+export function tradingPostNet(price) {
+  if (!(price > 0)) return 0;
+  const fee = (share) => Math.max(1, Math.ceil(share * price - 1e-9));
+  return Math.max(
+    0,
+    price - fee(TRADING_POST_FEES.listing) - fee(TRADING_POST_FEES.exchange),
+  );
+}
+
+/**
  * Profit from crafting `count` of an item instead of selling what it uses up. Values come from `valueOf` (the
- * caller's choice: the highest buy order, what an instant sale gets). Both sides are after the Trading Post's cut;
- * coin spent counts at face value. Inputs with no value (account-bound, no buyers) count as free and are reported.
+ * caller's choice: the highest buy order, what an instant sale gets). Both sides are after the Trading Post's fees
+ * (per unit, see tradingPostNet); coin spent counts at face value. Inputs with no value (account-bound, no buyers)
+ * count as free and are reported.
  * @param {(itemId: number) => number | null} valueOf  copper per unit, null when it can't be sold
  * @param {{ buyOrders?: { unitPrice: number, quantity: number }[] }} [options]  the output's order book: when given,
- *   the sale is priced at what the buy orders can actually take (see sellIntoBuyOrders) instead of count × valueOf
+ *   the sale is priced at what the buy orders can actually take (see sellIntoBuyOrders) instead of count × valueOf.
+ *   When they take only some (`sold` < count), the cost is for making just those, so both sides cover the same units.
  * @returns {{ itemId: number, count: number, revenue: number | null, cost: number, profit: number | null,
  *             sold: number, plan: ReturnType<CraftPlanner["explain"]>, unvaluedInputs: number[],
  *             otherCurrencies: [number, number][] } | null}
+ *   plan: the plan the cost is for (making `sold`)
  */
 export function profitOf(planner, itemId, count, valueOf, { buyOrders } = {}) {
-  const plan = planner.explain(itemId, count);
-  if (!plan) return null;
-  const unit = valueOf(itemId);
+  const fullPlan = planner.explain(itemId, count);
+  if (!fullPlan) return null;
   let revenue = null,
     sold = count;
   if (buyOrders) {
     const sale = sellIntoBuyOrders(buyOrders, count);
     sold = sale.sold;
-    revenue = sale.sold ? Math.floor(sale.gross * TRADING_POST_NET) : null;
-  } else if (unit != null)
-    revenue = Math.floor(unit * count * TRADING_POST_NET);
-  let cost = plan.spent.get(COIN_ID) ?? 0;
+    revenue = sale.sold ? sale.net : null;
+  } else {
+    const unit = valueOf(itemId);
+    if (unit != null) revenue = tradingPostNet(unit) * count;
+  }
+  // Selling fewer than can be made: cost what making just those takes (re-planned; pro-rated if that somehow fails).
+  let plan = fullPlan,
+    scale = 1;
+  if (sold > 0 && sold < count) {
+    const soldPlan = planner.explain(itemId, sold);
+    if (soldPlan) plan = soldPlan;
+    else scale = sold / count;
+  }
+  let cost = (plan.spent.get(COIN_ID) ?? 0) * scale;
   const unvaluedInputs = [];
   for (const [id, used] of plan.consumed) {
     const value = valueOf(id);
     if (value == null) unvaluedInputs.push(id);
-    else cost += value * used * TRADING_POST_NET;
+    else cost += tradingPostNet(value) * used * scale;
   }
   cost = Math.round(cost);
   return {
@@ -572,25 +624,54 @@ export function profitOf(planner, itemId, count, valueOf, { buyOrders } = {}) {
     sold,
     plan,
     unvaluedInputs,
-    otherCurrencies: [...plan.spent].filter(([id]) => id !== COIN_ID),
+    otherCurrencies: [...plan.spent]
+      .filter(([id]) => id !== COIN_ID)
+      .map(([id, amount]) => [id, Math.round(amount * scale)]),
   };
 }
 
 /**
- * Selling `count` into the buy orders, highest first: the gross copper and how many they absorb (big stacks run
- * out of buyers at the top price, so a lone high order doesn't price the whole lot).
+ * Selling `count` into the buy orders, highest first: the gross copper, what's left of it after the fees (per unit, at
+ * each order's price) and how many they absorb (big stacks run out of buyers at the top price, so a lone high order
+ * doesn't price the whole lot).
  * @param {{ unitPrice: number, quantity: number }[]} buyOrders  highest first
  */
 export function sellIntoBuyOrders(buyOrders, count) {
   let gross = 0,
+    net = 0,
     sold = 0;
   for (const { unitPrice, quantity } of buyOrders) {
     if (sold >= count) break;
     const take = Math.min(quantity, count - sold);
     gross += take * unitPrice;
+    net += take * tradingPostNet(unitPrice);
     sold += take;
   }
-  return { gross, sold };
+  return { gross, net, sold };
+}
+
+/**
+ * Items the account could craft now without a planner's recipe restriction, but can't with it: each item `open` (an
+ * unrestricted planner) can make one of that isn't in `craftable` (what the restricted planner found), with the recipe
+ * it would use. Cheap next to findCraftable: one check per candidate, no counting.
+ * @param {CraftPlanner} open
+ * @param {Map<number, number> | Set<number>} craftable
+ * @param {{ shouldYield?: () => boolean, yieldToPage?: () => Promise<void> }} [options]
+ * @returns {Promise<{ itemId: number, recipe: import('../types.js').Recipe }[]>}
+ */
+export async function findBlocked(
+  open,
+  craftable,
+  { shouldYield = () => false, yieldToPage: pause = yieldToPage } = {},
+) {
+  const blocked = [];
+  for (const itemId of open.forwardCandidates()) {
+    if (shouldYield()) await pause();
+    if (craftable.has(itemId)) continue;
+    const recipe = open.recipeFor(itemId);
+    if (recipe) blocked.push({ itemId, recipe });
+  }
+  return blocked;
 }
 
 /**

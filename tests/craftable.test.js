@@ -11,7 +11,8 @@ import {
   sellIntoBuyOrders,
   routeFrom,
   analyseProfits,
-  TRADING_POST_NET,
+  findBlocked,
+  tradingPostNet,
   usefulMaterials,
 } from "../public/src/model/craftable.js";
 import { RECIPES, createFakeGameData } from "./helpers/fixtures.js";
@@ -26,7 +27,7 @@ import { RECIPES, createFakeGameData } from "./helpers/fixtures.js";
  */
 const COIN = 1;
 
-function planner({ owned = {}, wallet = {}, recipes } = {}) {
+function planner({ owned = {}, wallet = {}, recipes, recipeAllowed } = {}) {
   const gameData = createFakeGameData(recipes ? { recipes } : {});
   const toMap = (object) =>
     new Map(Object.entries(object).map(([id, n]) => [Number(id), n]));
@@ -35,6 +36,7 @@ function planner({ owned = {}, wallet = {}, recipes } = {}) {
     getConsumers: (id) => gameData.getConsumers(id),
     owned: toMap(owned),
     wallet: toMap(wallet),
+    recipeAllowed,
   });
 }
 
@@ -304,11 +306,11 @@ test("profit is the sale minus what the used-up materials would sell for, after 
   const p = planner({ owned: { 5: 12, 6: 1 }, wallet: { [COIN]: 100 } });
   const prices = { 1: 500, 5: 5, 6: 3 };
   const result = profitOf(p, 1, 1, (id) => prices[id] ?? null);
-  assert.equal(result.revenue, Math.floor(500 * TRADING_POST_NET));
+  assert.equal(result.revenue, 500 - 25 - 50);
   assert.equal(
     result.cost,
-    Math.round((6 * 5 + 1 * 3) * TRADING_POST_NET) + 50,
-    "coin at face value",
+    6 * tradingPostNet(5) + 1 * tradingPostNet(3) + 50,
+    "fees per unit on each input; coin at face value",
   );
   assert.equal(result.profit, result.revenue - result.cost);
 
@@ -389,14 +391,15 @@ test("big stacks are priced at what the buy orders can take", () => {
   ];
   assert.deepEqual(sellIntoBuyOrders(orders, 3), {
     gross: 1000 + 2 * 10,
+    net: 850 + 2 * 8,
     sold: 3,
   });
   assert.deepEqual(
     sellIntoBuyOrders(orders, 50),
-    { gross: 1050, sold: 6 },
+    { gross: 1050, net: 850 + 5 * 8, sold: 6 },
     "only 6 buyers",
   );
-  assert.deepEqual(sellIntoBuyOrders([], 5), { gross: 0, sold: 0 });
+  assert.deepEqual(sellIntoBuyOrders([], 5), { gross: 0, net: 0, sold: 0 });
 
   const p = planner({ owned: { 5: 12, 6: 1 }, wallet: { [COIN]: 100 } });
   const valueOf = (id) => ({ 1: 1000, 5: 5, 6: 3 })[id] ?? null;
@@ -406,7 +409,7 @@ test("big stacks are priced at what the buy orders can take", () => {
   });
   assert.equal(
     real.revenue,
-    Math.floor(400 * TRADING_POST_NET),
+    tradingPostNet(400),
     "the order book, not the headline price",
   );
   assert.ok(real.profit < naive.profit);
@@ -439,5 +442,109 @@ test("steps opened only to follow a route show just the route", async () => {
     graph.nodesById.get("r/2/more")?.quantity,
     1,
     "the sword folded away",
+  );
+});
+
+test("Trading Post fees are per unit, each at least 1 copper", () => {
+  assert.equal(tradingPostNet(100), 85, "5% listing + 10% exchange");
+  assert.equal(tradingPostNet(30), 30 - 2 - 3, "1.5c rounds up to 2c");
+  assert.equal(
+    tradingPostNet(103),
+    103 - 6 - 11,
+    "fees round up: never an overstated profit",
+  );
+  assert.equal(tradingPostNet(10), 8, "the listing fee's 1c minimum");
+  assert.equal(tradingPostNet(2), 0, "1c + 1c: nothing left");
+  assert.equal(tradingPostNet(1), 0, "never below nothing");
+  assert.equal(tradingPostNet(0), 0);
+  assert.deepEqual(
+    sellIntoBuyOrders([{ unitPrice: 2, quantity: 5000 }], 1000),
+    { gross: 2000, net: 0, sold: 1000 },
+    "a thousand 2c items net nothing, not 85% of 20s",
+  );
+});
+
+test("a partial sale is costed for what sells, not everything that could be made", () => {
+  const p = planner({ owned: { 5: 12 } });
+  const valueOf = (id) => ({ 4: 100, 5: 5 })[id] ?? null;
+  const partial = profitOf(p, 4, 12, valueOf, {
+    buyOrders: [{ unitPrice: 100, quantity: 4 }],
+  });
+  assert.equal(partial.sold, 4);
+  assert.equal(partial.revenue, 4 * 85);
+  assert.deepEqual(
+    Object.fromEntries(partial.plan.consumed),
+    { 5: 4 },
+    "the plan for 4 ingots: 4 ore",
+  );
+  assert.equal(partial.cost, profitOf(p, 4, 4, valueOf).cost);
+  assert.equal(partial.profit, 4 * 85 - 4 * tradingPostNet(5));
+});
+
+test("recipes a character can't make are left out at every step", async () => {
+  // Blades from ingots (102) are off limits: no blades, so no swords either, though the sword's own recipe is fine.
+  const owned = { 5: 12, 6: 1 };
+  const wallet = { [COIN]: 100 };
+  const recipeAllowed = (recipe) => recipe.id !== 102;
+  const limited = planner({ owned, wallet, recipeAllowed });
+  assert.equal(limited.canMake(2), false);
+  assert.equal(
+    limited.canMake(1),
+    false,
+    "the blocked recipe is an intermediate",
+  );
+  assert.equal(limited.canMake(4), true);
+  const found = await limited.findCraftable();
+  assert.deepEqual(found.map((entry) => entry.itemId).sort(), [3, 4]);
+
+  const open = planner({ owned, wallet });
+  assert.equal(open.canMake(1), true, "no predicate: unchanged");
+  const blocked = await findBlocked(
+    open,
+    new Map(found.map(({ itemId, count }) => [itemId, count])),
+  );
+  assert.deepEqual(
+    blocked.map(({ itemId, recipe }) => [itemId, recipe.id]).sort(),
+    [
+      [1, 101],
+      [2, 102],
+    ],
+    "what the restriction hides, with the recipe it would need",
+  );
+});
+
+test("a product is linked only when its chosen recipe uses the item", async () => {
+  // Blades can also be made from planks (999), but with ore to hand the plan uses ingots (102).
+  const recipes = [
+    ...RECIPES,
+    {
+      ...RECIPES.find((r) => r.id === 102),
+      id: 999,
+      ingredients: [{ type: "Item", id: 6, count: 1 }],
+    },
+  ];
+  const p = planner({
+    owned: { 5: 12, 6: 2 },
+    wallet: { [COIN]: 100 },
+    recipes,
+  });
+  const craftable = new Map(
+    (await p.findCraftable()).map(({ itemId, count }) => [itemId, count]),
+  );
+  assert.ok(craftable.has(2));
+  const graph = buildForwardGraph(6, {
+    planner: p,
+    craftable,
+    expanded: new Set(),
+    showAll: new Set(),
+  });
+  assert.deepEqual(
+    graph.edges.map((e) => [e.targetId, e.quantity]),
+    [["r/3", 1]],
+    "planks → hilts; no blade edge, and no made-up ×1",
+  );
+  assert.deepEqual(
+    usefulMaterials(p, craftable).find((m) => m.itemId === 6)?.productCount,
+    1,
   );
 });

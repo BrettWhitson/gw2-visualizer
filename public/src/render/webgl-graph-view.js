@@ -60,7 +60,7 @@ export class WebGLGraphView {
 
   /**
    * Extra looks for a page's own classes, in Prism's terms (see public/lib/prism/style.js):
-   * { nodes: { className: { pattern, border, borderWidth, fillAlpha, aura, ring, badge } },
+   * { nodes: { className: { pattern, border, borderWidth, fillAlpha, aura, ring, badge, events } },
    *   edges: { className: { color, width, glow, pattern } } }
    */
   setClassStyles(rules) {
@@ -82,6 +82,18 @@ export class WebGLGraphView {
     );
   }
 
+  /**
+   * Hand Prism whatever settings changed: options, theme, class rules. Cheap when nothing did. The page calls it
+   * after every settings change, since some settings (hover highlight, zoom speed, background…) redraw nothing.
+   */
+  syncSettings() {
+    this.#sync("theme", prismTheme(this.#settings.values), (theme) =>
+      this.#view.setTheme(theme),
+    );
+    this.#syncClassRules();
+    this.#syncOptions();
+  }
+
   #syncClassRules() {
     const gw2 = gw2ClassRules(this.#settings.values);
     const rules = {
@@ -101,7 +113,7 @@ export class WebGLGraphView {
     anchorNodeId = null,
     grow = false,
   }) {
-    this.#syncOptions();
+    this.syncSettings(); // a relayout setting may change looks too (the Mystic Forge indicator)
     this.#view.render({
       nodes: nodeElements.map(({ data, classes }) => {
         const names = prismClasses(classes);
@@ -139,11 +151,7 @@ export class WebGLGraphView {
 
   /** A style-only setting changed. */
   applyStylesheet() {
-    this.#sync("theme", prismTheme(this.#settings.values), (theme) =>
-      this.#view.setTheme(theme),
-    );
-    this.#syncClassRules();
-    this.#syncOptions();
+    this.syncSettings();
   }
 
   clear() {
@@ -247,6 +255,7 @@ export class WebGLGraphView {
   }
 
   syncBackground() {
+    this.syncSettings(); // the background setting lives in Prism's options
     this.#view.syncBackground();
   }
 

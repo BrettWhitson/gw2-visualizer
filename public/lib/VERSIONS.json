@@ -1,5 +1,5 @@
 {
   "cytoscape": "3.34.3",
-  "tether": "github:BrettWhitson/tether#f9a09ea925286008fa27b0212a4fe04f6d7a8b30",
-  "prism": "github:BrettWhitson/prism#8ce47b0abd25216a55a9abf82b0d242e0a02b046"
+  "tether": "github:BrettWhitson/tether#72200e70f4cdf5467b0ea1c3f64bb0904f791e87",
+  "prism": "github:BrettWhitson/prism#e0162e37cef97dc2ebea475ce72be00b59fcd0ac"
 }

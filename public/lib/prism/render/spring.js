@@ -65,6 +65,7 @@ export class Spring {
    * @param {number} [precision]  how close counts as there (in the value's own units)
    */
   constructor(value, params, precision = 0.004) {
+    if (!Number.isFinite(value)) value = 0;
     this.precision = precision;
     this.value = value;
     this.target = value;
@@ -72,13 +73,14 @@ export class Spring {
     this.params = params;
   }
 
-  /** Chase a new target (from wherever it is now, keeping its velocity). */
+  /** Chase a new target (from wherever it is now, keeping its velocity). NaN and ±Infinity are ignored. */
   set(target) {
-    this.target = target;
+    if (Number.isFinite(target)) this.target = target;
   }
 
-  /** Jump there, no motion. */
+  /** Jump there, no motion. NaN and ±Infinity are ignored. */
   snap(value) {
+    if (!Number.isFinite(value)) return;
     this.value = this.target = value;
     this.velocity = 0;
   }

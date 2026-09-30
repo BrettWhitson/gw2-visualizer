@@ -535,6 +535,18 @@
   margin-top: 6px;
   font-size: 12px;
 }
+/* Hover and focus tooltips show links as text; pinning the tip (click, tap or Enter) makes them live. */
+span.tt-link {
+  color: var(--accent2);
+}
+.tt-upgrade-link {
+  color: inherit;
+  text-decoration: none;
+}
+.tt-upgrade-link:hover,
+.tt-upgrade-link:focus-visible {
+  text-decoration: underline;
+}
 
 /* ---------- bags ---------- */
 .bags {

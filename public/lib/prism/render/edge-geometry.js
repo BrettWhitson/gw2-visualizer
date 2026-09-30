@@ -10,7 +10,12 @@ export function boxExit(cx, cy, hw, hh, tx, ty) {
   const dx = tx - cx,
     dy = ty - cy;
   if (dx === 0 && dy === 0) return { x: cx, y: cy };
-  const scale = 1 / Math.max(Math.abs(dx) / hw, Math.abs(dy) / hh);
+  // How far along the line each pair of sides is (an axis the line doesn't move along has none): the nearer wins.
+  // A zero-size box leaves from its centre.
+  const scale = Math.min(
+    dx ? Math.max(0, hw) / Math.abs(dx) : Infinity,
+    dy ? Math.max(0, hh) / Math.abs(dy) : Infinity,
+  );
   return { x: cx + dx * scale, y: cy + dy * scale };
 }
 

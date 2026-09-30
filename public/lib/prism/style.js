@@ -30,7 +30,8 @@ export const DEFAULT_THEME = {
 
 /**
  * @typedef {{ pattern?: "solid" | "dashed" | "dotted" | "stack", border?: string, borderWidth?: number,
- *             fillAlpha?: number, aura?: string, ring?: string, badge?: boolean, labelPriority?: number }} NodeRule
+ *             fillAlpha?: number, aura?: string, ring?: string, badge?: boolean, labelPriority?: number,
+ *             events?: boolean }} NodeRule
  * @typedef {{ color?: string, width?: number, glow?: boolean, pattern?: "dashed" | "dotted" | null }} EdgeRule
  * @typedef {{ nodes?: Record<string, NodeRule>, edges?: Record<string, EdgeRule> }} ClassRules
  */
@@ -91,6 +92,8 @@ export function resolveNodeStyle(classes, data, o, theme, rules = {}) {
     bold: false,
     /** Labels that stay when zoomed out and win label collisions. */
     labelPriority: 0,
+    /** false: the pointer passes through the node (no hover, tap or drag); it's still drawn and labelled. */
+    events: true,
   };
   if (classes.has("root")) {
     style.size *= o.rootSizeScale;
@@ -110,6 +113,7 @@ export function resolveNodeStyle(classes, data, o, theme, rules = {}) {
       if (rule.ring) style.ring = rule.ring;
       if (rule.badge != null) style.badge = rule.badge;
       if (rule.labelPriority != null) style.labelPriority = rule.labelPriority;
+      if (rule.events != null) style.events = rule.events;
     }
   return style;
 }

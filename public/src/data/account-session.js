@@ -38,7 +38,8 @@ async function fingerprint(key) {
  *
  * Dispatches "change" whenever `status` or the data changes. `status`: "none" (no key) | "connecting" | "ready" |
  * "error" (`error` says why; a rejected saved key is forgotten). A failed attempt to switch keys keeps the account
- * that was connected: `status` goes back to "ready" with `error` set.
+ * that was connected: `status` goes back to "ready" with `error` set. A saved key that couldn't be loaded for any reason
+ * other than the API rejecting it (a network error, the API down) is kept, so `refresh()` can try it again.
  */
 export class AccountSession extends EventTarget {
   status = "none";
@@ -94,13 +95,21 @@ export class AccountSession extends EventTarget {
   }
 
   /**
+   * The key may read characters, but the last load couldn't (the API didn't answer): pages must not treat that as
+   * "no characters" or "no crafting levels". The snapshot is partial, so the next load tries again.
+   */
+  get charactersUnavailable() {
+    return this.has("characters") && !this.characters;
+  }
+
+  /**
    * Connect with the key saved in this browser or tab, if any: from its saved snapshot when there is one (refreshed
    * in the background when older than maxAge()), otherwise from the API.
    */
   async restore() {
     const key = this.keys.get();
     if (!key) return false;
-    const remember = this.keys.isRemembered();
+    const remember = this.keys.isRemembered(key);
     const token = ++this.#loadToken;
     const snapshot = await this.#readSnapshot(key, remember);
     if (token !== this.#loadToken) return false;
@@ -115,8 +124,9 @@ export class AccountSession extends EventTarget {
 
   /**
    * @param {{ remember?: boolean, saved?: boolean, background?: boolean }} [options]
-   *   saved: the key came from storage (forgotten if the API rejects it); background: keep showing the current data
-   *   while loading (a refresh) instead of going through "connecting"
+   *   saved: the key came from storage (forgotten if the API rejects it, and not stored again: with several tabs open,
+   *   storing it could undo what another tab chose); background: keep showing the current data while loading (a
+   *   refresh) instead of going through "connecting"
    * @returns {Promise<boolean>} whether the account loaded
    */
   async connect(
@@ -153,7 +163,7 @@ export class AccountSession extends EventTarget {
         });
       const [characters, bank, shared, materials, wallet, delivery] =
         await Promise.all([
-          optional("characters", () => client.characters()),
+          tolerant(optional("characters", () => client.characters())),
           tolerant(optional("inventories", () => client.bank())),
           tolerant(optional("inventories", () => client.sharedInventory())),
           tolerant(optional("inventories", () => client.materials())),
@@ -161,7 +171,9 @@ export class AccountSession extends EventTarget {
           tolerant(optional("tradingpost", () => client.delivery())),
         ]);
       if (token !== this.#loadToken) return false; // superseded by another connect / forget
-      this.keys.set(key, { remember });
+      // Remembering can fail (storage full or blocked): the key is then kept for the tab, and its snapshot with it.
+      if (!saved && this.keys.set(key, { remember }) === false)
+        remember = false;
       this.key = key;
       const snapshot = {
         version: SNAPSHOT_VERSION,
@@ -187,8 +199,12 @@ export class AccountSession extends EventTarget {
         rejected
           ? "The API rejected this key. It may have been deleted, or mistyped."
           : `Couldn't reach the Guild Wars 2 API (${error.message}). Try again in a moment.`,
-        // The connected account stays, unless it's this very key that was rejected.
-        { keepAccount: wasReady && !(rejected && saved) },
+        // The connected account stays, unless it's this very key that was rejected. A saved key the API merely
+        // couldn't be reached with stays too (it's still in storage), so refresh() can retry it.
+        {
+          keepAccount: wasReady && !(rejected && saved),
+          keepKey: saved && !rejected ? key : null,
+        },
       );
       return false;
     }
@@ -198,7 +214,7 @@ export class AccountSession extends EventTarget {
   refresh() {
     return this.key
       ? this.connect(this.key, {
-          remember: this.keys.isRemembered(),
+          remember: this.keys.isRemembered(this.key),
           saved: true,
           background: true,
         })
@@ -261,10 +277,29 @@ export class AccountSession extends EventTarget {
         this.tabStorage?.removeItem(TAB_SNAPSHOT_KEY);
       } else {
         await this.cache.delete?.(SNAPSHOT_KEY);
-        this.tabStorage?.setItem(TAB_SNAPSHOT_KEY, JSON.stringify(value));
+        this.#writeTabSnapshot(value);
       }
     } catch {
       this.#deleteSnapshots(); // quota or private mode: the next page loads from the API
+    }
+  }
+
+  /**
+   * sessionStorage holds only a few MB, which a big account's characters (every bag and equipment slot) can outgrow.
+   * Then a snapshot without the characters is kept instead, marked partial so the next page load fetches them again;
+   * if even that doesn't fit, the old one is removed (throws, see #writeSnapshot) and the next page loads from the API.
+   */
+  #writeTabSnapshot(value) {
+    if (!this.tabStorage) return;
+    try {
+      this.tabStorage.setItem(TAB_SNAPSHOT_KEY, JSON.stringify(value));
+    } catch {
+      const smaller = {
+        ...value,
+        partial: true,
+        raw: { ...value.raw, characters: null },
+      };
+      this.tabStorage.setItem(TAB_SNAPSHOT_KEY, JSON.stringify(smaller));
     }
   }
 
@@ -277,12 +312,13 @@ export class AccountSession extends EventTarget {
     this.cache?.delete?.(SNAPSHOT_KEY)?.catch?.(() => {});
   }
 
-  #fail(error, { keepAccount = false } = {}) {
+  #fail(error, { keepAccount = false, keepKey = null } = {}) {
     if (keepAccount) {
       this.#set({ status: "ready", error });
       return;
     }
     this.#clearData();
+    this.key = keepKey;
     this.#set({ status: "error", error });
   }
 

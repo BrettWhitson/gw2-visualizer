@@ -74,6 +74,9 @@
   flex: 1;
   min-width: 0;
 }
+.craft-filter-row select:disabled {
+  opacity: 0.5;
+}
 .craft-check {
   display: flex;
   align-items: center;
@@ -151,6 +154,10 @@
 .craft-row-profit {
   font-size: 11px;
   font-weight: 600;
+}
+/* Priced at the headline buy order only (not checked against the order book). */
+.craft-row-profit.estimate {
+  opacity: 0.75;
 }
 .craft-route {
   display: block;

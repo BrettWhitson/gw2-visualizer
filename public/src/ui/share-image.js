@@ -177,12 +177,23 @@ async function loadIcons(armory) {
   return icons;
 }
 
+/** How long one icon may take before it's drawn as a blank frame, so a stalled request can't hang the dialog. */
+const ICON_TIMEOUT_MS = 8000;
+
 function loadCorsImage(url) {
   return new Promise((resolve) => {
     const image = new Image();
+    const timer = setTimeout(() => {
+      image.onload = image.onerror = null;
+      resolve(null);
+    }, ICON_TIMEOUT_MS);
+    const finish = (result) => {
+      clearTimeout(timer);
+      resolve(result);
+    };
     image.crossOrigin = "anonymous"; // keeps the canvas exportable
-    image.onload = () => resolve(image);
-    image.onerror = () => resolve(null);
+    image.onload = () => finish(image);
+    image.onerror = () => finish(null);
     image.src = url;
   });
 }
@@ -627,7 +638,7 @@ export function openShareDialog(armory, initialMode = "compact") {
       return;
     }
     const action = event.target.closest("[data-share]")?.dataset.share;
-    if (action === "close" || event.target === dialog) dialog.close();
+    if (action === "close" || isBackdropClick(event)) dialog.close();
     else if (action === "download" && blob)
       downloadBlob(
         blob,
@@ -644,6 +655,17 @@ export function openShareDialog(armory, initialMode = "compact") {
       }
     }
   });
+  // The dialog element itself is the target for clicks on its padding too; only a click outside its box is the backdrop.
+  function isBackdropClick(event) {
+    if (event.target !== dialog) return false;
+    const rect = dialog.getBoundingClientRect();
+    return (
+      event.clientX < rect.left ||
+      event.clientX > rect.right ||
+      event.clientY < rect.top ||
+      event.clientY > rect.bottom
+    );
+  }
   dialog.addEventListener("close", () => {
     generation++;
     if (previewUrl) URL.revokeObjectURL(previewUrl);

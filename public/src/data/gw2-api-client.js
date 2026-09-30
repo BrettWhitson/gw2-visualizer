@@ -8,6 +8,9 @@ import {
 } from "../config/constants.js";
 import { chunkArray, runWithConcurrency, sleep } from "../utils/async.js";
 
+/** A server's Retry-After longer than this is cut short: a stuck page is worse than one more refused request. */
+export const MAX_RETRY_AFTER_MS = 30 * 1000;
+
 /** Thin client for the official Guild Wars 2 API (CORS-enabled, no key needed for these endpoints). */
 export class Gw2ApiClient {
   constructor(baseUrl = GW2_API_BASE_URL) {
@@ -16,8 +19,8 @@ export class Gw2ApiClient {
 
   /**
    * GET JSON with a per-request timeout and retry on rate limits / server / network errors (quadratic back-off,
-   * or the server's Retry-After). `206 Partial Content` (some ids unknown) counts as success, and a `404` for an
-   * `ids=` query means "none of these ids exist" → [].
+   * or the server's Retry-After, capped at MAX_RETRY_AFTER_MS). `206 Partial Content` (some ids unknown) counts as
+   * success, and a `404` for an `ids=` query means "none of these ids exist" → [].
    */
   async fetchJson(path, { retries = 4 } = {}) {
     const url = withSchemaVersion(
@@ -33,7 +36,8 @@ export class Gw2ApiClient {
           return await response.json();
         if (response.status === 404 && url.includes("ids=")) return [];
         const retryAfterSeconds = Number(response.headers.get("Retry-After"));
-        if (retryAfterSeconds > 0) retryAfterMs = retryAfterSeconds * 1000;
+        if (retryAfterSeconds > 0)
+          retryAfterMs = Math.min(retryAfterSeconds * 1000, MAX_RETRY_AFTER_MS);
         const error = new Error(
           `HTTP ${response.status} for ${redactAccessToken(url)}`,
         );
@@ -48,7 +52,13 @@ export class Gw2ApiClient {
     }
   }
 
-  /** Fetch `path?ids=…` in batches of 200, several batches in parallel. */
+  /**
+   * Fetch `path?ids=…` in batches of 200, several batches in parallel. With `ignoreErrors`, a batch that fails is
+   * skipped; pass a `failedIds` set to learn which ids went unanswered that way (as opposed to ids the API doesn't
+   * know, which are simply absent from a batch that succeeded).
+   * @param {{ onProgress?: (completed: number, total: number) => void, retries?: number, ignoreErrors?: boolean,
+   *           concurrency?: number, failedIds?: Set<number> }} [options]
+   */
   async fetchByIds(
     path,
     ids,
@@ -57,6 +67,7 @@ export class Gw2ApiClient {
       retries,
       ignoreErrors = false,
       concurrency = API_CONCURRENCY,
+      failedIds,
     } = {},
   ) {
     const results = [];
@@ -72,6 +83,7 @@ export class Gw2ApiClient {
           );
         } catch (error) {
           if (!ignoreErrors) throw error;
+          for (const id of batch) failedIds?.add(id);
         }
       },
     );
@@ -111,11 +123,16 @@ export class Gw2ApiClient {
     ).map(({ id, name, icon }) => ({ id, name, icon }));
   }
 
-  /** Buy orders (highest first) per item, from the order book; items with no market are absent. */
-  async getBuyOrders(ids) {
+  /**
+   * Buy orders (highest first) per item, from the order book; items with no market are absent. Ids in batches that
+   * failed are absent too, and added to `failedIds` when given.
+   * @param {{ failedIds?: Set<number> }} [options]
+   */
+  async getBuyOrders(ids, { failedIds } = {}) {
     const raw = await this.fetchByIds("/commerce/listings", ids, {
       retries: 2,
       ignoreErrors: true,
+      failedIds,
     });
     return new Map(
       raw.map((listing) => [
@@ -128,12 +145,17 @@ export class Gw2ApiClient {
     );
   }
 
-  /** Trading post prices; untradeable ids are simply absent from the result. */
-  async getPrices(ids) {
+  /**
+   * Trading post prices; untradeable ids are simply absent from the result. Ids in batches that failed are absent
+   * too, and added to `failedIds` when given.
+   * @param {{ failedIds?: Set<number> }} [options]
+   */
+  async getPrices(ids, { failedIds } = {}) {
     const raw = await this.fetchByIds("/commerce/prices", ids, {
       retries: 2,
       ignoreErrors: true,
       concurrency: PRICE_CONCURRENCY,
+      failedIds,
     });
     return raw.map((price) => ({
       id: price.id,

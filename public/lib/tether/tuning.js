@@ -21,11 +21,15 @@ export const PHYSICS_TUNING = Object.freeze({
   dragHeat: 0.3,
   cooling: 0.0228,
   floatIn: true,
+  // Floating in stops after this many ticks (about 4 s at 60 fps) even if the graph hasn't gone still: crowded
+  // graphs can jitter at the drag heat for good, and the animation would never end.
+  floatInTicks: 240,
   // Floating graphs are run at the drag heat until they're still (moving less than this per tick, or for at most
-  // this many ticks), so grabbing a node disturbs only what's near it.
+  // this many ticks, or this much work: node count × ticks), so grabbing a node disturbs only what's near it. Work,
+  // not time, so the result doesn't depend on the machine.
   stillness: 0.02,
   settleTicks: 4000,
-  settleBudgetMs: 1500,
+  settleWork: 1350000,
   softCollision: 0.3,
   // Elastic: stiffness = base + per-link × Link strength; anchor = base + per-center × Center.
   elasticStiffnessBase: 0.3,
@@ -183,12 +187,21 @@ export const TUNING_OPTIONS = [
   },
   {
     group: "Floating",
-    key: "settleBudgetMs",
-    label: "Settle budget",
+    key: "floatInTicks",
+    label: "Float-in ticks",
     min: 0,
-    max: 10000,
-    step: 100,
-    hint: "The most time (ms) spent bringing a floating graph to rest before showing it (very big graphs may still drift a little when grabbed).",
+    max: 3600,
+    step: 30,
+    hint: "The most ticks a new floating graph spends floating into place before it's brought to rest.",
+  },
+  {
+    group: "Floating",
+    key: "settleWork",
+    label: "Settle work",
+    min: 0,
+    max: 10000000,
+    step: 50000,
+    hint: "The most work (nodes × ticks) spent bringing a floating graph to rest before showing it (very big graphs may still drift a little when grabbed).",
   },
   {
     group: "Floating",

@@ -18,6 +18,20 @@ export function chooseGraphView(settings) {
   return wanted && supportsWebGL2() ? WebGLGraphView : GraphView;
 }
 
+/**
+ * Reload the page to switch renderers (the graph view is built once, at start), dropping a `?renderer=` override
+ * that would otherwise bring the old one straight back.
+ */
+export function reloadForRenderer() {
+  const url = new URL(location.href);
+  if (!url.searchParams.has("renderer")) {
+    location.reload();
+    return;
+  }
+  url.searchParams.delete("renderer");
+  location.replace(url);
+}
+
 /** Can a graph be drawn at all: our engine needs WebGL2, the classic one Cytoscape. */
 export function canDrawGraphs() {
   return !!globalThis.cytoscape || supportsWebGL2();

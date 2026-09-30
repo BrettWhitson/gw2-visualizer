@@ -213,7 +213,8 @@ export function migrateLegacySettings(saved) {
   saved.settingsRevision = 2;
   // Layout engines went: the old "Concentric rings" and "Force-directed" engines became the radial layout (the
   // force web floats, as it did). Ranking, alignment and the drag-physics switch went with them.
-  if (saved.layoutEngine === "concentric") saved.direction = "radial";
+  if (saved.layoutEngine === "concentric" || saved.engine === "concentric")
+    saved.direction = "radial";
   if (saved.layoutEngine === "force" || saved.engine === "force") {
     saved.direction = "radial";
     saved.physicsMode ??= "floating";

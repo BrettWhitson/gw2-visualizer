@@ -26,7 +26,10 @@ import { TreeState } from "./model/tree-state.js";
 import { CraftTreeBuilder, walkTree } from "./model/craft-tree.js";
 import { buildGraphModel } from "./model/graph-model.js";
 import { NodeAppearance } from "./graph/node-appearance.js";
-import { chooseGraphView } from "./render/choose-graph-view.js";
+import {
+  chooseGraphView,
+  reloadForRenderer,
+} from "./render/choose-graph-view.js";
 import { composeGraphPng } from "./graph/png-exporter.js";
 import { Tooltip } from "./ui/tooltip.js";
 import { DetailsPanel } from "./ui/details-panel.js";
@@ -212,8 +215,9 @@ export class CraftingTreeApp {
     this.#bindGlobalControls();
     // Owned items change quantities and costs: redraw when the account connects, refreshes or goes.
     const syncOwnedToggle = () => {
-      const input = $('[data-setting="useOwned"]');
-      if (input) input.disabled = !this.account.isReady;
+      // The ribbon pill, the Recipes popout and Settings each have one.
+      for (const input of $$('[data-setting="useOwned"]'))
+        input.disabled = !this.account.isReady;
     };
     syncOwnedToggle();
     let shownAccount = null;
@@ -271,6 +275,7 @@ export class CraftingTreeApp {
   clearGraph() {
     if (!this.treeState.hasRoot) return;
     this.#priceRequestGeneration++; // drop price responses for the cleared tree
+    this.statusBar.setBusy(false); // …whose loading indicator would otherwise stay on
     this.treeState.clear();
     this.tooltip.hide();
     this.ribbonPopout.close({ restoreFocus: false });
@@ -377,7 +382,7 @@ export class CraftingTreeApp {
   changeSetting(key, value, redraw) {
     this.settings.set(key, value);
     if (key === "graphRenderer") {
-      location.reload(); // the graph view is built once, at start
+      reloadForRenderer(); // the graph view is built once, at start
       return;
     }
     if (key === "viewMode") {
@@ -387,6 +392,7 @@ export class CraftingTreeApp {
       this.optionPanels.forEach((panel) => panel.render()); // some options only apply to one view
     }
     if (key === "maxDepth") this.treeState.resetExpansion();
+    this.graphView.syncSettings();
     if (key === "canvasBackground") this.graphView.syncBackground();
     this.toolbar.sync();
     for (const panel of this.optionPanels) {
@@ -405,17 +411,24 @@ export class CraftingTreeApp {
 
   /** @param {'layout' | 'style'} kind */
   applyPreset(kind, name) {
+    const renderer = this.settings.get("graphRenderer");
     this.settings.applyPreset(kind, name);
-    this.#afterBulkSettingsChange();
+    this.#afterBulkSettingsChange(renderer);
   }
 
   /** Restore the given settings to their defaults (Customize: per option, per section, or all). */
   resetSettings(keys) {
+    const renderer = this.settings.get("graphRenderer");
     this.settings.reset(keys);
-    this.#afterBulkSettingsChange();
+    this.#afterBulkSettingsChange(renderer);
   }
 
-  #afterBulkSettingsChange() {
+  /** @param {string} previousRenderer  the Renderer setting before the change (it needs a reload) */
+  #afterBulkSettingsChange(previousRenderer) {
+    if (this.settings.get("graphRenderer") !== previousRenderer) {
+      reloadForRenderer();
+      return;
+    }
     this.optionPanels.forEach((panel) => panel.render());
     this.toolbar.sync();
     this.#applyRibbonState();
@@ -807,7 +820,8 @@ export class CraftingTreeApp {
       case " ":
         event.preventDefault();
         this.toggleCollapsed(current.nodeId);
-        this.#announceNode(nodesById.get(current.nodeId) ?? current);
+        // The toggle redrew the graph: announce the node as it is now.
+        this.#announceNode(this.graph.nodesById.get(current.nodeId) ?? current);
         return;
       default:
         return;

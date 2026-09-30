@@ -2,7 +2,8 @@
  * Where things come from and go to when one graph turns into the next. Pure: no DOM.
  *
  * A new node grows out of its nearest ancestor that was already on screen, so expanding a node visibly unfolds it; a
- * removed node folds back into its nearest ancestor that stays (collapsing reads the same way in reverse).
+ * removed node folds back into its nearest ancestor that stays (collapsing reads the same way in reverse). Ancestors
+ * are whatever the links say (child → parent maps); ids mean nothing here.
  */
 
 /**
@@ -36,28 +37,29 @@ export function planTransition({
   };
 
   /**
-   * Where each removed node goes: its nearest ancestor that stays (by the old graph's links, or by tree path ids like
-   * "r/0/3"), else the anchor, else nowhere (it fades where it is).
+   * Where each removed node goes: its nearest ancestor that stays (by the old graph's links), else the anchor, else
+   * nowhere (it fades where it is).
    */
   const ghostDestinations = (finalPositions, anchorId = null) => {
     const destinations = new Map();
-    for (const [id, position] of previous) {
-      if (kept.has(id)) continue;
-      let destination = null;
-      const visited = new Set([id]);
+    const nearestKept = (id) => {
+      const visited = new Set([id]); // cycles again
       for (
         let parent = previousParentOf.get(id);
-        parent && !visited.has(parent) && !destination;
+        parent && !visited.has(parent);
         parent = previousParentOf.get(parent)
       ) {
-        destination = finalPositions.get(parent) ?? null;
+        const position = finalPositions.get(parent);
+        if (position) return position;
         visited.add(parent);
       }
-      for (let path = id; !destination && path.includes("/");) {
-        path = path.slice(0, path.lastIndexOf("/"));
-        destination = finalPositions.get(path) ?? null;
-      }
-      destination ??= (anchorId && finalPositions.get(anchorId)) || position;
+      return null;
+    };
+    for (const [id, position] of previous) {
+      if (kept.has(id)) continue;
+      const destination =
+        nearestKept(id) ??
+        ((anchorId && finalPositions.get(anchorId)) || position);
       destinations.set(id, destination);
     }
     return destinations;

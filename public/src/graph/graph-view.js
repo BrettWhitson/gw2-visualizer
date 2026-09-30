@@ -211,6 +211,9 @@ export class GraphView {
     });
   }
 
+  /** Settings are read live here; Prism's view needs to be told (see WebGLGraphView.syncSettings). */
+  syncSettings() {}
+
   /** Re-apply the stylesheet after a style-only setting change. */
   applyStylesheet() {
     updateCurvedEdges(this.cy, this.#values);

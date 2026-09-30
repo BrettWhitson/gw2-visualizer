@@ -82,7 +82,9 @@
         </p>
       </section>
 
-      <div id="characterContent" aria-live="polite"></div>
+      <!-- Loading and error announcements only: the content itself isn't a live region. -->
+      <p id="characterStatus" class="sr-only" role="status"></p>
+      <div id="characterContent"></div>
     </main>
 
     <footer id="status"></footer>

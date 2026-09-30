@@ -19,11 +19,10 @@ import { PHYSICS_TUNING } from "./tuning.js";
  *   while (physics.active) draw(physics.step().moved);
  *
  * Positions are read through `positionOf(id)`, so the physics starts from what's on screen (a transition may still
- * be under way).
+ * be under way). A drag stays in the mode it started in, even if the mode setting changes before it ends.
  */
 export class LivePhysics {
-  /** The layout's force simulation (from runLayout), or null. Floating mode, shake() and floatIn() need one. */
-  simulation = null;
+  #simulation = null;
   #settings;
   #tuning = { ...PHYSICS_TUNING };
   /** What step() advances: "net" (the elastic net), "simulation", or null (nothing moving). */
@@ -32,6 +31,10 @@ export class LivePhysics {
   #until = null;
   #net = null;
   #netIds = [];
+  /** The node being dragged and the engine holding it ("net" or "simulation"), or null. */
+  #held = null;
+  /** step()'s list of moved nodes for a simulation run, reused frame to frame. */
+  #moved = [];
 
   /**
    * @param {{ physicsMode?: string, linkForce: number, centerForce: number, direction: string }} settings
@@ -41,14 +44,30 @@ export class LivePhysics {
     this.#settings = settings;
   }
 
+  /** The layout's force simulation (from runLayout), or null. Floating mode, shake() and floatIn() need one. */
+  get simulation() {
+    return this.#simulation;
+  }
+
+  /** A new layout's simulation: whatever the old one was doing stops (and lets go of a held node). */
+  set simulation(simulation) {
+    if (simulation === this.#simulation) return;
+    this.stop();
+    this.#simulation = simulation ?? null;
+    this.#moved = [];
+  }
+
   get tuning() {
     return { ...this.#tuning };
   }
 
-  /** Override any of PHYSICS_TUNING (tuning.js). Applies to what's running too. */
+  /**
+   * PHYSICS_TUNING (tuning.js) with these overrides; every other constant goes back to its default. Applies to the
+   * running simulation too.
+   */
   set tuning(tuning) {
     this.#tuning = { ...PHYSICS_TUNING, ...tuning };
-    if (this.simulation) Object.assign(this.simulation.tuning, this.#tuning);
+    if (this.#simulation) Object.assign(this.#simulation.tuning, this.#tuning);
   }
 
   /** Does step() have anything to move? */
@@ -61,35 +80,37 @@ export class LivePhysics {
     return this.#net;
   }
 
-  get #floating() {
-    return this.#settings.physicsMode === "floating";
-  }
-
   /**
-   * A node is grabbed.
+   * A node is grabbed. Nodes `positionOf` knows nothing about (on their way out, say) sit the drag out.
    * @param {string} id
    * @param {{ ids: string[], links: { source: string, target: string }[],
-   *           positionOf: (id: string) => { x: number, y: number } }} graph  what's on screen
+   *           positionOf: (id: string) => { x: number, y: number } | null | undefined }} graph  what's on screen
    */
   grab(id, { ids, links, positionOf }) {
     this.stop();
-    if (this.#floating) {
-      this.#runSimulation(positionOf, (simulation) => {
+    const at = positionOf(id);
+    if (!at) return;
+    if (this.#settings.physicsMode === "floating") {
+      const started = this.#runSimulation(positionOf, (simulation) => {
         simulation.reheat(this.#tuning.dragHeat);
         // What's on screen is rest: only what the drag changes moves anything.
         simulation.holdRest();
-        simulation.fix(id, positionOf(id));
+        simulation.fix(id, at);
       });
+      if (started) this.#held = { id, engine: "simulation" };
       return;
     }
-    const index = new Map(ids.map((nodeId, i) => [nodeId, i]));
-    const x = new Float64Array(ids.length),
-      y = new Float64Array(ids.length);
-    ids.forEach((nodeId, i) => {
+    const placed = [],
+      xs = [],
+      ys = [];
+    for (const nodeId of ids) {
       const p = positionOf(nodeId);
-      x[i] = p.x;
-      y[i] = p.y;
-    });
+      if (!p) continue;
+      placed.push(nodeId);
+      xs.push(p.x);
+      ys.push(p.y);
+    }
+    const index = new Map(placed.map((nodeId, i) => [nodeId, i]));
     const sources = [],
       targets = [];
     for (const link of links) {
@@ -102,7 +123,7 @@ export class LivePhysics {
     const s = this.#settings,
       t = this.#tuning;
     this.#net = new ElasticNetwork(
-      { ids, x, y, sources, targets },
+      { ids: placed, x: xs, y: ys, sources, targets },
       {
         stiffness:
           t.elasticStiffnessBase + t.elasticStiffnessPerLink * s.linkForce,
@@ -119,15 +140,19 @@ export class LivePhysics {
         rest: t.elasticRest,
       },
     );
-    this.#netIds = ids;
-    this.#net.grab(id, positionOf(id));
+    this.#netIds = placed;
+    this.#net.grab(id, at);
+    this.#held = { id, engine: "net" };
     this.#running = "net";
   }
 
   /** The held node moved to `point`. */
   drag(id, point) {
-    if (this.#floating) {
-      this.simulation?.fix(id, point);
+    if (this.#held?.id !== id) return;
+    if (this.#held.engine === "simulation") {
+      if (!this.#simulation) return;
+      this.#simulation.fix(id, point);
+      this.#running ??= "simulation";
       return;
     }
     if (!this.#net) return;
@@ -137,9 +162,14 @@ export class LivePhysics {
 
   /** The held node was let go. */
   release(id) {
-    if (this.#floating) {
-      this.simulation?.release(id);
-      this.simulation?.reheat(0); // cool down from here
+    if (this.#held?.id !== id) return;
+    const { engine } = this.#held;
+    this.#held = null;
+    if (engine === "simulation") {
+      if (!this.#simulation) return;
+      this.#simulation.release(id);
+      this.#simulation.reheat(0); // cool down from here
+      this.#running ??= "simulation";
       return;
     }
     if (!this.#net) return;
@@ -165,9 +195,11 @@ export class LivePhysics {
 
   /**
    * A new layout floats into place from its seed (runLayout with `settle: false`), cooling to the drag heat and
-   * stopping once still there, so a node grabbed later only moves what's near it. Returns false without a simulation.
+   * stopping once still there (or after floatInTicks: crowded graphs can jitter at that heat for good), so a node
+   * grabbed later only moves what's near it. Returns false without a simulation.
    */
   floatIn() {
+    let ticks = 0;
     return this.#runSimulation(
       null,
       (simulation) => {
@@ -175,21 +207,28 @@ export class LivePhysics {
         simulation.alphaTarget = this.#tuning.dragHeat;
       },
       (simulation) =>
-        simulation.alpha - simulation.alphaTarget < 0.01 &&
-        simulation.motion < this.#tuning.stillness,
+        ++ticks >= this.#tuning.floatInTicks ||
+        (simulation.alpha - simulation.alphaTarget < 0.01 &&
+          simulation.motion < this.#tuning.stillness),
     );
   }
 
-  /** Stop whatever is moving (a drag settling, a shake, floating in). */
+  /** Stop whatever is moving (a drag settling, a shake, floating in), and let go of a held node. */
   stop() {
+    if (this.#held?.engine === "simulation" && this.#simulation) {
+      this.#simulation.release(this.#held.id);
+      this.#simulation.reheat(0);
+    }
+    this.#held = null;
     this.#running = null;
     this.#until = null;
     this.#net = null;
   }
 
   /**
-   * Advance one frame. `moved` lists [id, x, y] for every node that moved; `moving` is false once everything is
-   * still (then `active` is false too, until the next grab, drag, release or shake).
+   * Advance one frame. `moved` lists [id, x, y] for every node that moved (for a simulation run the same array is
+   * reused next frame, so read it before calling step() again); `moving` is false once everything is still (then
+   * `active` is false too, until the next grab, drag, release or shake).
    * @returns {{ moving: boolean, moved: [string, number, number][] }}
    */
   step() {
@@ -205,13 +244,20 @@ export class LivePhysics {
       return { moving, moved };
     }
     if (this.#running === "simulation") {
-      const simulation = this.simulation;
+      const simulation = this.#simulation;
+      if (!simulation) {
+        this.stop();
+        return { moving: false, moved: [] };
+      }
       simulation.tick();
-      const moved = simulation.ids.map((id, i) => [
-        id,
-        simulation.x[i],
-        simulation.y[i],
-      ]);
+      const { ids, x, y } = simulation;
+      if (this.#moved.length !== ids.length)
+        this.#moved = ids.map((id) => [id, 0, 0]);
+      const moved = this.#moved;
+      for (let i = 0; i < ids.length; i++) {
+        moved[i][1] = x[i];
+        moved[i][2] = y[i];
+      }
       const until = this.#until;
       const done = until ? until(simulation) : !simulation.isActive;
       if (done) {
@@ -225,7 +271,7 @@ export class LivePhysics {
 
   /** Run the simulation from what's on screen (or, without `positionOf`, its own positions) after `prepare`. */
   #runSimulation(positionOf, prepare, until = null) {
-    const simulation = this.simulation;
+    const simulation = this.#simulation;
     if (!simulation) return false;
     this.stop();
     if (positionOf) simulation.setPositions(positionOf);

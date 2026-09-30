@@ -19,9 +19,9 @@ import { craftingRequirement } from "./model/account-inventory.js";
 import {
   CraftPlanner,
   MAX_COUNT,
-  TRADING_POST_NET,
   analyseProfits,
   buildForwardGraph,
+  findBlocked,
   profitOf,
   rebuildBests,
   chooseLayout,
@@ -133,6 +133,10 @@ class CraftablePage {
   /** @type {{ itemId: number, count: number, recipe: object }[]} */
   craftableEntries = [];
   materials = [];
+  /** @type {{ itemId: number, recipe: object }[]} what could be crafted but for characters' crafting levels */
+  levelBlocked = [];
+  /** The discipline picked in the filter, kept while the options are rebuilt. */
+  #disciplineWanted = "";
   /** @type {Awaited<ReturnType<typeof analyseProfits>> | null} profit per item and the best uses of each material */
   profits = null;
   list = "craftable";
@@ -220,11 +224,15 @@ class CraftablePage {
 
   /** Forget the lists, graph and selection: they belonged to the account as it was. */
   #resetResults() {
+    // Remember how the graph was opened, so the same item comes back the same way when it's recomputed.
+    if (this.rootItemId != null && this.#lastRoot?.itemId === this.rootItemId)
+      this.#lastRoot.view = this.#viewState();
     this.#computedFor = null; // whatever comes next is computed afresh
     this.planner = null;
     this.craftable = new Map();
     this.craftableEntries = [];
     this.materials = [];
+    this.levelBlocked = [];
     this.profits = null;
     this.rootItemId = null;
     this.graph = null;
@@ -234,6 +242,7 @@ class CraftablePage {
     this.#select(null);
     this.graphView.clear();
     $("#craftTooltip").hidden = true;
+    this.#fillDisciplines();
     this.#renderList();
   }
 
@@ -251,6 +260,7 @@ class CraftablePage {
     const token = ++this.#computeToken;
     this.#resetResults();
     if (status !== "ready") {
+      this.#status(""); // a computation for the previous account may have been mid-way
       this.#showGraphMessage(
         status === "connecting"
           ? "Loading what your account owns…"
@@ -259,6 +269,7 @@ class CraftablePage {
       return;
     }
     if (!this.account.has("inventories")) {
+      this.#status("");
       this.#showGraphMessage(
         "Your API key lacks the <b>inventories</b> permission, so what you own can't be read. Connect a key with <b>inventories</b> (and <b>characters</b>, <b>wallet</b>).",
       );
@@ -276,29 +287,47 @@ class CraftablePage {
 
     this.#computedFor = { accountName: this.account.accountName, fetchedAt };
     const force = this.#forceFetch; // cleared once a computation with it completes
-    this.planner = new CraftPlanner({
+    const plannerOptions = {
       getRecipes: (id) => this.gameData.getRecipes(id),
       getConsumers: (id) => this.gameData.getConsumers(id),
       owned: this.account.ownedItems,
       wallet: this.account.wallet,
+    };
+    // "Only what my characters can craft": plans never use a recipe no character has the level for, at any step.
+    const levelsApply = this.#levelsApply();
+    const levels = this.account.craftingLevels;
+    this.planner = new CraftPlanner({
+      ...plannerOptions,
+      recipeAllowed: levelsApply
+        ? (recipe) => craftingRequirement(recipe, levels).canCraft
+        : undefined,
     });
     let sliceStart = performance.now();
+    const shouldYield = () => {
+      if (performance.now() - sliceStart < 12) return false;
+      sliceStart = performance.now();
+      return true;
+    };
     const entries = await this.planner.findCraftable({
-      shouldYield: () => {
-        if (performance.now() - sliceStart < 12) return false;
-        sliceStart = performance.now();
-        return true;
-      },
+      shouldYield,
       onProgress: (done, total) =>
         this.#status(`Checking recipes… ${Math.round((100 * done) / total)}%`),
     });
     if (token !== this.#computeToken) return;
     performance.mark("craftable:planned"); // milestones for profiling (DevTools → Performance, or getEntriesByType)
-    this.#status("");
     this.craftableEntries = entries;
     this.craftable = new Map(
       entries.map(({ itemId, count }) => [itemId, count]),
     );
+    // What the levels filter hides, for "N more need crafting levels".
+    const levelBlocked = levelsApply
+      ? await findBlocked(new CraftPlanner(plannerOptions), this.craftable, {
+          shouldYield,
+        })
+      : [];
+    if (token !== this.#computeToken) return;
+    this.#status("");
+    this.levelBlocked = levelBlocked;
     this.materials = usefulMaterials(this.planner, this.craftable);
     this.#fillDisciplines();
     this.#renderList();
@@ -314,18 +343,13 @@ class CraftablePage {
       (this.craftable.has(previous.itemId) ||
         this.planner.owned.get(previous.itemId) > 0)
     )
-      this.#openRoot(previous.itemId);
+      this.#openRoot(previous.itemId, { keep: previous.view });
     // Prices, then profits: what each item sells for, minus what its materials would. Only what can matter is
     // priced: craftable items that can be traded, and owned items that feed something craftable.
     const tradeable = (id) =>
       !(this.gameData.items.get(id)?.flags ?? []).some(
         (flag) => flag === "AccountBound" || flag === "SoulbindOnAcquire",
       );
-    const shouldYield = () => {
-      if (performance.now() - sliceStart < 12) return false;
-      sliceStart = performance.now();
-      return true;
-    };
     const fetchPrices = async (ids) => {
       try {
         await this.priceBook.ensure(ids.filter(tradeable), { force });
@@ -365,7 +389,7 @@ class CraftablePage {
     // Show the ranking now; the order-book check refines the top of it afterwards.
     this.#renderList();
     performance.mark("craftable:ranked");
-    if (this.rootItemId != null) this.#openRoot(this.rootItemId);
+    this.#refreshRoot();
     this.#status("Checking buy-order depth…");
     const changed = await this.#priceAgainstOrderBooks(token, force);
     if (token !== this.#computeToken) return;
@@ -374,7 +398,7 @@ class CraftablePage {
     performance.mark("craftable:refined");
     if (changed) {
       this.#renderList();
-      if (this.rootItemId != null) this.#openRoot(this.rootItemId);
+      this.#refreshRoot();
     }
   }
 
@@ -455,7 +479,13 @@ class CraftablePage {
         (id) => this.#valueOf(id),
         { buyOrders: books.get(result.itemId) ?? [] },
       );
-      if (corrected) byItem.set(result.itemId, corrected);
+      // The book couldn't be fetched: keep the headline estimate, flagged so a refresh can be suggested.
+      if (this.orderBooks.fetchFailed?.(result.itemId))
+        byItem.set(result.itemId, { ...result, bookFailed: true });
+      // No book, or nobody buying at any depth: keep the headline estimate (still marked as unchecked) rather than
+      // turning it into "no profit".
+      else if (corrected?.profit != null)
+        byItem.set(result.itemId, { ...corrected, depthChecked: true });
     }
     this.profits = rebuildBests(byItem);
     return true;
@@ -510,6 +540,18 @@ class CraftablePage {
     return main == null ? null : routeFrom(result.plan, itemId, main);
   }
 
+  /** The last price fetch for this item failed (a network or server error): it may well be tradeable. */
+  #priceFailed(itemId) {
+    return this.priceBook.fetchFailed?.(itemId) ?? false;
+  }
+
+  /** "no buyers", or "price unavailable" when fetching it failed. */
+  #noPriceHtml(itemId) {
+    return this.#priceFailed(itemId)
+      ? `<span class="muted" title="The price couldn't be fetched. Refresh to retry.">price unavailable</span>`
+      : '<span class="muted" title="No buy orders">no buyers</span>';
+  }
+
   #nameOf(itemId) {
     return this.gameData.getEntity(EntityKind.item, itemId).name;
   }
@@ -523,24 +565,47 @@ class CraftablePage {
     $("#craftData").addEventListener("click", (event) => {
       if (event.target.closest("[data-refresh-data]")) this.#refreshAll();
     });
-    for (const tab of document.querySelectorAll("[data-list]"))
-      tab.addEventListener("click", () => {
-        this.list = tab.dataset.list;
-        for (const other of document.querySelectorAll("[data-list]"))
-          other.setAttribute("aria-selected", String(other === tab));
-        this.shown = PAGE_SIZE;
-        this.#renderList();
+    const tabs = [...document.querySelectorAll("[data-list]")];
+    const selectTab = (tab) => {
+      this.list = tab.dataset.list;
+      for (const other of tabs) {
+        other.setAttribute("aria-selected", String(other === tab));
+        other.tabIndex = other === tab ? 0 : -1; // roving: Tab reaches the selected one, arrows move between them
+      }
+      $("#craftResults").setAttribute("aria-labelledby", tab.id);
+      this.shown = PAGE_SIZE;
+      this.#renderList({ announce: true });
+    };
+    for (const tab of tabs) {
+      tab.addEventListener("click", () => selectTab(tab));
+      tab.addEventListener("keydown", (event) => {
+        const index = tabs.indexOf(tab);
+        const next = {
+          ArrowRight: tabs[(index + 1) % tabs.length],
+          ArrowLeft: tabs[(index - 1 + tabs.length) % tabs.length],
+          Home: tabs[0],
+          End: tabs.at(-1),
+        }[event.key];
+        if (!next) return;
+        event.preventDefault();
+        next.focus();
+        selectTab(next);
       });
-    for (const id of [
-      "craftSearch",
-      "craftSort",
-      "craftDiscipline",
-      "craftLevels",
-    ])
+    }
+    for (const id of ["craftSearch", "craftSort", "craftDiscipline"])
       $(`#${id}`).addEventListener("input", () => {
+        if (id === "craftDiscipline")
+          this.#disciplineWanted = $("#craftDiscipline").value;
         this.shown = PAGE_SIZE;
-        this.#renderList();
+        this.#renderList({ announce: true });
       });
+    // The levels filter changes what plans may use, so everything is worked out again.
+    $("#craftLevels").addEventListener("change", () => {
+      if (!this.account.isReady || !this.account.has("characters")) return;
+      this.#computedFor = null;
+      this.#computing = this.#onAccountChange();
+    });
+    $("#cy").addEventListener("keydown", (event) => this.#onGraphKey(event));
     $("#craftResults").addEventListener("click", (event) => {
       if (event.target.closest("[data-more]")) {
         this.shown += PAGE_SIZE;
@@ -588,7 +653,7 @@ class CraftablePage {
 
   #fillDisciplines() {
     const select = $("#craftDiscipline");
-    const current = select.value;
+    const current = this.#disciplineWanted; // survives a reset to "Any" while results are recomputed
     const disciplines = new Set(
       this.craftableEntries.flatMap((entry) => recipeDisciplines(entry.recipe)),
     );
@@ -603,14 +668,31 @@ class CraftablePage {
         .join("");
   }
 
-  /** Can a character make this recipe (or is the check off / impossible without the characters permission)? */
-  #levelAllows(recipe) {
-    if (!$("#craftLevels").checked || !this.account.has("characters"))
-      return true;
-    return craftingRequirement(recipe, this.account.craftingLevels).canCraft;
+  /** Is "only what my characters can craft" in force (on, and possible with the characters permission)? */
+  #levelsApply() {
+    // Characters that failed to load mean unknown levels, not zero: don't hide everything.
+    return (
+      $("#craftLevels").checked &&
+      this.account.has("characters") &&
+      !this.account.charactersUnavailable
+    );
   }
 
-  #renderList() {
+  /**
+   * @param {{ announce?: boolean }} [options]  announce: say how many results there are (after a filter, sort or tab
+   *   change), politely, to screen readers
+   */
+  #renderList({ announce = false } = {}) {
+    // The list is rebuilt from scratch: note what had focus in it so focus can go back there.
+    const active = document.activeElement;
+    const results = $("#craftResults");
+    const refocus = results.contains(active)
+      ? active.matches("[data-more]")
+        ? { more: true, shown: this.shown }
+        : active.dataset.itemId
+          ? { itemId: active.dataset.itemId }
+          : null
+      : null;
     const counts = {
       craftable: this.craftableEntries.length,
       materials: this.materials.length,
@@ -619,36 +701,43 @@ class CraftablePage {
       document.querySelector(`[data-count="${key}"]`).textContent = value
         ? formatNumber(value)
         : "";
-    const results = $("#craftResults");
+    const isMaterials = this.list === "materials";
+    $("#craftDiscipline").disabled = isMaterials; // materials have no recipe of their own
     if (!this.planner) {
       results.innerHTML = "";
       return;
     }
-    const isMaterials = this.list === "materials";
     const nameOf = (id) => this.gameData.getEntity(EntityKind.item, id).name;
     const priceOf = (id) => this.#valueOf(id);
     const profitOf = (entry) =>
       isMaterials
         ? (this.profits?.bestByMaterial.get(entry.itemId)?.[0]?.profit ?? null)
         : (this.profits?.byItem.get(entry.itemId)?.profit ?? null);
+    const filters = {
+      query: $("#craftSearch").value,
+      discipline: isMaterials ? "" : $("#craftDiscipline").value,
+      sort: $("#craftSort").value,
+      nameOf,
+      priceOf,
+      rarityRankOf: (id) =>
+        RARITY_ORDER.indexOf(
+          this.gameData.getEntity(EntityKind.item, id).rarity,
+        ),
+      countOf: (entry) => (isMaterials ? entry.productCount : entry.count),
+      profitOf,
+      disciplinesOf: (entry) => recipeDisciplines(entry.recipe),
+    };
     const sorted = filterAndSort(
       isMaterials ? this.materials : this.craftableEntries,
-      {
-        query: $("#craftSearch").value,
-        discipline: isMaterials ? "" : $("#craftDiscipline").value,
-        sort: $("#craftSort").value,
-        nameOf,
-        priceOf,
-        rarityRankOf: (id) =>
-          RARITY_ORDER.indexOf(
-            this.gameData.getEntity(EntityKind.item, id).rarity,
-          ),
-        countOf: (entry) => (isMaterials ? entry.productCount : entry.count),
-        profitOf,
-        disciplinesOf: (entry) => recipeDisciplines(entry.recipe),
-        isAllowed: (entry) => isMaterials || this.#levelAllows(entry.recipe),
-      },
+      filters,
     );
+    // Only the most profitable results are re-priced against their order books; the rest are headline estimates.
+    const isEstimate = (entry) => {
+      const itemId = isMaterials
+        ? this.profits?.bestByMaterial.get(entry.itemId)?.[0]?.itemId
+        : entry.itemId;
+      return !this.profits?.byItem.get(itemId)?.depthChecked;
+    };
     const rows = sorted.slice(0, this.shown).map((entry) => {
       const entity = this.gameData.getEntity(EntityKind.item, entry.itemId);
       const color = this.gameData.getEntityColor(EntityKind.item, entry.itemId);
@@ -671,25 +760,23 @@ class CraftablePage {
         route && route.length > 2
           ? `<span class="craft-route" title="${escapeHtml(route.map((id) => this.#nameOf(id)).join(" → "))}">${escapeHtml(routeText(route.map((id) => this.#nameOf(id))))}</span>`
           : "";
-      return `<button type="button" class="craft-row${entry.itemId === this.rootItemId ? " current" : ""}" data-item-id="${entry.itemId}">
+      const isCurrent = entry.itemId === this.rootItemId;
+      const estimate = profit != null && isEstimate(entry);
+      return `<button type="button" class="craft-row${isCurrent ? " current" : ""}" data-item-id="${entry.itemId}"${isCurrent ? ' aria-current="true"' : ""}>
         ${entity.icon ? `<img src="${escapeHtml(entity.icon)}" alt="" loading="lazy" decoding="async" style="border-color:${color}">` : '<span class="no-icon"></span>'}
         <span class="craft-row-text"><span class="craft-row-name" style="color:${color}">${escapeHtml(entity.name)}</span>
         <span class="muted small">${detail}</span>${routeHtml}</span>
-        <span class="craft-row-price">${price != null ? `<span title="Highest buy order, each">${formatCoinsHtml(price)}</span>` : '<span class="muted" title="No buy orders">no buyers</span>'}${
+        <span class="craft-row-price">${price != null ? `<span title="Highest buy order, each">${formatCoinsHtml(price)}</span>` : this.#noPriceHtml(entry.itemId)}${
           profit != null
-            ? `<span class="craft-row-profit ${profit > 0 ? "good" : "bad"}" title="${isMaterials ? "Best use of it: profit" : "Profit from making all you can"}: what it sells for minus what the materials would, after the Trading Post's 15%">${profit > 0 ? "+" : "−"}${formatCoinsHtml(Math.abs(profit))}</span>`
+            ? `<span class="craft-row-profit ${profit > 0 ? "good" : "bad"}${estimate ? " estimate" : ""}" title="${isMaterials ? "Best use of it: profit" : "Profit from making all you can"}: what it sells for minus what the materials would, after Trading Post fees${estimate ? ". Estimate at the highest buy order: not checked against how many the buy orders can take" : ""}">${estimate ? '<span aria-hidden="true">≈</span>' : ""}${profit > 0 ? "+" : "−"}${formatCoinsHtml(Math.abs(profit))}</span>`
             : ""
         }</span>
       </button>`;
     });
-    const hiddenByLevels =
-      !isMaterials &&
-      $("#craftLevels").checked &&
-      this.account.has("characters")
-        ? this.craftableEntries.filter(
-            (entry) => !this.#levelAllows(entry.recipe),
-          ).length
-        : 0;
+    // Left out by the levels filter (the planner never considered them), counted under the same name/discipline filter.
+    const hiddenByLevels = isMaterials
+      ? 0
+      : filterAndSort(this.levelBlocked, { ...filters, sort: "name" }).length;
     results.innerHTML =
       (rows.length
         ? rows.join("")
@@ -700,6 +787,23 @@ class CraftablePage {
       (hiddenByLevels
         ? `<p class="muted small craft-none">${formatNumber(hiddenByLevels)} more need crafting levels your characters don't have.</p>`
         : "");
+    if (refocus?.more) {
+      // "Show more": stay on the button, or with none left, go to the first of the rows it added.
+      (
+        results.querySelector("[data-more]") ??
+        results.querySelectorAll("[data-item-id]")[this.shown - PAGE_SIZE]
+      )?.focus();
+    } else if (refocus?.itemId)
+      results
+        .querySelector(`[data-item-id="${CSS.escape(refocus.itemId)}"]`)
+        ?.focus();
+    if (announce)
+      $("#craftAnnouncer").textContent =
+        `${formatNumber(sorted.length)} ${isMaterials ? "material" : "item"}${sorted.length === 1 ? "" : "s"}${
+          hiddenByLevels
+            ? `, ${formatNumber(hiddenByLevels)} more need crafting levels`
+            : ""
+        }`;
   }
 
   // ---------------------------------------------------------------- graph
@@ -710,12 +814,39 @@ class CraftablePage {
     empty.hidden = this.rootItemId != null && this.account.isReady;
   }
 
-  #openRoot(itemId) {
+  /** How the graph is opened and what's selected: kept when the same item is shown again after a recompute. */
+  #viewState() {
+    return {
+      expanded: this.expanded,
+      collapsed: this.collapsed,
+      showAll: this.showAll,
+      selectedNodeId: this.selectedNodeId,
+      revealed: this.revealed,
+    };
+  }
+
+  /** New numbers for the item on show (prices, profits): redo its routes and redraw, keeping what the user opened. */
+  #refreshRoot() {
+    if (this.rootItemId != null)
+      this.#openRoot(this.rootItemId, { keep: this.#viewState() });
+  }
+
+  /**
+   * Show what an item can become, with its best routes opened and pointed out.
+   * @param {{ keep?: object }} [options]  keep: the same item's earlier view (from #viewState), whose
+   *   opened and closed nodes and selection are kept (and the viewport isn't refitted); otherwise it starts afresh
+   */
+  #openRoot(itemId, { keep } = {}) {
     this.rootItemId = itemId;
     this.#lastRoot = { itemId, accountName: this.account.accountName };
-    this.expanded = new Set();
-    this.collapsed = new Set();
-    this.showAll = new Set();
+    this.expanded = keep?.expanded ?? new Set();
+    this.collapsed = keep?.collapsed ?? new Set();
+    this.showAll = keep?.showAll ?? new Set();
+    /** Steps the user opened with "reveal route": kept, like expanded ones, when the numbers change. */
+    this.revealed = keep?.revealed ?? {
+      focus: new Set(),
+      highlight: new Set(),
+    };
     // Open the best routes from here and point them out.
     // Steps opened for a route show only the route; double-click one for everything it makes.
     this.bestRoutes = this.#bestRoutesFrom(itemId);
@@ -729,11 +860,21 @@ class CraftablePage {
         this.highlight.add(path);
       }
     }
+    for (const path of this.revealed.focus) this.focus.add(path);
+    for (const path of this.revealed.highlight) this.highlight.add(path);
     this.selectedNodeId = null;
     $("#graphEmpty").hidden = true;
-    this.#renderGraph({ fit: true });
-    this.#select("r");
-    this.graphView.fit(); // again, now that the details column has taken its space
+    if (keep) {
+      const selected = keep.selectedNodeId;
+      const wasCleared = this.graph == null; // recomputed from scratch: nothing on screen to hold still
+      this.#renderGraph({ fit: wasCleared, anchorNodeId: selected ?? "r" });
+      this.#select(this.graph.nodesById.has(selected) ? selected : null);
+      if (wasCleared) this.graphView.fit();
+    } else {
+      this.#renderGraph({ fit: true });
+      this.#select("r");
+      this.graphView.fit(); // again, now that the details column has taken its space
+    }
     this.#renderList();
   }
 
@@ -832,6 +973,88 @@ class CraftablePage {
     else this.#select(nodeId);
   }
 
+  /**
+   * Keyboard access to the graph (focus it with Tab), as on the crafting page but along this graph's flow: ← what it's
+   * made from, → the first thing it makes, ↑ / ↓ the items beside it, Enter / Space show or hide what it makes (on
+   * "+N more": show them all), Home the item you started from. The selection follows and a live region announces it.
+   */
+  #onGraphKey(event) {
+    if (event.altKey || event.ctrlKey || event.metaKey || !this.graph) return;
+    const { edges, nodesById } = this.graph;
+    const current = nodesById.get(this.selectedNodeId) ?? nodesById.get("r");
+    if (!current) return;
+    const parentOf = (id) =>
+      edges.find((edge) => edge.targetId === id)?.sourceId;
+    const childrenOf = (id) =>
+      edges.filter((edge) => edge.sourceId === id).map((edge) => edge.targetId);
+    let targetId;
+    switch (event.key) {
+      case "ArrowLeft":
+        targetId = parentOf(current.nodeId);
+        break;
+      case "ArrowRight":
+        targetId = childrenOf(current.nodeId)[0];
+        break;
+      case "ArrowUp":
+      case "ArrowDown": {
+        const siblings = childrenOf(parentOf(current.nodeId));
+        const index = siblings.indexOf(current.nodeId);
+        targetId = siblings[index + (event.key === "ArrowDown" ? 1 : -1)];
+        break;
+      }
+      case "Home":
+        targetId = "r";
+        break;
+      case "Enter":
+      case " ": {
+        event.preventDefault();
+        const nodeId = current.nodeId;
+        this.#toggle(nodeId);
+        // "+N more" gives way to the items it stood for: stay on its parent.
+        const shown = this.graph.nodesById.get(nodeId)
+          ? nodeId
+          : nodeId.replace(/\/more$/, "");
+        if (shown !== this.selectedNodeId) this.#select(shown);
+        this.#announceNode(this.graph.nodesById.get(shown));
+        return;
+      }
+      default:
+        return;
+    }
+    event.preventDefault();
+    if (!targetId) return;
+    this.#select(targetId);
+    this.graphView.revealNode(targetId);
+    this.#announceNode(nodesById.get(targetId));
+  }
+
+  /** Screen-reader summary of a node: name, how many, and whether what it makes is shown. */
+  #announceNode(node) {
+    if (!node) return;
+    let text;
+    if (node.isOverflow)
+      text = `${formatNumber(node.quantity)} more items. Press Enter to show them all`;
+    else {
+      const name = this.#nameOf(node.entityId);
+      const shown = this.graph.edges.filter(
+        (edge) => edge.sourceId === node.nodeId,
+      ).length;
+      text = [
+        node.isRoot
+          ? `${name}, you have ${formatNumber(node.quantity)}`
+          : `${countLabel(node.quantity)} × ${name}`,
+        node.productCount
+          ? node.hasChildren
+            ? `makes ${formatNumber(node.productCount)}, ${formatNumber(shown)} shown`
+            : `makes ${formatNumber(node.productCount)}, hidden`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(", ");
+    }
+    $("#graphAnnouncer").textContent = text;
+  }
+
   #select(nodeId) {
     this.selectedNodeId = nodeId;
     this.graphView.select(nodeId);
@@ -860,7 +1083,9 @@ class CraftablePage {
         : "",
       price != null
         ? `Buy orders: ${formatCoinsHtml(price)} each`
-        : "No buy orders",
+        : this.#priceFailed(node.entityId)
+          ? "Price unavailable (refresh to retry)"
+          : "No buy orders",
     ].filter(Boolean);
     const profitHtml = this.#profitHtml(node.entityId);
     const routesHtml = this.#bestRoutesHtml(node);
@@ -905,7 +1130,12 @@ class CraftablePage {
   /** Making all you can of this item: what it sells for, what the materials would, and the crafts on the way. */
   #profitHtml(itemId) {
     const result = this.profits?.byItem.get(itemId);
-    if (!result) return "";
+    if (!result)
+      return this.profits &&
+        this.craftable.has(itemId) &&
+        this.#priceFailed(itemId)
+        ? `<div class="craft-profit muted small">Profit unknown: the price couldn't be fetched (refresh to retry).</div>`
+        : "";
     const steps = [...result.plan.steps]
       .filter(([id]) => id !== itemId)
       .map(
@@ -913,19 +1143,38 @@ class CraftablePage {
           `<li>${formatNumber(step.crafts * step.recipe.outputCount)} × ${escapeHtml(this.#nameOf(id))}</li>`,
       )
       .join("");
+    const failedInputs = result.unvaluedInputs.filter((id) =>
+      this.#priceFailed(id),
+    ).length;
+    const freeInputs = result.unvaluedInputs.length - failedInputs;
     const notes = [
-      result.unvaluedInputs.length
-        ? `${result.unvaluedInputs.length} material${result.unvaluedInputs.length > 1 ? "s" : ""} with no buyers counted as free`
+      freeInputs
+        ? `${freeInputs} material${freeInputs > 1 ? "s" : ""} with no buyers counted as free`
         : "",
+      failedInputs
+        ? `${failedInputs} material price${failedInputs > 1 ? "s" : ""} unavailable, counted as free (refresh to retry)`
+        : "",
+      result.bookFailed ? "buy-order depth unavailable (refresh to retry)" : "",
       ...result.otherCurrencies.map(
         ([id, amount]) =>
           `also spends ${formatNumber(amount)} ${escapeHtml(this.gameData.getEntity(EntityKind.currency, id).name)}`,
       ),
     ].filter(Boolean);
+    if (!result.depthChecked && !result.bookFailed)
+      notes.push(
+        "estimate at the highest buy order, not checked against how many buy orders there are",
+      );
+    const partial = result.sold > 0 && result.sold < result.count;
+    const fees =
+      '<span class="muted small" title="5% listing fee and 10% exchange fee, each at least 1 copper per item">(after Trading Post fees)</span>';
+    const outcome =
+      result.profit == null
+        ? `<div class="bad"><b>No buyers at this depth</b></div>`
+        : `<div class="${result.profit > 0 ? "good" : "bad"}"><b>${result.profit > 0 ? "Profit" : "Loss"} ${formatCoinsHtml(Math.abs(result.profit))}</b> ${fees}</div>`;
     return `<div class="craft-profit">
-      <div><span class="muted">Make all ${countLabel(result.count)}:</span> sells for ${formatCoinsHtml(result.revenue)}, materials worth ${formatCoinsHtml(result.cost)}</div>
+      <div><span class="muted">${partial ? `Make the ${formatNumber(result.sold)} that sell:` : `Make all ${countLabel(result.count)}:`}</span> sells for ${result.revenue == null ? "—" : formatCoinsHtml(result.revenue)}, materials worth ${formatCoinsHtml(result.cost)}</div>
       ${result.sold < result.count ? `<div class="bad small">Buy orders take only ${formatNumber(result.sold)} of ${formatNumber(result.count)}; the rest would need listing and waiting.</div>` : ""}
-      <div class="${result.profit > 0 ? "good" : "bad"}"><b>${result.profit > 0 ? "Profit" : "Loss"} ${formatCoinsHtml(Math.abs(result.profit))}</b> <span class="muted small">(after the Trading Post's ${Math.round((1 - TRADING_POST_NET) * 100)}%)</span></div>
+      ${outcome}
       ${notes.length ? `<div class="muted small">${escapeHtml(notes.join(" · "))}</div>` : ""}
       ${steps ? `<details><summary class="small">Crafts on the way</summary><ul class="craft-ingredients">${steps}</ul></details>` : ""}
     </div>`;
@@ -959,9 +1208,13 @@ class CraftablePage {
     let path = fromNodeId;
     for (const stepId of route.slice(1)) {
       this.collapsed.delete(path);
-      if (!this.graph.nodesById.get(path)?.hasChildren) this.focus?.add(path);
+      if (!this.graph.nodesById.get(path)?.hasChildren) {
+        this.focus?.add(path);
+        this.revealed?.focus.add(path);
+      }
       path += `/${stepId}`;
       this.highlight?.add(path);
+      this.revealed?.highlight.add(path);
     }
     this.#renderGraph({ anchorNodeId: fromNodeId });
     if (this.graph.nodesById.has(path)) {

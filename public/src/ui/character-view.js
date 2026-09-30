@@ -75,7 +75,7 @@ function upgradeHtml(upgrade, runeCounts) {
         : "");
   }
   return `<div class="tt-upgrade">${icon(upgrade.icon)}<div>
-    <div class="tt-upgrade-name rarity" ${rarityStyle(upgrade.rarity)}>${escapeHtml(upgrade.name)}</div>${body}</div></div>`;
+    <div class="tt-upgrade-name rarity" ${rarityStyle(upgrade.rarity)}>${upgradeName(upgrade, upgrade.name)}</div>${body}</div></div>`;
 }
 
 function dyeSwatch(dye) {
@@ -119,11 +119,19 @@ export function pieceTooltipHtml(piece, runeCounts) {
   return `${html}${SEPARATOR}<div class="tt-foot">${footer.map((line) => `<div>${line}</div>`).join("")}</div>${craftingLink(piece)}`;
 }
 
+const craftingHref = (id) => `crafting.html#item=${Number(id)}`;
+
 /** Opens the item on the crafting page (legendaries, ascended gear, anything with a recipe). */
-const craftingLink = (piece) =>
-  piece.missing
+const craftingLink = (item) =>
+  item.missing || !item.id
     ? ""
-    : `<a class="tt-link" href="crafting.html#item=${Number(piece.id)}">Crafting tree →</a>`;
+    : `<a class="tt-link" href="${craftingHref(item.id)}">Crafting tree →</a>`;
+
+/** An upgrade's or infusion's name, linked to its crafting tree (runes, sigils, jewels and infusions are craftable). */
+const upgradeName = (upgrade, text) =>
+  upgrade.missing || !upgrade.id
+    ? escapeHtml(text)
+    : `<a class="tt-upgrade-link" href="${craftingHref(upgrade.id)}" title="Crafting tree">${escapeHtml(text)}</a>`;
 
 const DOT = '<span class="tt-dot">·</span>';
 
@@ -167,7 +175,7 @@ export function pieceCardHtml(piece, runeCounts) {
       if (parts.length)
         detail = ` <span class="tt-attr">${parts.join(", ")}</span>`;
     }
-    return `<div class="card-upgrade">${icon(upgrade.icon)}<div><span class="tt-upgrade-name rarity" ${rarityStyle(upgrade.rarity)}>${escapeHtml(shortUpgradeName(upgrade.name))}</span>${detail}</div></div>`;
+    return `<div class="card-upgrade">${icon(upgrade.icon)}<div><span class="tt-upgrade-name rarity" ${rarityStyle(upgrade.rarity)}>${upgradeName(upgrade, shortUpgradeName(upgrade.name))}</span>${detail}</div></div>`;
   });
   const empty = piece.emptyInfusionSlots
     ? `<div class="tt-empty">${piece.emptyInfusionSlots} unused infusion slot${piece.emptyInfusionSlots > 1 ? "s" : ""}</div>`
@@ -212,11 +220,20 @@ function breakdownTooltipHtml(attribute) {
 
 // ---------------------------------------------------------------- armory
 
+/** Shown instead of the gear when the key can't read equipment. */
+export const MISSING_BUILDS_NOTICE =
+  '<p class="notice">This key lacks the <b>builds</b> permission, so equipment templates and build specializations are unavailable.</p>';
+
 /**
  * The armory page. Hoverable elements carry `data-tip="<key>"`; `tooltips` maps each key to its HTML so the
- * controller can show it on hover, focus or tap.
+ * controller can show it on hover, focus or tap. `hasGear: false` (a key without the `builds` permission) leaves out
+ * the gear, totals and their controls rather than drawing empty slots and base stats as if they were real.
  */
-export function armoryHtml(armory, weaponSet, { view = "icons" } = {}) {
+export function armoryHtml(
+  armory,
+  weaponSet,
+  { view = "icons", hasGear = true } = {},
+) {
   const tooltips = new Map();
   const tip = (html) => {
     const key = String(tooltips.size);
@@ -248,7 +265,7 @@ export function armoryHtml(armory, weaponSet, { view = "icons" } = {}) {
           )}${upgrades.length > 2 ? `<span class="muted">+${upgrades.length - 2}</span>` : ""}</span>`
       : "";
     const meta = [piece.statName, piece.rarity].filter(Boolean).join(" · ");
-    return `<button type="button" class="gear" ${rarityStyle(piece.rarity)} aria-label="${label}: ${escapeHtml(piece.name)}" ${tip(pieceTooltipHtml(piece, runeCounts))}>
+    return `<button type="button" class="gear" ${rarityStyle(piece.rarity)} aria-haspopup="dialog" aria-expanded="false" aria-label="${label}: ${escapeHtml(piece.name)}" ${tip(pieceTooltipHtml(piece, runeCounts))}>
       <span class="gear-icon">${icon(piece.icon)}</span>
       <span class="gear-text">
         <span class="gear-slot">${label}</span>
@@ -300,6 +317,25 @@ export function armoryHtml(armory, weaponSet, { view = "icons" } = {}) {
     )
     .join("");
 
+  const controls = `<div class="armory-controls">
+        <div class="control"><span class="control-label">Gear view</span><div class="seg">
+          <button type="button" data-gear-view="icons" aria-pressed="${view !== "full"}" title="Compact tiles; details on hover or tap">Icons</button>
+          <button type="button" data-gear-view="full" aria-pressed="${view === "full"}" title="Every slot's details in place">Full</button>
+        </div></div>
+        ${templateButtons ? `<div class="control"><span class="control-label">Equipment template</span><div class="seg">${templateButtons}</div></div>` : ""}
+        <div class="control"><span class="control-label">Stats with weapon</span><div class="seg">${setButtons}</div></div>
+        <button type="button" class="share-btn" data-share-open title="Export this template's gear as a PNG: gear only, no stats or account details">Share image</button>
+      </div>`;
+  const gearHtml =
+    () => `${armory.missingItemIds.length ? `<p class="notice">${armory.missingItemIds.length} item${armory.missingItemIds.length > 1 ? "s" : ""} couldn't be looked up in the API, so the totals below may be incomplete. Reload to try again.</p>` : ""}
+    <div class="paper-doll view-${view}">
+      <div class="gear-column"><h3>Armor</h3>${SLOT_GROUPS.armor.map((slot) => tile(slot)).join("")}</div>
+      <div class="stat-column">${statPanelHtml(armory.totals[weaponSet], tip)}</div>
+      <div class="gear-column"><h3>Trinkets</h3>${[...SLOT_GROUPS.trinkets, "Relic"].map((slot) => tile(slot)).join("")}</div>
+    </div>
+    <section class="armory-section"><h3>Weapons</h3><div class="weapon-row">${weaponSets}</div></section>
+    <section class="armory-section"><h3>Underwater &amp; tools</h3><div class="extra-row view-${view}">${extras}</div></section>`;
+
   const html = `
     <a class="back-link" href="#">← All characters</a>
     <div class="armory-head">
@@ -312,24 +348,9 @@ export function armoryHtml(armory, weaponSet, { view = "icons" } = {}) {
         </div>
         ${crafting ? `<div class="craft-pills">${crafting}</div>` : ""}
       </div>
-      <div class="armory-controls">
-        <div class="control"><span class="control-label">Gear view</span><div class="seg">
-          <button type="button" data-gear-view="icons" aria-pressed="${view !== "full"}" title="Compact tiles; details on hover or tap">Icons</button>
-          <button type="button" data-gear-view="full" aria-pressed="${view === "full"}" title="Every slot's details in place">Full</button>
-        </div></div>
-        ${templateButtons ? `<div class="control"><span class="control-label">Equipment template</span><div class="seg">${templateButtons}</div></div>` : ""}
-        <div class="control"><span class="control-label">Stats with weapon</span><div class="seg">${setButtons}</div></div>
-        <button type="button" class="share-btn" data-share-open title="Export this template's gear as a PNG: gear only, no stats or account details">Share image</button>
-      </div>
+      ${hasGear ? controls : ""}
     </div>
-    ${armory.missingItemIds.length ? `<p class="notice">${armory.missingItemIds.length} item${armory.missingItemIds.length > 1 ? "s" : ""} couldn't be looked up in the API, so the totals below may be incomplete. Reload to try again.</p>` : ""}
-    <div class="paper-doll view-${view}">
-      <div class="gear-column"><h3>Armor</h3>${SLOT_GROUPS.armor.map((slot) => tile(slot)).join("")}</div>
-      <div class="stat-column">${statPanelHtml(armory.totals[weaponSet], tip)}</div>
-      <div class="gear-column"><h3>Trinkets</h3>${[...SLOT_GROUPS.trinkets, "Relic"].map((slot) => tile(slot)).join("")}</div>
-    </div>
-    <section class="armory-section"><h3>Weapons</h3><div class="weapon-row">${weaponSets}</div></section>
-    <section class="armory-section"><h3>Underwater &amp; tools</h3><div class="extra-row view-${view}">${extras}</div></section>
+    ${hasGear ? gearHtml() : MISSING_BUILDS_NOTICE}
     ${bagsHtml(armory.bags, tip)}`;
   return { html, tooltips };
 }
@@ -340,8 +361,8 @@ function bagsHtml(bags, tip) {
     return `<section class="armory-section"><h3>Bags</h3><p class="muted small">Your API key lacks the <b>inventories</b> permission, so bags can't be read.</p></section>`;
   const slotHtml = (slot) =>
     slot
-      ? `<button type="button" class="bag-slot" ${rarityStyle(slot.rarity)} aria-label="${escapeHtml(slot.name)}${slot.count > 1 ? ` ×${slot.count}` : ""}" ${tip(
-          `<div class="tt-head">${icon(slot.icon, "tt-icon")}<div><div class="tt-name rarity" ${rarityStyle(slot.rarity)}>${escapeHtml(slot.name)}</div><div class="muted">${slot.count > 1 ? `×${formatNumber(slot.count)} · ` : ""}${escapeHtml(slot.rarity)}${slot.binding ? ` · ${slot.binding === "Character" ? "Soulbound" : "Account Bound"}` : ""}</div></div></div><a class="tt-link" href="crafting.html#item=${Number(slot.id)}">Crafting tree →</a>`,
+      ? `<button type="button" class="bag-slot" ${rarityStyle(slot.rarity)} aria-haspopup="dialog" aria-expanded="false" aria-label="${escapeHtml(slot.name)}${slot.count > 1 ? ` ×${slot.count}` : ""}" ${tip(
+          `<div class="tt-head">${icon(slot.icon, "tt-icon")}<div><div class="tt-name rarity" ${rarityStyle(slot.rarity)}>${escapeHtml(slot.name)}</div><div class="muted">${slot.count > 1 ? `×${formatNumber(slot.count)} · ` : ""}${escapeHtml(slot.rarity)}${slot.binding ? ` · ${slot.binding === "Character" ? "Soulbound" : "Account Bound"}` : ""}</div></div></div>${craftingLink(slot)}`,
         )}>${icon(slot.icon)}${slot.count > 1 ? `<span class="bag-count">${formatNumber(slot.count)}</span>` : ""}</button>`
       : '<span class="bag-slot empty"></span>';
   const used = bags.flatMap((bag) => bag?.slots ?? []).filter(Boolean).length;

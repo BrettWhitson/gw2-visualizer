@@ -629,6 +629,8 @@ export function describeBags(character, items) {
       name: item?.name ?? `Unknown item #${id}`,
       icon: item?.icon ?? null,
       rarity: item?.rarity ?? "Basic",
+      // The API didn't return it: nothing to link to.
+      missing: !item,
     };
   };
   return character.bags.map(
@@ -652,7 +654,7 @@ export function describeBags(character, items) {
 
 /**
  * The armory for one character and equipment template (`tab` null → the active template, or the flat equipment
- * list when the key can't see templates).
+ * list when the key can't see templates). A `tab` the character doesn't have (a stale choice) is treated as null.
  */
 export function buildArmory(character, catalogs, tab = null) {
   const tabs = (character.equipment_tabs ?? [])
@@ -662,8 +664,9 @@ export function buildArmory(character, catalogs, tab = null) {
       isActive: !!candidate.is_active,
     }))
     .sort((a, b) => a.tab - b.tab);
+  const known = tabs.some((candidate) => candidate.tab === tab);
   const chosenTab =
-    tab ??
+    (known ? tab : null) ??
     tabs.find((candidate) => candidate.isActive)?.tab ??
     tabs[0]?.tab ??
     null;

@@ -519,3 +519,30 @@ test("bags keep the game's layout, with every slot resolved", () => {
     "bag contents are looked up",
   );
 });
+
+test("bag slots the API didn't return are flagged missing", () => {
+  const [bag] = describeBags(
+    { bags: [{ id: 300, size: 2, inventory: [{ id: 200 }, { id: 999 }] }] },
+    CATALOGS.items,
+  );
+  assert.equal(bag.missing, false);
+  assert.deepEqual(
+    bag.slots.map((slot) => slot.missing),
+    [false, true],
+  );
+});
+
+test("a stale template choice falls back to the active template", () => {
+  assert.equal(buildArmory(makeCharacter(), CATALOGS, 1).tab, 1);
+  assert.equal(
+    buildArmory(makeCharacter(), CATALOGS, 7).tab,
+    2,
+    "a template this character doesn't have",
+  );
+  const flatOnly = { ...makeCharacter(), equipment_tabs: undefined };
+  assert.equal(
+    buildArmory(flatOnly, CATALOGS, 2).tab,
+    null,
+    "no templates visible: the flat list",
+  );
+});

@@ -8,10 +8,11 @@ import {
   polylineLength,
 } from "./edge-geometry.js";
 import { Spring, springFor } from "./spring.js";
-import { parseColor } from "./color.js";
+import { parseColor, parseColorAlpha } from "./color.js";
 import {
   LABEL_PAD_X,
   LABEL_PAD_Y,
+  labelBitmapScale,
   labelBox,
   labelFont,
   layoutLabel,
@@ -45,7 +46,8 @@ import {
  */
 
 const ICON_SIZE = 64; // atlas cell, pixels
-const ATLAS_SIZE = 2048; // 1024 icons
+const ATLAS_SIZE = 2048; // 961 icons (31 × 31: 64 px cells, 2 px apart)
+const ICON_RETRY_MS = 10000; // an icon that failed to load is tried again when next asked for, after this long
 const LABEL_RENDER_SCALE = 2; // label bitmaps are drawn at 2× and scaled down
 const DOUBLE_TAP_MS = 300;
 const LONG_PRESS_MS = 550;
@@ -54,6 +56,8 @@ const DRAG_THRESHOLD_PX = { mouse: 4, pen: 6, touch: 10 };
 const GLIDE_FRICTION_S = 0.28; // time constant for the camera's glide after a flick
 const FLICK_WINDOW_MS = 90; // pan moves this recent set the glide's speed
 const FLICK_MIN_SPEED = 120; // px/s; slower than this, letting go just stops
+const MAX_EXPORT_PIXELS = 16_777_216; // exported images stay within what browsers allow a canvas (4096²)
+const MIN_NODE_SIZE = 1; // world units, for nodes whose size isn't a usable number
 /** Interaction and label colours; override any of them with the constructor's `colors` option. */
 export const DEFAULT_COLORS = {
   selected: "#f0c46a",
@@ -120,6 +124,13 @@ export class WebGLGraph {
   #edgeEmphasis = new Map(); // edge id → { color, flow, boost }
   #moving = new Set(); // node / edge records with springs in motion
   #tickers = new Set();
+  /** The pointer gesture under way: { kind: "pan" | "node" | "drag" | "pinch" | "done", … }, or null. */
+  #gesture = null;
+  #longPress = 0;
+  #destroyed = false;
+  #contextLost = false;
+  /** Matches the current device pixel ratio; changes when the page moves to a screen with another (or zooms). */
+  #pixelRatioQuery = null;
 
   #frame = 0;
   #lastFrameTime = 0;
@@ -128,7 +139,7 @@ export class WebGLGraph {
   #cameraSprings = null;
   #glide = null;
 
-  #iconSlots = new Map(); // url → { u0, v0, u1, v1 } | "loading" | "failed"
+  #iconSlots = new Map(); // url → { u0, v0, u1, v1, uv } | { loading } | { failedAt, spot }
   #iconPacker = new AtlasPacker(ATLAS_SIZE, 2);
   #atlasDirty = false;
   #iconRefresh = 0;
@@ -153,8 +164,9 @@ export class WebGLGraph {
     this.container = container;
     this.#colors = { ...DEFAULT_COLORS, ...colors };
     this.handlers = handlers;
-    if (getComputedStyle(container).position === "static")
-      container.style.position = "relative"; // the canvases are positioned inside it
+    const madeRelative = getComputedStyle(container).position === "static";
+    const previousPosition = container.style.position;
+    if (madeRelative) container.style.position = "relative"; // the canvases are positioned inside it
     this.canvas = document.createElement("canvas");
     this.labelCanvas = document.createElement("canvas");
     for (const canvas of [this.canvas, this.labelCanvas])
@@ -169,16 +181,30 @@ export class WebGLGraph {
     this.canvas.setAttribute("aria-label", "Graph");
     this.labelCanvas.style.pointerEvents = "none";
     container.append(this.canvas, this.labelCanvas);
-    const gl = this.canvas.getContext("webgl2", {
-      antialias: true,
-      premultipliedAlpha: true,
-      alpha: true,
-      preserveDrawingBuffer,
-    });
-    if (!gl) throw new Error("WebGL2 isn't available");
-    this.gl = gl;
-    this.labelContext = this.labelCanvas.getContext("2d");
-    this.#setUpGl();
+    try {
+      const gl = this.canvas.getContext("webgl2", {
+        antialias: true,
+        premultipliedAlpha: true,
+        alpha: true,
+        preserveDrawingBuffer,
+      });
+      if (!gl) throw new Error("WebGL2 isn't available");
+      this.gl = gl;
+      this.labelContext = this.labelCanvas.getContext("2d");
+      this.#setUpGl();
+    } catch (error) {
+      // Leave the page as it was.
+      this.gl?.getExtension("WEBGL_lose_context")?.loseContext();
+      this.canvas.remove();
+      this.labelCanvas.remove();
+      if (madeRelative) container.style.position = previousPosition;
+      throw error;
+    }
+    this.canvas.addEventListener("webglcontextlost", this.#onContextLost);
+    this.canvas.addEventListener(
+      "webglcontextrestored",
+      this.#onContextRestored,
+    );
     this.#bindInput();
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -188,6 +214,27 @@ export class WebGLGraph {
       this.#loadIcon(badgeUrl);
     }
   }
+
+  /** The GPU dropped the context (driver reset, too many contexts…): stop drawing until it's back. */
+  #onContextLost = (event) => {
+    event.preventDefault(); // tells the browser we'll restore it
+    this.#contextLost = true;
+    cancelAnimationFrame(this.#frame);
+    this.#frame = 0;
+  };
+
+  /** The context is back, empty: rebuild everything the GPU held from what's kept here. */
+  #onContextRestored = () => {
+    if (this.#destroyed) return;
+    this.#contextLost = false;
+    this.#bufferCapacity.clear();
+    this.#arrowGroups.clear();
+    this.#setUpGl();
+    this.#atlasDirty = true;
+    this.#geometryDirty = true;
+    this.#lastFrameTime = 0;
+    this.requestRender();
+  };
 
   // ---------------------------------------------------------------- options
 
@@ -215,6 +262,7 @@ export class WebGLGraph {
     }
     for (const record of [...this.#nodes, ...this.#ghosts])
       this.#retargetNode(record);
+    for (const record of this.#edges) this.#retargetEdge(record); // dimAlpha
     this.#geometryDirty = true;
     this.requestRender();
   }
@@ -228,7 +276,9 @@ export class WebGLGraph {
   /**
    * Replace the graph. Nodes that stay keep their place on screen and glide to their new position; with `animate`,
    * new nodes grow out of `spawnFrom` (id → point) after `delays` (id → ms), and removed nodes fade into `ghostTo`
-   * (id → point). Without it everything snaps. The camera isn't moved (see fitView / moveCamera).
+   * (id → point). Without it everything snaps. The camera isn't moved (see fitView / moveCamera). A node being dragged
+   * stays under the pointer if it's still there; if it's gone, the drag ends (onNodeDragEnd). Positions and sizes
+   * that aren't finite numbers are read as 0 and the smallest size.
    *
    * @param {{ nodes: object[], edges: object[], routing?: string, flowAxis?: string, cornerRadius?: number,
    *           curvature?: number }} graph
@@ -249,12 +299,23 @@ export class WebGLGraph {
     const nodes = [];
     // A node coming back while it's still fading out is picked up where it is.
     const returning = new Map(this.#ghosts.map((ghost) => [ghost.id, ghost]));
-    for (const input of graph.nodes) {
+    for (const raw of graph.nodes) {
+      const input = {
+        ...raw,
+        x: finiteOr(raw.x, 0),
+        y: finiteOr(raw.y, 0),
+        width: Math.max(MIN_NODE_SIZE, finiteOr(raw.width, 0)),
+        height: Math.max(MIN_NODE_SIZE, finiteOr(raw.height, 0)),
+      };
       let record = previous.get(input.id) ?? returning.get(input.id);
       returning.delete(input.id);
       const isNew = !record;
       if (isNew) {
-        const start = (animate && spawnFrom?.get(input.id)) || input;
+        const spawn = animate && spawnFrom?.get(input.id);
+        const start =
+          spawn && Number.isFinite(spawn.x) && Number.isFinite(spawn.y)
+            ? spawn
+            : input;
         record = {
           id: input.id,
           px: new Spring(start.x, params, 0.05), // world units: well under a pixel
@@ -272,11 +333,14 @@ export class WebGLGraph {
       record.hw = input.width / 2;
       record.hh = input.height / 2;
       this.#applyNodeStyle(record, input.style, { fade: !isNew && animate });
-      record.px.set(input.x);
-      record.py.set(input.y);
-      if (!animate) {
-        record.px.snap(input.x);
-        record.py.snap(input.y);
+      // The dragged node stays under the pointer.
+      if (input.id !== this.#dragged) {
+        record.px.set(input.x);
+        record.py.set(input.y);
+        if (!animate) {
+          record.px.snap(input.x);
+          record.py.snap(input.y);
+        }
       }
       record.wait = isNew && animate ? (delays?.get(input.id) ?? 0) / 1000 : 0;
       this.#retargetNode(record);
@@ -342,7 +406,13 @@ export class WebGLGraph {
     }
     if (this.#hovered && !next.has(this.#hovered)) this.#hovered = null;
     if (this.#selected && !next.has(this.#selected)) this.#selected = null;
-    this.#dragged = null;
+    // A press on a node that's gone: a drag ends; a press that hadn't become one yet is dropped.
+    const gesture = this.#gesture;
+    if (gesture?.record && !next.has(gesture.record.id)) {
+      if (gesture.kind === "drag") this.#endDrag();
+      else this.#gesture = { kind: "done" };
+      clearTimeout(this.#longPress);
+    }
     this.canvas.setAttribute(
       "aria-label",
       `Graph of ${nodes.length} node${nodes.length === 1 ? "" : "s"}`,
@@ -351,17 +421,30 @@ export class WebGLGraph {
     this.requestRender();
   }
 
-  /** Restyle nodes and edges in place (no movement): [{ id, style }]. */
+  /**
+   * Restyle nodes and edges in place (no movement): [{ id, style }]. A node whose `style.size` changed is resized to
+   * it (width and height), where it stands.
+   */
   updateStyles(nodeUpdates = [], edgeUpdates = []) {
     for (const { id, style } of nodeUpdates) {
       const record = this.#byId.get(id);
-      if (record) this.#applyNodeStyle(record, style, { fade: true });
+      if (!record) continue;
+      const size = style.size;
+      if (size != null && size !== record.style?.size) {
+        record.width = record.height = Math.max(
+          MIN_NODE_SIZE,
+          finiteOr(size, 0),
+        );
+        record.hw = record.hh = record.width / 2;
+      }
+      this.#applyNodeStyle(record, style, { fade: true });
     }
     for (const { id, style } of edgeUpdates) {
       const record = this.#edgeById.get(id);
       if (record) this.#applyEdgeStyle(record, style, { fade: true });
     }
-    this.#geometryDirty = true;
+    // Sizes and `events` both change what the grid holds.
+    this.#geometryDirty = this.#gridDirty = true;
     this.requestRender();
   }
 
@@ -383,15 +466,21 @@ export class WebGLGraph {
 
   /** A node's look. `fade`: blend from the colours on screen to the new ones instead of switching. */
   #applyNodeStyle(record, style, { fade = false } = {}) {
+    // A colour's own alpha (#rrggbbaa, rgba()…) multiplies the style's.
+    const withAlpha = (color, alpha) => {
+      const [r, g, b, a] = parseColorAlpha(color);
+      return [r, g, b, a * alpha];
+    };
     const colors = {
-      fill: [...parseColor(style.fill), style.fillAlpha ?? 1],
-      border: [...parseColor(style.border), 1],
-      aura: style.aura ? [...parseColor(style.aura), 1] : [0, 0, 0, 0],
-      ring: style.ring ? [...parseColor(style.ring), 0.9] : [0, 0, 0, 0],
+      fill: withAlpha(style.fill, style.fillAlpha ?? 1),
+      border: withAlpha(style.border, 1),
+      aura: style.aura ? withAlpha(style.aura, 1) : [0, 0, 0, 0],
+      ring: style.ring ? withAlpha(style.ring, 0.9) : [0, 0, 0, 0],
     };
     this.#fadeColors(record, colors, fade);
     record.style = style;
     if (style.icon) this.#loadIcon(style.icon);
+    if (style.badge && this.#badgeUrl) this.#loadIcon(this.#badgeUrl); // a retry, if it failed
   }
 
   #applyEdgeStyle(record, style, { fade = false } = {}) {
@@ -473,9 +562,10 @@ export class WebGLGraph {
 
   // ---------------------------------------------------------------- interaction state
 
+  /** Select a node (null, or an id not in the graph, for none). */
   select(id) {
     const previous = this.#selected;
-    this.#selected = id ?? null;
+    this.#selected = id != null && this.#byId.has(id) ? id : null;
     for (const nodeId of [previous, this.#selected]) {
       const record = nodeId && this.#byId.get(nodeId);
       if (record) this.#retargetNode(record);
@@ -536,6 +626,7 @@ export class WebGLGraph {
 
   /** Run `tick(dt)` every frame until it returns false (physics, custom animations). */
   addTicker(tick) {
+    if (this.#destroyed) return () => false;
     this.#tickers.add(tick);
     this.requestRender();
     return () => this.#tickers.delete(tick);
@@ -750,7 +841,9 @@ export class WebGLGraph {
   }
 
   resize() {
+    if (this.#destroyed) return;
     const dpr = globalThis.devicePixelRatio || 1;
+    if (dpr !== this.dpr) this.#watchPixelRatio(dpr);
     const width = this.container.clientWidth,
       height = this.container.clientHeight;
     // Keep what's in the middle in the middle.
@@ -768,17 +861,61 @@ export class WebGLGraph {
     this.requestRender();
   }
 
+  /**
+   * A new device pixel ratio (a window dragged to another screen, browser zoom) changes no CSS size, so the
+   * ResizeObserver misses it: watch for it with a media query matching the current ratio, re-armed on each change.
+   */
+  #watchPixelRatio(dpr) {
+    this.#pixelRatioQuery?.removeEventListener("change", this.#onPixelRatio);
+    this.#pixelRatioQuery =
+      globalThis.matchMedia?.(`(resolution: ${dpr}dppx)`) ?? null;
+    this.#pixelRatioQuery?.addEventListener("change", this.#onPixelRatio);
+  }
+
+  #onPixelRatio = () => this.resize();
+
+  /** Stop everything, remove the canvases and let go of the GPU. The graph can't be used afterwards. */
   destroy() {
+    if (this.#destroyed) return;
+    this.#destroyed = true;
     cancelAnimationFrame(this.#frame);
+    this.#frame = 0;
     clearTimeout(this.#iconRefresh);
+    clearTimeout(this.#longPress);
+    this.#tickers.clear();
+    this.#moving.clear();
+    this.#touched.clear();
+    this.#gridMoved.clear();
+    this.#gesture = null;
+    this.#cameraSprings = this.#glide = this.#zoomTarget = null;
     this.resizeObserver.disconnect();
+    this.#pixelRatioQuery?.removeEventListener("change", this.#onPixelRatio);
+    this.#pixelRatioQuery = null;
+    this.canvas.removeEventListener("webglcontextlost", this.#onContextLost);
+    this.canvas.removeEventListener(
+      "webglcontextrestored",
+      this.#onContextRestored,
+    );
     this.canvas.remove();
     this.labelCanvas.remove();
+    // Drop what's cached: nodes, labels, icons, GPU buffers.
+    this.#nodes = [];
+    this.#ghosts = [];
+    this.#edges = [];
+    this.#byId.clear();
+    this.#edgeById.clear();
+    this.#labelCache.clear();
+    this.#iconSlots.clear();
+    this.#arrowGroups.clear();
+    this.#bufferCapacity.clear();
+    this.uniforms?.clear();
+    if (this.atlasCanvas) this.atlasCanvas.width = this.atlasCanvas.height = 0;
     this.gl.getExtension("WEBGL_lose_context")?.loseContext();
   }
 
   // ---------------------------------------------------------------- GL setup
 
+  /** Programs, buffers and the icon texture: at start, and again when a lost context comes back. */
   #setUpGl() {
     const gl = this.gl;
     this.nodeProgram = this.#program(NODE_VERTEX, NODE_FRAGMENT);
@@ -822,10 +959,13 @@ export class WebGLGraph {
     ]);
     gl.bindVertexArray(null);
 
-    // Icon atlas: a 2D canvas the icons are drawn into, uploaded as one texture (premultiplied, mipmapped).
-    this.atlasCanvas = document.createElement("canvas");
-    this.atlasCanvas.width = this.atlasCanvas.height = ATLAS_SIZE;
-    this.atlasContext = this.atlasCanvas.getContext("2d");
+    // Icon atlas: a 2D canvas the icons are drawn into, uploaded as one texture (premultiplied, mipmapped). The canvas
+    // outlives a lost context, so the icons come back with it.
+    if (!this.atlasCanvas) {
+      this.atlasCanvas = document.createElement("canvas");
+      this.atlasCanvas.width = this.atlasCanvas.height = ATLAS_SIZE;
+      this.atlasContext = this.atlasCanvas.getContext("2d");
+    }
     this.iconTexture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.iconTexture);
     gl.texImage2D(
@@ -972,7 +1112,7 @@ export class WebGLGraph {
       layout: this.#layout,
       iconUv: (url) => {
         const slot = this.#iconSlots.get(url);
-        return slot && typeof slot === "object" ? slot.uv : null;
+        return slot?.uv ?? null;
       },
     };
     const instances = this.#instances;
@@ -1008,7 +1148,6 @@ export class WebGLGraph {
     else
       for (const record of moved) {
         if (this.#nodes[record.gridIndex] !== record) continue; // no longer drawn
-        if (record.style.events === false) continue;
         this.#grid.move(record.gridIndex, {
           x1: record.px.value - record.hw,
           y1: record.py.value - record.hh,
@@ -1027,8 +1166,8 @@ export class WebGLGraph {
       ...this.#nodes.slice(0, 50).map((n) => n.width * 3),
     );
     this.#grid = new SpatialGrid(cell);
+    // Every node, `events: false` ones too: the grid also finds the labels on screen. Hit tests skip those.
     this.#nodes.forEach((record, index) => {
-      if (record.style.events === false) return;
       this.#grid.insert(index, {
         x1: record.px.value - record.hw,
         y1: record.py.value - record.hh,
@@ -1040,16 +1179,21 @@ export class WebGLGraph {
   }
 
   #loadIcon(url) {
-    if (this.#iconSlots.has(url)) return;
-    const spot = this.#iconPacker.place(ICON_SIZE, ICON_SIZE);
+    const slot = this.#iconSlots.get(url);
+    // Loaded, loading, or failed a moment ago: nothing to do. A failure long enough ago gets another try.
+    if (slot && !(performance.now() - slot.failedAt > ICON_RETRY_MS)) return;
+    const spot = slot?.spot ?? this.#iconPacker.place(ICON_SIZE, ICON_SIZE);
     if (!spot || spot.page > 0) {
-      this.#iconSlots.set(url, "failed"); // atlas full: drawn without its icon
+      // Atlas full: drawn without its icon.
+      this.#iconSlots.set(url, { failedAt: performance.now(), spot: null });
       return;
     }
-    this.#iconSlots.set(url, "loading");
+    this.#iconSlots.set(url, { loading: true });
     const image = new Image();
     image.crossOrigin = "anonymous"; // hosts that allow it (CORS) keep the texture uploadable
     image.onload = () => {
+      if (this.#destroyed) return;
+      this.atlasContext.clearRect(spot.x, spot.y, ICON_SIZE, ICON_SIZE);
       this.atlasContext.drawImage(image, spot.x, spot.y, ICON_SIZE, ICON_SIZE);
       const u0 = spot.x / ATLAS_SIZE,
         v0 = spot.y / ATLAS_SIZE,
@@ -1059,7 +1203,9 @@ export class WebGLGraph {
       this.#atlasDirty = true;
       this.#scheduleIconRefresh();
     };
-    image.onerror = () => this.#iconSlots.set(url, "failed");
+    // Keep the spot for the next try.
+    image.onerror = () =>
+      this.#iconSlots.set(url, { failedAt: performance.now(), spot });
     image.src = url;
   }
 
@@ -1075,8 +1221,9 @@ export class WebGLGraph {
 
   // ---------------------------------------------------------------- the frame loop
 
+  /** Draw a frame soon (once, however often it's asked for). Nothing happens after destroy() or while the GPU is lost. */
   requestRender() {
-    if (this.#frame) return;
+    if (this.#frame || this.#destroyed || this.#contextLost) return;
     this.#frame = requestAnimationFrame((time) => {
       this.#frame = 0;
       this.#step(time);
@@ -1179,7 +1326,8 @@ export class WebGLGraph {
     return !!this.#glide;
   }
 
-  #draw() {
+  /** Send the icon atlas to the GPU if icons arrived since it was last sent. */
+  #flushAtlas() {
     const gl = this.gl;
     if (this.#atlasDirty) {
       gl.bindTexture(gl.TEXTURE_2D, this.iconTexture);
@@ -1195,6 +1343,11 @@ export class WebGLGraph {
       gl.generateMipmap(gl.TEXTURE_2D);
       this.#atlasDirty = false;
     }
+  }
+
+  #draw() {
+    const gl = this.gl;
+    this.#flushAtlas();
     this.#syncGeometry();
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
@@ -1266,7 +1419,7 @@ export class WebGLGraph {
     gl.bindTexture(gl.TEXTURE_2D, this.iconTexture);
     gl.uniform1i(this.#uniform(this.nodeProgram, "icons"), 0);
     const badge = this.#badgeUrl && this.#iconSlots.get(this.#badgeUrl);
-    if (badge && typeof badge === "object")
+    if (badge?.uv)
       gl.uniform4f(
         this.#uniform(this.nodeProgram, "badgeRect"),
         badge.u0,
@@ -1347,8 +1500,8 @@ export class WebGLGraph {
       });
       // Text is world-sized (it scales with the layout's spacing), within readable limits.
       const scale = all ? zoom : Math.min(2, Math.max(0.8, zoom));
-      const w = (image.width / LABEL_RENDER_SCALE) * scale,
-        h = (image.height / LABEL_RENDER_SCALE) * scale;
+      const w = image.width * scale,
+        h = image.height * scale;
       const s = record.scale.value * zoom;
       const centre = camera.toScreen(record.px.value, record.py.value);
       const offset = labelBox(
@@ -1372,7 +1525,7 @@ export class WebGLGraph {
         taken.insert(takenCount++, box);
       }
       context.globalAlpha = opacity;
-      context.drawImage(image, box.x1, box.y1, w, h);
+      context.drawImage(image.canvas, box.x1, box.y1, w, h);
       this.stats.labels++;
     }
 
@@ -1401,8 +1554,8 @@ export class WebGLGraph {
         color: this.#colors.edgeLabelText,
         backdrop: this.#colors.edgeLabelBackdrop,
       });
-      const w = (image.width / LABEL_RENDER_SCALE) * zoom,
-        h = (image.height / LABEL_RENDER_SCALE) * zoom;
+      const w = image.width * zoom,
+        h = image.height * zoom;
       const box = {
         x1: screen.x - w / 2,
         y1: screen.y - h / 2,
@@ -1414,12 +1567,15 @@ export class WebGLGraph {
         taken.insert(takenCount++, box);
       }
       context.globalAlpha = alpha;
-      context.drawImage(image, box.x1, box.y1, w, h);
+      context.drawImage(image.canvas, box.x1, box.y1, w, h);
     }
     context.globalAlpha = 1;
   }
 
-  /** A label drawn once at 2× into its own canvas (with its backdrop pill or text outline), then reused. */
+  /**
+   * A label drawn once at 2× into its own canvas (with its backdrop pill or text outline), then reused:
+   * { canvas, width, height } with its size in CSS pixels at zoom 1. Huge labels are drawn at less than 2×.
+   */
   #labelImage(
     text,
     {
@@ -1447,11 +1603,13 @@ export class WebGLGraph {
     );
     const padX = LABEL_PAD_X,
       padY = LABEL_PAD_Y;
-    image = document.createElement("canvas");
-    image.width = width * LABEL_RENDER_SCALE;
-    image.height = height * LABEL_RENDER_SCALE;
-    const context = image.getContext("2d");
-    context.scale(LABEL_RENDER_SCALE, LABEL_RENDER_SCALE);
+    const canvas = document.createElement("canvas");
+    const bitmapScale = labelBitmapScale(width, height, LABEL_RENDER_SCALE);
+    canvas.width = Math.max(1, Math.ceil(width * bitmapScale));
+    canvas.height = Math.max(1, Math.ceil(height * bitmapScale));
+    image = { canvas, width, height };
+    const context = canvas.getContext("2d");
+    context.scale(bitmapScale, bitmapScale);
     context.font = font;
     context.textBaseline = "middle";
     if (backdrop) {
@@ -1479,16 +1637,24 @@ export class WebGLGraph {
 
   /**
    * The whole graph as a canvas at `scale` (world units → pixels), every label drawn, over `background` (a CSS
-   * colour, or null for transparent). Rendered in tiles, so it can be larger than the GPU's own limits.
+   * colour; null or "transparent" for none). It's drawn as it is on screen right now (mid-transition included).
+   * Rendered in tiles, so it can be larger than the GPU's own limits; `scale` shrinks to keep it within `maxSide` and
+   * `maxPixels`. Throws when the GPU context is lost or the browser can't make a canvas that big.
    */
   renderToCanvas({
     scale = 1,
     background = null,
     padding = 30,
     maxSide = 16000,
+    maxPixels = MAX_EXPORT_PIXELS,
   } = {}) {
+    const gl = this.gl;
+    if (this.#destroyed || gl.isContextLost())
+      throw new Error("The graph can't be drawn: its WebGL context is gone");
+    const stats = { ...this.stats }; // the export isn't a frame: leave the on-screen numbers alone
+    this.#flushAtlas();
     this.#syncGeometry();
-    const nodeBounds = this.bounds();
+    const nodeBounds = this.#liveBounds();
     const labelRoom = this.#labels.maxWidth + 20;
     const bounds = {
       x1:
@@ -1503,19 +1669,30 @@ export class WebGLGraph {
       y2:
         nodeBounds.y2 + padding + (this.#labels.position === "below" ? 50 : 0),
     };
+    const boundsW = bounds.x2 - bounds.x1,
+      boundsH = bounds.y2 - bounds.y1;
     scale = Math.min(
       scale,
-      maxSide / (bounds.x2 - bounds.x1),
-      maxSide / (bounds.y2 - bounds.y1),
+      maxSide / boundsW,
+      maxSide / boundsH,
+      Math.sqrt(maxPixels / (boundsW * boundsH)),
     );
-    const width = Math.max(1, Math.ceil((bounds.x2 - bounds.x1) * scale));
-    const height = Math.max(1, Math.ceil((bounds.y2 - bounds.y1) * scale));
+    if (!(scale > 0) || !Number.isFinite(scale)) scale = 1;
+    const sizeAt = (s) => [
+      Math.max(1, Math.ceil(boundsW * s)),
+      Math.max(1, Math.ceil(boundsH * s)),
+    ];
+    let [width, height] = sizeAt(scale);
+    // Rounding up can push it just over.
+    while (width * height > maxPixels && width * height > 1)
+      [width, height] = sizeAt((scale *= 0.995));
     const output = document.createElement("canvas");
     output.width = width;
     output.height = height;
     const context = output.getContext("2d");
+    if (!context)
+      throw new Error(`Couldn't make a ${width} × ${height} canvas to draw on`);
 
-    const gl = this.gl;
     const tile = Math.min(2048, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE));
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -1539,7 +1716,10 @@ export class WebGLGraph {
       texture,
       0,
     );
-    const [br, bg, bb] = background ? parseColor(background) : [0, 0, 0];
+    // Cleared to the background, premultiplied (the readback below undoes that).
+    const [br, bg, bb, ba] = background
+      ? parseColorAlpha(background)
+      : [0, 0, 0, 0];
     const pixels = new Uint8Array(tile * tile * 4);
     const camera = new Camera({ minZoom: 0, maxZoom: Infinity });
     camera.zoom = scale;
@@ -1551,7 +1731,7 @@ export class WebGLGraph {
           camera.panX = -bounds.x1 * scale - tx;
           camera.panY = -bounds.y1 * scale - ty;
           gl.viewport(0, 0, w, h);
-          gl.clearColor(br, bg, bb, background ? 1 : 0);
+          gl.clearColor(br * ba, bg * ba, bb * ba, ba);
           gl.clear(gl.COLOR_BUFFER_BIT);
           this.#drawScene({
             camera,
@@ -1593,8 +1773,30 @@ export class WebGLGraph {
     camera.panX = -bounds.x1 * scale;
     camera.panY = -bounds.y1 * scale;
     this.#drawLabels(context, { camera, width, height, all: true });
+    Object.assign(this.stats, stats);
     this.requestRender(); // the screen's framebuffer was left alone, but redraw to be safe
     return output;
+  }
+
+  /**
+   * World box around what's drawn right now: live nodes and ghosts where they are (at their current scale), and the
+   * edges between them.
+   */
+  #liveBounds() {
+    const points = [];
+    for (const r of [...this.#nodes, ...this.#ghosts]) {
+      const hw = r.hw * r.scale.value,
+        hh = r.hh * r.scale.value;
+      points.push(
+        { x: r.px.value - hw, y: r.py.value - hh },
+        { x: r.px.value + hw, y: r.py.value + hh },
+      );
+    }
+    for (const edge of this.#edges)
+      if (edge.points) points.push(...edge.points);
+    return points.length
+      ? pointsBounds(points)
+      : { x1: 0, y1: 0, x2: 1, y2: 1 };
   }
 
   // ---------------------------------------------------------------- input
@@ -1606,7 +1808,11 @@ export class WebGLGraph {
       event.clientX - rect.left,
       event.clientY - rect.top,
     );
-    const index = this.#grid.hit(world.x, world.y);
+    const index = this.#grid.hit(
+      world.x,
+      world.y,
+      (i) => this.#nodes[i].style.events !== false,
+    );
     return index >= 0 ? this.#nodes[index] : null;
   }
 
@@ -1626,12 +1832,24 @@ export class WebGLGraph {
     this.requestRender();
   }
 
+  /**
+   * End a drag under way, if there is one (the pointer let go, a second finger came down, the node was removed): the
+   * node settles and onNodeDragEnd is called. What's left of the press does nothing more.
+   */
+  #endDrag(cursor = "") {
+    const gesture = this.#gesture;
+    if (gesture?.kind !== "drag") return;
+    this.#gesture = { kind: "done" };
+    this.#dragged = null;
+    this.#retargetNode(gesture.record);
+    this.canvas.style.cursor = cursor;
+    this.handlers.onNodeDragEnd?.(gesture.record.id);
+  }
+
   #bindInput() {
     const canvas = this.canvas;
-    const pointers = new Map();
-    let gesture = null; // { kind: "pan" | "node" | "drag" | "pinch", … }
+    const pointers = new Map(); // the (at most two) pointers down: id → where
     let lastTap = { id: null, at: 0 };
-    let longPress = 0;
     let samples = []; // recent pan moves for the glide
 
     const local = (event) => {
@@ -1680,14 +1898,23 @@ export class WebGLGraph {
 
     canvas.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 && event.pointerType === "mouse") return;
-      canvas.setPointerCapture(event.pointerId);
+      if (pointers.size >= 2) return; // a third finger: pinching takes two
+      try {
+        canvas.setPointerCapture(event.pointerId);
+      } catch {
+        // The pointer is already gone (cancelled, or a synthetic event): carry on without capture.
+      }
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
       this.#stopCamera();
       this.#zoomTarget = null;
-      clearTimeout(longPress);
+      clearTimeout(this.#longPress);
       if (pointers.size === 2) {
+        this.#endDrag(); // a second finger turns a drag into a pinch: the drag ends properly first
         const [a, b] = [...pointers.values()];
-        gesture = { kind: "pinch", distance: Math.hypot(a.x - b.x, a.y - b.y) };
+        this.#gesture = {
+          kind: "pinch",
+          distance: Math.hypot(a.x - b.x, a.y - b.y),
+        };
         return;
       }
       const record = this.#nodeAt(event);
@@ -1695,30 +1922,32 @@ export class WebGLGraph {
       samples = [];
       if (record) {
         const world = this.camera.toWorld(local(event).x, local(event).y);
-        gesture = {
+        this.#gesture = {
           kind: "node",
           record,
           start,
           grab: { x: world.x - record.px.value, y: world.y - record.py.value },
         };
         if (event.pointerType !== "mouse")
-          longPress = setTimeout(() => {
-            if (gesture?.kind !== "node") return;
-            gesture = { kind: "done" };
+          this.#longPress = setTimeout(() => {
+            if (this.#gesture?.kind !== "node") return;
+            this.#gesture = { kind: "done" };
             this.handlers.onNodeContextTap?.(record.id, event);
           }, LONG_PRESS_MS);
-      } else gesture = { kind: "pan", start };
+      } else this.#gesture = { kind: "pan", start };
     });
 
     canvas.addEventListener("pointermove", (event) => {
       const previous = pointers.get(event.pointerId);
       if (!previous) {
+        if (pointers.size) return; // another finger, beyond the two in play
         this.handlers.onPointerMove?.(event);
         this.#setHovered(this.#nodeAt(event), event);
         return;
       }
       const current = { x: event.clientX, y: event.clientY };
       pointers.set(event.pointerId, current);
+      let gesture = this.#gesture;
       if (!gesture) return;
       if (gesture.kind === "pinch" && pointers.size === 2) {
         const [a, b] = [...pointers.values()];
@@ -1740,7 +1969,7 @@ export class WebGLGraph {
       );
       const threshold = DRAG_THRESHOLD_PX[event.pointerType] ?? 4;
       if (gesture.kind === "node" && moved > threshold) {
-        clearTimeout(longPress);
+        clearTimeout(this.#longPress);
         if (this.#input.draggable && gesture.record.style.events !== false) {
           gesture.kind = "drag";
           this.#dragged = gesture.record.id;
@@ -1748,7 +1977,7 @@ export class WebGLGraph {
           this.#retargetNode(gesture.record);
           canvas.style.cursor = "grabbing";
           this.handlers.onNodeDragStart?.(gesture.record.id);
-        } else gesture = { kind: "pan", start: gesture.start };
+        } else gesture = this.#gesture = { kind: "pan", start: gesture.start };
       }
       if (gesture.kind === "drag") {
         const point = local(event);
@@ -1774,22 +2003,20 @@ export class WebGLGraph {
     });
 
     const finish = (event, cancelled) => {
-      pointers.delete(event.pointerId);
-      clearTimeout(longPress);
-      if (!gesture) return;
-      if (gesture.kind === "pinch") {
-        if (pointers.size === 0) gesture = null;
+      if (!pointers.delete(event.pointerId)) return; // not one of ours (a third finger)
+      clearTimeout(this.#longPress);
+      const ended = this.#gesture;
+      if (!ended) return;
+      if (ended.kind === "pinch") {
+        if (pointers.size === 0) this.#gesture = null;
         return;
       }
-      const ended = gesture;
-      gesture = null;
       if (ended.kind === "drag") {
-        this.#dragged = null;
-        this.#retargetNode(ended.record);
-        canvas.style.cursor = "grab";
-        this.handlers.onNodeDragEnd?.(ended.record.id);
+        this.#endDrag("grab");
+        this.#gesture = null;
         return;
       }
+      this.#gesture = null;
       if (cancelled || ended.kind === "done") return;
       if (ended.kind === "pan") {
         if (ended.moved) {
@@ -1811,7 +2038,7 @@ export class WebGLGraph {
       const now = performance.now();
       if (lastTap.id === id && now - lastTap.at < DOUBLE_TAP_MS) {
         lastTap = { id: null, at: 0 };
-        this.handlers.onNodeDoubleTap?.(id);
+        this.handlers.onNodeDoubleTap?.(id, event);
       } else {
         lastTap = { id, at: now };
         this.handlers.onNodeTap?.(id, event);
@@ -1839,4 +2066,9 @@ export function flickVelocity(samples, now) {
   const vx = (dx / span) * 1000,
     vy = (dy / span) * 1000;
   return Math.hypot(vx, vy) > FLICK_MIN_SPEED ? { vx, vy } : null;
+}
+
+/** `value` when it's a finite number, else `fallback`. */
+function finiteOr(value, fallback) {
+  return Number.isFinite(value) ? value : fallback;
 }
