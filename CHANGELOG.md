@@ -20,9 +20,10 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
   Customize → Canvas and in the View popover.
 - **Fixed: on phones, the toolbar and side panel stayed collapsed on later visits.** They start collapsed on a small
   screen for that visit only, but the next change to any setting used to save that too.
-- **Faster, steadier graphs** (Prism 0.3.1, Tether 0.3.0): layouts are about twice as fast on big trees (10,000 items:
+- **Faster, steadier graphs** (Prism 0.3.2, Tether 0.3.1): layouts are about twice as fast on big trees (10,000 items:
   1.8 s instead of 4.6 s) and floating layouts 8–11× faster, with the same positions. In Floating physics a touch no
-  longer sets a big graph drifting: a barely-pushed item stays put, and the graph settles and stops after you let go.
+  longer sets a big graph drifting: dragging an item tugs what it's linked to while the far graph stays put, and it
+  all settles and stops after you let go (radial graphs respond to a drag again instead of turning as a whole).
   Panning onto new item cards is smoother.
 - **Items as cards** (Customize → Nodes → Items as): wide cards with the item's name, quantity and where it comes from,
   its cost in coins and what you own, a rarity stripe and dots where the lines meet. Icons stay the default. Card
