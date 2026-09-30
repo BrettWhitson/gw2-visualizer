@@ -1,10 +1,14 @@
 /* Characters page: character list and armory. Shares the tokens and controls in app.css. */
 
-/* This page scrolls instead of filling the window like the graph. */
-body.page-characters {
-  overflow: auto;
+/* This page scrolls instead of filling the window like the graph: undo app.css's fixed-height, clipped html/body. */
+html.page-characters,
+html.page-characters body {
   height: auto;
   min-height: 100%;
+  overflow: visible;
+}
+html.page-characters {
+  overflow-y: auto;
 }
 .page-characters main {
   display: block;
