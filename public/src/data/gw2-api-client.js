@@ -33,7 +33,10 @@ export class Gw2ApiClient {
         if (response.status === 404 && url.includes("ids=")) return [];
         const retryAfterSeconds = Number(response.headers.get("Retry-After"));
         if (retryAfterSeconds > 0) retryAfterMs = retryAfterSeconds * 1000;
-        const error = new Error(`HTTP ${response.status} for ${url}`);
+        const error = new Error(
+          `HTTP ${response.status} for ${redactAccessToken(url)}`,
+        );
+        error.status = response.status;
         error.retryable = response.status === 429 || response.status >= 500;
         throw error;
       } catch (error) {
@@ -121,6 +124,10 @@ export function withSchemaVersion(url) {
   if (/[?&]v=/.test(url)) return url;
   return `${url}${url.includes("?") ? "&" : "?"}v=${encodeURIComponent(GW2_API_SCHEMA_VERSION)}`;
 }
+
+/** Hide an API key in a URL so it never reaches error messages, toasts or logs. */
+export const redactAccessToken = (url) =>
+  url.replace(/([?&]access_token=)[^&]*/, "$1…");
 
 /**
  * Convert an API (or API-shaped wiki/custom) recipe into the app's recipe shape.

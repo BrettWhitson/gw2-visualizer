@@ -592,9 +592,11 @@ export function activeBuild(character, specializations) {
       elite: !!spec.elite,
     }));
   const elite = specs.find((spec) => spec.elite) ?? null;
+  // Only elite specializations carry the profession icon.
   const professionIcon =
     [...specializations.values()].find(
-      (spec) => spec.profession === character.profession,
+      (spec) =>
+        spec?.profession === character.profession && spec.profession_icon,
     )?.profession_icon ?? null;
   return {
     tab: tab?.tab ?? null,

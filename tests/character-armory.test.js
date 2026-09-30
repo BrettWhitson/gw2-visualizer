@@ -176,7 +176,7 @@ const SPECS = [
   elite,
   profession: "Necromancer",
   icon: `${name}.png`,
-  profession_icon: "necro.png",
+  profession_icon: elite ? "necro.png" : null, // as the API sends it
 }));
 
 const byId = (list) => new Map(list.map((entry) => [entry.id, entry]));

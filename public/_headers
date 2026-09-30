@@ -13,6 +13,8 @@
   Cache-Control: no-cache
 /index.html
   Cache-Control: no-cache
+/characters.html
+  Cache-Control: no-cache
 /sw.js
   Cache-Control: no-cache
 /manifest.webmanifest

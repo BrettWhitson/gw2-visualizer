@@ -9,6 +9,11 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 - **Clear graph** (✕ in the header, or `X`) returns to the start screen; Back reopens the cleared item.
 - Live at [gw2visualizer.com](https://gw2visualizer.com).
 - Tests run on Node 22 (the minimum is now Node 22).
+- **Characters** (new page, linked from the header): connect a GW2 API key (`characters` and `builds` permissions)
+  to see each character's equipped gear laid out like the in-game hero panel: game-style tooltips with upgrades,
+  rune tiers lit by how many pieces you wear, infusions, dyes and skins; gear-only attribute totals with a
+  per-source breakdown, critical chance, critical damage, health and armor; switch equipment templates and weapon
+  sets. The key stays in your browser (remembered only if you choose) and is sent only to the official API.
 
 ## 0.9.0 — 2026-09-29
 

@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PriceBook } from "../public/src/data/price-book.js";
 import { RecentItems } from "../public/src/core/recent-items.js";
+import { ApiKeyStore } from "../public/src/core/api-key-store.js";
 import {
   CUSTOMIZE_GROUPS,
   SETTINGS_GROUPS,
@@ -137,4 +138,23 @@ test("every ribbon control belongs to a section, so its section reset covers it"
       RIBBON_SECTIONS[section]?.groups.length,
       `${section} has a popout`,
     );
+});
+
+test("the API key is remembered only when asked, and forgotten completely", () => {
+  const store = new Map();
+  const storage = {
+    getItem: (key) => store.get(key) ?? null,
+    setItem: (key, value) => store.set(key, value),
+    removeItem: (key) => store.delete(key),
+  };
+  const keys = new ApiKeyStore(storage);
+  keys.set("session-only", { remember: false });
+  assert.equal(keys.get(), "session-only");
+  assert.equal(new ApiKeyStore(storage).get(), null, "not kept across visits");
+
+  keys.set("kept", { remember: true });
+  assert.equal(new ApiKeyStore(storage).get(), "kept");
+  keys.clear();
+  assert.equal(keys.get(), null);
+  assert.equal(new ApiKeyStore(storage).get(), null);
 });

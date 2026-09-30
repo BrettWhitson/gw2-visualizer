@@ -26,6 +26,9 @@ const SHELL_URLS = [
   "lib/cytoscape.min.js",
   "lib/cytoscape-dagre.min.js",
   "src/main.js",
+  "characters.html",
+  "css/characters.css",
+  "src/characters-main.js",
 ];
 
 self.addEventListener("install", (event) => {
@@ -59,7 +62,7 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   if (request.mode === "navigate") {
-    event.respondWith(networkFirst(request, "index.html"));
+    event.respondWith(networkFirst(request, navigationCacheKey(url)));
   } else if (url.pathname.includes("/data/snapshot/")) {
     // The game-data snapshot is large and the app keeps it in IndexedDB: don't duplicate it in the SW cache.
     return;
@@ -75,7 +78,15 @@ self.addEventListener("fetch", (event) => {
   // Everything else (GW2 API, wiki links) goes straight to the network.
 });
 
-/** @param {Request} request  @param {string} [cacheKey] store under this key instead (navigations → 'index.html') */
+/** Each page is cached under its own file name; the site root and unknown paths fall back to index.html. */
+function navigationCacheKey(url) {
+  const page = url.pathname.split("/").pop();
+  return SHELL_URLS.includes(page) && page.endsWith(".html")
+    ? page
+    : "index.html";
+}
+
+/** @param {Request} request  @param {string} [cacheKey] store under this key instead (navigations → their page) */
 async function networkFirst(request, cacheKey = request) {
   const cache = await caches.open(SHELL_CACHE);
   try {
