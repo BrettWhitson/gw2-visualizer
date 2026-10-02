@@ -398,7 +398,6 @@ export class CraftingTreeApp {
     }
     if (key === "maxDepth") this.treeState.resetExpansion();
     this.graphView.syncSettings();
-    if (key === "canvasBackground") this.graphView.syncBackground();
     for (const panel of this.optionPanels) {
       panel.syncValues();
       panel.refreshStatus();

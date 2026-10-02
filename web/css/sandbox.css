@@ -246,15 +246,6 @@
   pointer-events: none;
   white-space: nowrap;
 }
-.sb-unsupported {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  color: var(--muted);
-}
 
 @media (max-width: 700px) {
   .sandbox {

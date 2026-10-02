@@ -58,7 +58,7 @@ function localEngines(mode) {
       alias: [
         // Entry points (folders), then any module path.
         { find: /^prismatrix$/, replacement: `${src}/index.js` },
-        { find: /^prismatrix\/layout$/, replacement: `${src}/layout/index.js` },
+        { find: /^prismatrix\/layout$/, replacement: `${src}/layout.js` },
         { find: /^prismatrix\//, replacement: `${src}/` },
       ],
     },

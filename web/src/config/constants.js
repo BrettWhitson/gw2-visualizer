@@ -192,7 +192,6 @@ export const UI_COLORS = {
   highlight: "#ffd166",
   highlightChipFill: "#3a2f12",
   nodeFill: "#1c1f24", // --raised
-  labelBackdrop: "#0b0c0e",
   neutralEdge: "#3b4558",
   lineageUp: "#d6a74a",
   lineageDown: "#62a4da",

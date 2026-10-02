@@ -20,8 +20,8 @@ test("a rule for every source category but the root, in literal colours Prism ac
   const { edges } = edgeSourceRules(() => null);
   for (const category of categories)
     assert.match(edges[`src-${category}`].color, /^#[0-9a-f]{6}$/);
-  assert.equal(edges["src-currency"].pattern, "dashed");
-  assert.equal(edges["src-craft"].pattern, undefined);
+  assert.equal(edges["src-currency"].dash, "dashed");
+  assert.equal(edges["src-craft"].dash, undefined);
 });
 
 test("colours follow the page's --s-* tokens when they're set", () => {

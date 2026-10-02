@@ -35,14 +35,13 @@ import { WebGLGraphView } from "./render/webgl-graph-view.js";
 /** Looks for this page's own classes: "+N more" folds are placeholders, and the most profitable routes stand out. */
 const CLASS_STYLES = {
   nodes: {
-    overflow: { pattern: "dashed", fillAlpha: 0.4 },
-    "best-route": { aura: "#e5b83b", labelPriority: 1 },
+    overflow: { strokeStyle: "dashed", opacity: 0.4 },
+    "best-route": { aura: "#e5b83b", pinLabel: true },
   },
   edges: { "best-route": { color: "#e5b83b", width: 3, glow: true } },
 };
 import { NodeAppearance } from "./render/node-appearance.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
-import { canDrawGraphs, NO_WEBGL_MESSAGE } from "./render/webgl-support.js";
 import { registerServiceWorker } from "./pwa.js";
 import { escapeHtml, querySelector as $ } from "./utils/dom.js";
 import {
@@ -73,7 +72,6 @@ const PAGE_SIZE = 150;
 const GRAPH_OVERRIDES = {
   direction: "RL",
   arrowEnd: "ingredient",
-  flowToward: "target", // edges run ingredient → product here
   viewMode: "tree",
   showCostInLabel: false,
   edgeQuantityLabels: "on",
@@ -179,6 +177,7 @@ class CraftablePage {
       container: $("#cy"),
       canvasWrapper: $("#cyWrap"),
       settings: this.graphSettings,
+      flowToward: "target", // edges run ingredient → product here
       handlers: {
         onNodeTap: (nodeId) => this.#onNodeTap(nodeId),
         onNodeDoubleTap: (nodeId) => this.#toggle(nodeId),
@@ -1299,19 +1298,11 @@ function writeStored(key, value) {
   }
 }
 
-function showFatalError(message) {
-  $("#graphEmpty").innerHTML = `<p>${escapeHtml(message)}</p>`;
-}
-
 const account = createAccountSession();
 mountSiteChrome({ page: "craftable", account });
-if (!canDrawGraphs()) {
-  showFatalError(NO_WEBGL_MESSAGE);
-} else {
-  const page = new CraftablePage(account);
-  if (["localhost", "127.0.0.1"].includes(location.hostname))
-    globalThis.gw2Craftable = page; // console access while developing
-  page.start();
-  account.restore();
-}
+const page = new CraftablePage(account);
+if (["localhost", "127.0.0.1"].includes(location.hostname))
+  globalThis.gw2Craftable = page; // console access while developing
+page.start();
+account.restore();
 registerServiceWorker();

@@ -5,6 +5,21 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
 
 ## Unreleased
 
+- **A new graph engine: Prismatrix 0.5.** The crafting, craftable and sandbox pages draw with Prismatrix's rebuilt
+  engine. Everything you could see before is still there (owned, cheaper, cycle, collapsed and Mystic Forge looks,
+  item cards, hover and selection lineage with its colours and flow, the legend highlight, flashes, the minimap, PNG
+  export), with tidier layouts: labels always have room, edges stop at a label instead of striking through it, and a
+  browser without WebGL2 still draws the graph (more slowly) instead of showing an error. A few looks changed or went:
+  - Node labels are one line (a second line, like "(have 3)" or the cost line, follows on the same line after a
+    dot), cut short with "…" past the wrap width (shown whole on hover).
+  - Retired settings: label fading and the label backdrop (labels are never hidden or crowded now), wrapping
+    (labels are cut short instead), edge curvature, the canvas background patterns (the graph sits on the page's
+    own background) and smooth-zoom tuning (zooming follows the wheel or trackpad). Saved values for them are dropped.
+  - Shapes, label positions and arrowheads Prismatrix doesn't draw move to the nearest it does: octagon becomes
+    hexagon, labels above, left or on the icon go below or beside, and every arrowhead shape but the dot is an arrow.
+  - Floating physics is for radial layouts; trees and the merged view spring back elastically when you drag.
+- The engine sandbox page runs on the new engine: its tuning tab and drag probes went with the old engine's
+  physics; determinism, layout timing and the render benchmark remain.
 - **The ribbon is gone: a View popover takes its place** (the **View** button in the header, or V). It holds the
   layout and style presets, what you're viewing (tree or merged, depth, path) and the everyday layout, style and
   recipe options. **All settings** opens Customize for every other look option, and App settings covers how the app

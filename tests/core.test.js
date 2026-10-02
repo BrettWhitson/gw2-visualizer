@@ -156,13 +156,34 @@ test("revision 3: saved single-colour edges move to the new default, where they 
   const { SettingsStore } = await import("../web/src/core/settings-store.js");
   const store = new SettingsStore();
   assert.equal(store.values.edgeColorMode, "source");
-  assert.equal(store.values.settingsRevision, 3);
+  assert.equal(store.values.settingsRevision, 4);
   assert.ok(!("ribbonCollapsed" in store.values), "the ribbon is gone");
 
   // Chosen again after the move, it stays.
   store.set("edgeColorMode", "neutral");
   const again = new SettingsStore();
   assert.equal(again.values.edgeColorMode, "neutral");
+});
+
+test("revision 4: looks Prismatrix 0.5 doesn't draw move to the nearest, and retired settings go", async () => {
+  installFakeLocalStorage({
+    "gw2ct.settings.v2": JSON.stringify({
+      settingsRevision: 3,
+      nodeShape: "octagon",
+      labelPosition: "left",
+      arrowShape: "chevron",
+      labelFadeZoom: 0.5,
+      canvasBackground: "dots",
+      smoothZoom: false,
+    }),
+  });
+  const { SettingsStore } = await import("../web/src/core/settings-store.js");
+  const store = new SettingsStore();
+  assert.equal(store.values.nodeShape, "hexagon");
+  assert.equal(store.values.labelPosition, "right");
+  assert.equal(store.values.arrowShape, "triangle");
+  for (const gone of ["labelFadeZoom", "canvasBackground", "smoothZoom"])
+    assert.ok(!(gone in store.values), gone);
 });
 
 test("layout and style presets are independent and keep what is being viewed", async () => {

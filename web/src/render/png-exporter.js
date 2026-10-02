@@ -37,7 +37,7 @@ export async function composeGraphPng({
     `${weight} ${px(size)}px "Segoe UI", system-ui, sans-serif`;
 
   const graphImage = await loadImage(
-    graphView.toPngDataUri({ scale, backgroundColor: UI_COLORS.canvas }),
+    await graphView.toPngDataUri({ scale, backgroundColor: UI_COLORS.canvas }),
   );
   const badgeImage = await loadImage(FORGE_BADGE_URI);
 

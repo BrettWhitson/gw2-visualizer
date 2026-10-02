@@ -35,7 +35,6 @@ export const POPOVER_GROUPS = [
       "showLabels",
       "showQuantities",
       "showCostInLabel",
-      "labelFadeZoom",
     ],
   },
   {
