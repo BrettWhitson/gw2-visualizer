@@ -18,6 +18,10 @@ All notable changes. Versions follow `0.MINOR.PATCH` until the first stable rele
   - Shapes, label positions and arrowheads Prismatrix doesn't draw move to the nearest it does: octagon becomes
     hexagon, labels above, left or on the icon go below or beside, and every arrowhead shape but the dot is an arrow.
   - Floating physics is for radial layouts; trees and the merged view spring back elastically when you drag.
+- **The merged view splits a shared item where its lines would cross:** an ingredient used by several recipes stays
+  one item wherever its lines have a clean path, and gets a copy beside a recipe whose line would cut across the
+  graph (hovering or tapping a copy is the item itself). Radial layouts show the tree view (each use its own item),
+  since every extra line there crossed the centre.
 - The engine sandbox page runs on the new engine: its tuning tab and drag probes went with the old engine's
   physics; determinism, layout timing and the render benchmark remain.
 - **The ribbon is gone: a View popover takes its place** (the **View** button in the header, or V). It holds the

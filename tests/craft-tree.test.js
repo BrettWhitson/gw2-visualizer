@@ -6,6 +6,7 @@ import {
   collectShoppingList,
   collectMissingCraftingLevels,
   walkTree,
+  drawnViewMode,
   getCollapseKey,
 } from "../web/src/model/craft-tree.js";
 import { TreeState } from "../web/src/model/tree-state.js";
@@ -186,6 +187,18 @@ test("collapse keys are per path in tree view and per entity in merged view", ()
   const node = { path: "r/1/0", kind: "item", entityId: 6 };
   assert.equal(getCollapseKey(node, "tree"), "r/1/0");
   assert.equal(getCollapseKey(node, "merged"), "item:6");
+});
+
+test("the merged view is drawn only in a directional layout: radial shows the tree", () => {
+  assert.equal(
+    drawnViewMode({ viewMode: "merged", direction: "BT" }),
+    "merged",
+  );
+  assert.equal(
+    drawnViewMode({ viewMode: "merged", direction: "radial" }),
+    "tree",
+  );
+  assert.equal(drawnViewMode({ viewMode: "tree", direction: "LR" }), "tree");
 });
 
 // ---------------------------------------------------------------- owned items

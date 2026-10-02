@@ -4,7 +4,7 @@ import {
   RARITY_ORDER,
   DISCIPLINE_COLORS,
 } from "../config/constants.js";
-import { getCollapseKey } from "./craft-tree.js";
+import { drawnViewMode, getCollapseKey } from "./craft-tree.js";
 
 /**
  * Projects the crafting tree onto the graph that's drawn:
@@ -17,7 +17,7 @@ import { getCollapseKey } from "./craft-tree.js";
  * @returns {import('../types.js').GraphModel}
  */
 export function buildGraphModel(root, { settings, gameData }) {
-  const isMerged = settings.viewMode === "merged";
+  const isMerged = drawnViewMode(settings) === "merged";
   const nodeIdOf = (treeNode) =>
     isMerged ? `${treeNode.kind}:${treeNode.entityId}` : treeNode.path;
   const nodesById = new Map(),
@@ -60,7 +60,7 @@ export function buildGraphModel(root, { settings, gameData }) {
         ownedQuantity: 0,
         isOwnedEnough: true, // until an occurrence isn't
         missingCraftingLevels: null,
-        collapseKey: getCollapseKey(treeNode, settings.viewMode),
+        collapseKey: getCollapseKey(treeNode, drawnViewMode(settings)),
         occurrenceCount: 0,
         isRoot: treeNode.depth === 0,
       };

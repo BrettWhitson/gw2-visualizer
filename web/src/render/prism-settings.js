@@ -1,3 +1,4 @@
+import { drawnViewMode } from "../model/craft-tree.js";
 import {
   FORGE_BADGE_URI,
   FORGE_COLOR,
@@ -163,7 +164,7 @@ export function modelOptions(s) {
         s.edgeQuantityLabels === "on" ||
         (s.edgeQuantityLabels === "auto" &&
           s.showQuantities &&
-          s.viewMode === "merged")
+          drawnViewMode(s) === "merged")
           ? "target"
           : "off",
     },
