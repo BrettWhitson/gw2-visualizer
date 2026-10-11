@@ -77,15 +77,6 @@ export class OptionsPanel {
     this.#applyFilter();
   }
 
-  /** Open one section and scroll it into view (e.g. "More in Customize" from a ribbon popout). */
-  revealGroup(groupId) {
-    this.#openGroups.add(groupId);
-    this.render();
-    this.element
-      .querySelector(`.cz-group[data-group="${groupId}"]`)
-      ?.scrollIntoView({ block: "start" });
-  }
-
   #visibilitySignature() {
     const values = this.settings.values;
     return this.#allOptions

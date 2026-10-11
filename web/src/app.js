@@ -11,7 +11,6 @@ import {
   CUSTOMIZE_GROUPS,
   Redraw,
   SETTINGS_GROUPS,
-  VIEW_OPTION_GROUPS,
 } from "./config/settings-schema.js";
 import { SettingsStore } from "./core/settings-store.js";
 import { RecentItems } from "./core/recent-items.js";
@@ -32,11 +31,11 @@ import { Tooltip } from "./ui/tooltip.js";
 import { DetailsPanel } from "./ui/details-panel.js";
 import { ShoppingListPanel } from "./ui/shopping-list-panel.js";
 import { SearchBox } from "./ui/search-box.js";
-import { Legend } from "./ui/legend.js";
+import { createLegend } from "./ui/legend-island.js";
 import { OptionsPanel } from "./ui/options-panel.js";
-import { Toolbar } from "./ui/toolbar.js";
-import { RibbonPopout } from "./ui/ribbon-popout.js";
-import { sectionResetKeys } from "./ui/ribbon-sections.js";
+import { ViewPopover } from "./ui/view-popover.js";
+import { KpiStrip } from "./ui/kpi-strip.js";
+import { Minimap } from "./ui/minimap.js";
 import { StatusBar, LoadingOverlay, SidePanel } from "./ui/app-chrome.js";
 import { ToastCenter } from "./ui/toast.js";
 import {
@@ -53,8 +52,11 @@ import { formatNumber } from "./utils/format.js";
  * that tie them together. Components never talk to each other directly — they call back into the app.
  *
  * Render pipeline:  TreeState + GameData + PriceBook ─CraftTreeBuilder→ TreeNode tree ─buildGraphModel→ GraphModel
- *                   ─NodeAppearance→ graph elements ─WebGLGraphView (Prism)→ canvas (+ legend / details / shopping list)
+ *                   ─NodeAppearance→ graph elements ─WebGLGraphView (Prismatrix)→ canvas (+ legend / details / shopping list)
  */
+/** Settings that show, hide or change the KPI strip and minimap. */
+const OVERLAY_SETTINGS = new Set(["showKpiStrip", "showMinimap", "priceBasis"]);
+
 export class CraftingTreeApp {
   /** @type {import('./types.js').TreeNode | null} */ tree = null;
   /** @type {import('./types.js').GraphModel} */ graph = {
@@ -119,7 +121,6 @@ export class CraftingTreeApp {
       handle: $("#panelHandle"),
       resizer: $("#panelResizer"),
       onResize: (width, isFinal) => {
-        this.graphView.resize();
         if (isFinal) this.settings.set("sidebarWidth", width);
       },
     });
@@ -134,7 +135,7 @@ export class CraftingTreeApp {
       context,
       panelActions,
     );
-    this.legend = new Legend($("#legend"), context, {
+    this.legend = createLegend($("#legend"), context, {
       onSelectionChange: (nodeIds, entries) =>
         this.#onLegendSelectionChange(nodeIds, entries),
       onFocusRequest: (nodeIds) => this.graphView.focusOn(nodeIds),
@@ -159,25 +160,25 @@ export class CraftingTreeApp {
       { groups: SETTINGS_GROUPS },
       optionCallbacks,
     );
-    this.ribbonPopout = new RibbonPopout($("#ribbonPopout"), this.settings, {
-      ...optionCallbacks,
-      onOpenInCustomize: (groupId) => {
-        this.openCustomizeTab();
-        this.customizePanel.revealGroup(groupId);
+    this.viewPopover = new ViewPopover({
+      button: $("#viewButton"),
+      settings: this.settings,
+      callbacks: {
+        ...optionCallbacks,
+        onPreset: (kind, name) => this.applyPreset(kind, name),
+        onStepDepth: (step) => this.stepDepth(step),
+        onOpenCustomize: () => this.openCustomizeTab(),
+        onOpenSettings: () => this.openSettings(),
       },
     });
     this.optionPanels = [
       this.customizePanel,
       this.settingsPanel,
-      this.ribbonPopout,
+      this.viewPopover.panel,
     ];
-    this.toolbar = new Toolbar($("#toolbar"), this.settings, {
-      onSettingChange: (key, value, redraw) =>
-        this.changeSetting(key, value, redraw),
-      onPreset: (kind, name) => this.applyPreset(kind, name),
-      onSectionReset: (sectionId) => this.resetSection(sectionId),
-      onSectionToggle: (sectionId, button) =>
-        this.ribbonPopout.toggle(sectionId, button),
+    this.kpiStrip = new KpiStrip($("#kpiStrip"), {
+      priceBook: this.priceBook,
+      settings: this.settings,
     });
     this.searchBox = new SearchBox({
       input: $("#search"),
@@ -189,7 +190,6 @@ export class CraftingTreeApp {
     });
     this.graphView = new WebGLGraphView({
       container: $("#cy"),
-      canvasWrapper: $("#cyWrap"),
       settings: this.settings,
       handlers: {
         onNodeTap: (nodeId, event) => this.#onNodeTap(nodeId, event),
@@ -198,13 +198,24 @@ export class CraftingTreeApp {
         onBackgroundTap: () => this.selectNode(null),
         onNodeHoverStart: (nodeId, event) =>
           this.#onNodeHoverStart(nodeId, event),
-        onNodeHoverEnd: () => {
-          this.graphView.clearLineage();
-          this.tooltip.hide();
-        },
+        onNodeHoverEnd: () => this.tooltip.hide(),
         onPointerMove: (event) => this.tooltip.moveTo(event),
         onViewportChange: () => this.tooltip.hide(),
       },
+    });
+    this.minimap = new Minimap(this.graphView, $("#cyWrap"), {
+      colorOf: (nodeId) => {
+        const node = this.graph.nodesById.get(nodeId);
+        return node
+          ? this.appearance.color(node, this.tree?.effectiveCost || 0)
+          : null;
+      },
+      onMove: () => this.tooltip.hide(),
+    });
+    // Their switches (Customize → Canvas, the View popover) redraw nothing in the graph, so follow them here.
+    this.settings.onChange(({ keys }) => {
+      if (keys.some((key) => OVERLAY_SETTINGS.has(key)))
+        this.#refreshOverlays();
     });
   }
 
@@ -212,7 +223,7 @@ export class CraftingTreeApp {
     this.#bindGlobalControls();
     // Owned items change quantities and costs: redraw when the account connects, refreshes or goes.
     const syncOwnedToggle = () => {
-      // The ribbon pill, the Recipes popout and Settings each have one.
+      // The View popover and Settings each have one.
       for (const input of $$('[data-setting="useOwned"]'))
         input.disabled = !this.account.isReady;
     };
@@ -231,16 +242,11 @@ export class CraftingTreeApp {
         this.#render({ anchorNodeId: this.#anchorNodeId() });
     });
     this.optionPanels.forEach((panel) => panel.render());
-    this.toolbar.sync();
-    // Phones start with the graph uncovered: toolbar and panel collapsed (for this visit only; the handles open them).
+    // Phones start with the graph uncovered: the side panel collapsed (for this visit only; its handle opens it).
     if (globalThis.matchMedia?.("(max-width: 700px)").matches)
-      Object.assign(this.settings.values, {
-        ribbonCollapsed: true,
-        sidebarOpen: false,
-      });
+      this.settings.setMany({ sidebarOpen: false }, { persist: false });
     this.sidePanel.setWidth(this.settings.values.sidebarWidth);
     this.sidePanel.setOpen(this.settings.values.sidebarOpen);
-    this.#applyRibbonState();
     $("#cy").addEventListener("keydown", (event) => this.#onGraphKey(event));
     this.legend.update(this.graph.nodesById, 0);
     if (!(await this.#loadGameData())) return;
@@ -264,7 +270,7 @@ export class CraftingTreeApp {
     this.searchBox.setText(item.name);
     document.title = `${item.name} — ${SITE_TITLE}`;
     this.#syncLocationHash();
-    this.#render({ fit: "smart", grow: true });
+    this.#render({ fit: "smart" });
     this.selectNode(this.graphView.rootNodeId);
   }
 
@@ -275,7 +281,7 @@ export class CraftingTreeApp {
     this.statusBar.setBusy(false); // …whose loading indicator would otherwise stay on
     this.treeState.clear();
     this.tooltip.hide();
-    this.ribbonPopout.close({ restoreFocus: false });
+    this.viewPopover.close();
     this.legend.clearSelection();
     this.graphView.clear();
     this.tree = null;
@@ -283,6 +289,7 @@ export class CraftingTreeApp {
     this.legend.update(this.graph.nodesById, 0);
     this.detailsPanel.render(null);
     this.shoppingListPanel.render(null);
+    this.#refreshOverlays();
     this.statusBar.setCounts(0, 0);
     $("#rootQty").value = this.treeState.rootQuantity;
     this.#syncRootControls();
@@ -345,7 +352,7 @@ export class CraftingTreeApp {
     this.#render({ anchorNodeId: nodeId });
   }
 
-  /** Depth stepper (−/+ beside the ribbon slider). */
+  /** Depth stepper (the View popover's −/+, and [ / ]). */
   stepDepth(step) {
     const depth = Math.max(
       1,
@@ -386,8 +393,6 @@ export class CraftingTreeApp {
     }
     if (key === "maxDepth") this.treeState.resetExpansion();
     this.graphView.syncSettings();
-    if (key === "canvasBackground") this.graphView.syncBackground();
-    this.toolbar.sync();
     for (const panel of this.optionPanels) {
       panel.syncValues();
       panel.refreshStatus();
@@ -397,9 +402,7 @@ export class CraftingTreeApp {
       if (redraw === Redraw.fit) this.#render({ fit: true });
       else if (redraw === Redraw.relayout)
         this.#render({ anchorNodeId: this.#anchorNodeId() });
-      else if (redraw === Redraw.restyle) this.graphView.applyStylesheet();
     }
-    this.legend.update(this.graph.nodesById, this.tree?.effectiveCost || 0);
   }
 
   /** @param {'layout' | 'style'} kind */
@@ -416,47 +419,12 @@ export class CraftingTreeApp {
 
   #afterBulkSettingsChange() {
     this.optionPanels.forEach((panel) => panel.render());
-    this.toolbar.sync();
-    this.#applyRibbonState();
-    this.graphView.syncBackground();
-    this.graphView.applyStylesheet();
     if (this.treeState.hasRoot) this.#render({ fit: true });
-    else this.legend.update(this.graph.nodesById, 0);
-  }
-
-  /** A ribbon section's ↺: its controls and popout options back to defaults (Presets: both to Standard). */
-  resetSection(sectionId) {
-    if (sectionId === "presets") {
-      this.settings.applyPreset("layout", "Standard");
-      this.applyPreset("style", "Standard");
-      return;
-    }
-    const keys = sectionResetKeys(sectionId, VIEW_OPTION_GROUPS);
-    if (keys.includes("maxDepth") || keys.includes("viewMode"))
-      this.treeState.resetExpansion();
-    this.resetSettings(keys);
-  }
-
-  toggleRibbon() {
-    this.ribbonPopout.close({ restoreFocus: false });
-    this.settings.set("ribbonCollapsed", !this.settings.values.ribbonCollapsed);
-    this.#applyRibbonState();
-  }
-
-  #applyRibbonState() {
-    const isCollapsed = this.settings.values.ribbonCollapsed;
-    this.toolbar.setCollapsed(isCollapsed);
-    const handle = $("#ribbonHandle");
-    const action = isCollapsed ? "Show the toolbar" : "Hide the toolbar";
-    handle.setAttribute("aria-expanded", String(!isCollapsed));
-    handle.title = `${action} (T)`;
-    handle.querySelector(".sr-only").textContent = action;
   }
 
   toggleSidePanel() {
     this.settings.set("sidebarOpen", !this.settings.values.sidebarOpen);
     this.sidePanel.setOpen(this.settings.values.sidebarOpen);
-    this.graphView.resize();
   }
 
   openCustomizeTab() {
@@ -629,9 +597,9 @@ export class CraftingTreeApp {
 
   /**
    * Rebuild tree → graph → elements and hand them to the graph view, then refresh the side panels.
-   * @param {{ fit?: boolean | 'smart', anchorNodeId?: string | null, grow?: boolean }} [options]
+   * @param {{ fit?: boolean | 'smart', anchorNodeId?: string | null }} [options]
    */
-  #render({ fit = false, anchorNodeId = null, grow = false } = {}) {
+  #render({ fit = false, anchorNodeId = null } = {}) {
     if (!this.treeState.hasRoot) return;
     $("#empty").hidden = true;
 
@@ -654,10 +622,8 @@ export class CraftingTreeApp {
     this.graphView.render({
       nodeElements,
       edgeElements,
-      nodesById: this.graph.nodesById,
       fit,
       anchorNodeId,
-      grow,
     });
     this.statusBar.setCounts(this.graph.nodes.length, this.graph.edges.length);
     this.#refreshPanels();
@@ -700,6 +666,15 @@ export class CraftingTreeApp {
       this.graph.nodesById.get(this.treeState.selectedNodeId) ?? null,
     );
     this.shoppingListPanel.render(this.tree);
+    this.#refreshOverlays();
+  }
+
+  /** The KPI strip and minimap over the graph. */
+  #refreshOverlays() {
+    const hasGraph = this.treeState.hasRoot && this.graph.nodes.length > 0;
+    this.kpiStrip.render(hasGraph ? this.tree : null);
+    this.minimap.setVisible(hasGraph && this.settings.values.showMinimap);
+    this.minimap.redraw();
   }
 
   /** Fetch trading-post prices for everything in the tree; update in place when they arrive. */
@@ -745,7 +720,6 @@ export class CraftingTreeApp {
   #setDepthLimit(depth) {
     this.treeState.resetExpansion();
     this.settings.set("maxDepth", depth);
-    this.toolbar.sync();
     this.#render({ fit: true });
   }
 
@@ -763,7 +737,6 @@ export class CraftingTreeApp {
   }
 
   #onNodeHoverStart(nodeId, event) {
-    this.graphView.showLineage(nodeId);
     const node = this.graph.nodesById.get(nodeId);
     if (node && this.settings.values.showTooltips)
       this.tooltip.show(node, event);
@@ -886,8 +859,8 @@ export class CraftingTreeApp {
       case "toggle-sidebar":
         this.toggleSidePanel();
         break;
-      case "toggle-ribbon":
-        this.toggleRibbon();
+      case "view-options":
+        this.viewPopover.toggle();
         break;
       case "zoom-in":
         this.graphView.zoomBy(1.3);
@@ -952,7 +925,7 @@ export class CraftingTreeApp {
       "/": () => this.searchBox.focus(),
       ",": () => this.openSettings(),
       "?": () => this.openSettings("shortcutsSection"),
-      t: () => this.toggleRibbon(),
+      v: () => this.viewPopover.toggle(),
       p: () => this.toggleSidePanel(),
       x: () => this.clearGraph(),
       "[": () => this.stepDepth(-1),
@@ -963,7 +936,7 @@ export class CraftingTreeApp {
       "=": () => this.graphView.zoomBy(1.3),
       "-": () => this.graphView.zoomBy(1 / 1.3),
       Escape: () => {
-        if (this.ribbonPopout.isOpen) this.ribbonPopout.close();
+        if (this.viewPopover.isOpen) this.viewPopover.close();
         else if (!this.legend.clearSelection()) this.selectNode(null);
       },
     };

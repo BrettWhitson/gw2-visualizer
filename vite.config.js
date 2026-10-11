@@ -3,6 +3,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { VitePWA } from "vite-plugin-pwa";
 
 /** The deployed pages, one build input each. lab/ holds development-only pages, served by `vite` but not built. */
@@ -46,20 +47,22 @@ function noInlineScripts() {
 const projectRoot = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * `npm run dev:local` (mode "engines": Vite reserves "local") runs against the Prism and Tether checkouts beside this
- * repo instead of the pinned packages, so an edit in ../prism/src or ../tether/src reloads the app at once.
+ * `npm run dev:local` (mode "engines": Vite reserves "local") runs against the Prismatrix checkout beside this repo
+ * instead of the pinned package, so an edit in ../prismatrix/src reloads the app at once.
  */
 function localEngines(mode) {
   if (mode !== "engines") return {};
-  const engines = ["prism", "tether"].map((name) => ({
-    find: new RegExp(`^${name}/`),
-    replacement: `${path.resolve(projectRoot, "..", name, "src")}/`,
-  }));
+  const src = path.resolve(projectRoot, "..", "prismatrix", "src");
   return {
-    resolve: { alias: engines },
-    server: {
-      fs: { allow: [projectRoot, ...engines.map((e) => e.replacement)] },
+    resolve: {
+      alias: [
+        // Entry points (folders), then any module path.
+        { find: /^prismatrix$/, replacement: `${src}/index.js` },
+        { find: /^prismatrix\/layout$/, replacement: `${src}/layout.js` },
+        { find: /^prismatrix\//, replacement: `${src}/` },
+      ],
     },
+    server: { fs: { allow: [projectRoot, src] } },
   };
 }
 
@@ -87,6 +90,7 @@ export default defineConfig(({ mode }) => ({
   },
   preview: { port: 8642, strictPort: true },
   plugins: [
+    svelte(),
     devCsp(),
     noInlineScripts(),
     VitePWA({

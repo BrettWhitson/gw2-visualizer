@@ -3,6 +3,63 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `web/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
+## 0.12.0 — 2026-10-10
+
+- **A new graph engine: Prismatrix 0.5, rewritten from scratch.** The crafting, craftable and sandbox pages draw with
+  Prismatrix's new engine, written anew rather than built on the 0.4 code. Everything you could see before is still
+  there (owned, cheaper, cycle, collapsed and Mystic Forge looks, item cards, hover and selection lineage with its
+  colours and flow, the legend highlight, flashes, the minimap, PNG export), with tidier layouts: labels always have
+  room, edges stop at a label instead of striking through it, and a browser without WebGL2 still draws the graph (more
+  slowly) instead of showing an error. A few looks changed or went:
+  - Node labels are one line (a second line, like "(have 3)" or the cost line, follows on the same line after a
+    dot), cut short with "…" past the wrap width (shown whole on hover).
+  - Retired settings: label fading and the label backdrop (labels are never hidden or crowded now), wrapping
+    (labels are cut short instead), edge curvature, the canvas background patterns (the graph sits on the page's
+    own background) and smooth-zoom tuning (zooming follows the wheel or trackpad). Saved values for them are dropped.
+  - Shapes, label positions and arrowheads Prismatrix doesn't draw move to the nearest it does: octagon becomes
+    hexagon, labels above, left or on the icon go below or beside, and every arrowhead shape but the dot is an arrow.
+  - Floating physics is for radial layouts; trees and the merged view spring back elastically when you drag.
+- **The merged view splits a shared item where its lines would cross:** an ingredient used by several recipes stays
+  one item wherever its lines have a clean path, and gets a copy beside a recipe whose line would cut across the
+  graph (hovering or tapping a copy is the item itself). Radial layouts show the tree view (each use its own item),
+  since every extra line there crossed the centre.
+- The engine sandbox page runs on the new engine: its tuning tab and drag probes went with the old engine's
+  physics; determinism, layout timing and the render benchmark remain.
+- **The ribbon is gone: a View popover takes its place** (the **View** button in the header, or V). It holds the
+  layout and style presets, what you're viewing (tree or merged, depth, path) and the everyday layout, style and
+  recipe options. **All settings** opens Customize for every other look option, and App settings covers how the app
+  behaves. The graph gets the room the ribbon took.
+- **Edges show where each ingredient comes from**: crafted, Mystic Forge, bought, currency or generic, each in its own
+  colour, with a key in the legend (click it to highlight those ingredients); a lit path keeps those colours. It's the new default under Customize →
+  Edges → Color ("Where it comes from"); saved single-colour edges move to it once, and the other colourings are
+  still there.
+- **A KPI strip over the graph** for the item you're crafting: craft cost, what buying it on the Trading Post costs,
+  what selling it brings after the 15% fee, and the profit or loss with its margin.
+- **A minimap** in the graph's bottom-right corner (not on phones): the whole tree at a glance, with the visible area
+  framed; click or drag it to move the view. The KPI strip, the minimap and the legend each have a switch under
+  Customize → Canvas and in the View popover.
+- **Fixed: on phones, the toolbar and side panel stayed collapsed on later visits.** They start collapsed on a small
+  screen for that visit only, but the next change to any setting used to save that too.
+- **Faster, steadier graphs** (Prismatrix 0.4.0, which combines the former Prism 0.3.2 and Tether 0.3.1): layouts are about twice as fast on big trees (10,000 items:
+  1.8 s instead of 4.6 s) and floating layouts 8–11× faster, with the same positions. In Floating physics a touch no
+  longer sets a big graph drifting: dragging an item tugs what it's linked to while the far graph stays put, and it
+  all settles and stops after you let go (radial graphs respond to a drag again instead of turning as a whole).
+  Panning onto new item cards is smoother.
+- **Items as cards** (Customize → Nodes → Items as): wide cards with the item's name, quantity and where it comes from,
+  its cost in coins and what you own, a rarity stripe and dots where the lines meet. Icons stay the default. Card
+  links chooses dots, arrowheads or both. Drawn by Prismatrix.
+- The Characters page is now a Svelte app (phase 3 of the move to Svelte, first page). It looks and works as before:
+  the list, each character's armory, the view choices (focus and scroll kept when they redraw) and the gear tooltips.
+- The legend is the site's first Svelte component (phase 2 of the move to Svelte). It looks and works as before, and
+  now follows setting changes on its own.
+- Development: the two graph engines are now one, [Prismatrix](https://github.com/BrettWhitson/prismatrix): one
+  package (`prismatrix`, and `prismatrix/layout` for layout and physics alone), one pin, and `npm run dev:local` runs
+  against `../prismatrix`.
+- Development: Svelte 5, with `svelte-check`, ESLint and Prettier covering `.svelte` files in `npm run verify`.
+  Settings announce their changes (`SettingsStore.onChange`), `settings.svelte.js` mirrors them as Svelte state,
+  `islands.js` mounts a component inside a page that isn't Svelte yet, and `GraphCanvas.svelte` hosts Prismatrix for the
+  pages that move over next.
+
 ## 0.11.0 — 2026-09-30
 
 - **Fixed: costs missing on a return visit.** With prices already saved in the browser and still fresh (always the

@@ -9,12 +9,12 @@ const prefersReducedMotion =
   globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 
 export const DEFAULT_SETTINGS = Object.freeze({
-  // what you're looking at (ribbon)
+  // what you're looking at (the View popover)
   viewMode: "tree", // 'tree' = one node per occurrence, 'merged' = shared ingredients combined
   // Layout: a directional tree whose crafting flow (raw → result) runs TB | LR | BT | RL (BT = result on top), or
   // "radial" (result in the centre, one ring per level).
   direction: "BT",
-  settingsRevision: 2, // bumped when saved values need migrating (see migrateLegacySettings)
+  settingsRevision: 4, // bumped when saved values need migrating (see migrateLegacySettings)
   maxDepth: UNLIMITED_DEPTH, // levels expanded by default; UNLIMITED_DEPTH = all
   includeForgePromotions: false, // treat Mystic Forge material promotions (T6 mats, lodestones…) as crafts
   wikiSources: true, // look up vendors & containers on the wiki when an item's details are opened
@@ -23,8 +23,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   useOwned: true, // with a connected account: use owned items first, and only buy or craft the rest
   sidebarOpen: true,
   sidebarWidth: 360, // px, dragged with the side panel's edge
-  ribbonCollapsed: false,
-  // physics (Tether, layout/): "elastic" = the graph holds its layout and a dragged node pulls its links, fading hop
+  // physics (Prismatrix's layout layer): "elastic" = the graph holds its layout and a dragged node pulls its links, fading hop
   // by hop; "floating" = the whole graph is a live force simulation, like Obsidian's graph view
   physicsMode: "elastic",
   // forces (layout/physics.js and layout/elastic.js)
@@ -36,6 +35,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   preferMysticForge: false,
   // nodes
   nodeColorMode: "rarity", // rarity | source | discipline | depth | cost
+  nodeLook: "icon", // icon | card (Prismatrix draws items as wide cards with their text inside)
+  cardConnectors: "dots", // dots | arrows | both: where edges meet a card
   nodeShape: "round-rectangle",
   nodeSizeScale: 1,
   rootSizeScale: 1.35,
@@ -49,13 +50,10 @@ export const DEFAULT_SETTINGS = Object.freeze({
   labelPosition: "auto",
   labelFontScale: 1,
   labelWrapScale: 1,
-  labelOverflow: "wrap", // wrap | ellipsis
-  labelBackdrop: true,
-  labelFadeZoom: 0.35, // labels fade out below this zoom level (0 = never fade)
   // edges
   edgeRouting: "taxi", // taxi | round-taxi | bezier | straight
   edgeWidth: 1.6,
-  edgeColorMode: "neutral", // neutral | child | parent
+  edgeColorMode: "source", // source (where the ingredient comes from) | neutral | child | parent
   edgeColor: "#3b4558",
   edgeOpacity: 1,
   showArrows: true,
@@ -64,7 +62,6 @@ export const DEFAULT_SETTINGS = Object.freeze({
   arrowScale: 0.8,
   edgeLineStyle: "solid", // solid | dashed | dotted
   edgeCornerRadius: 10, // rounded orthogonal routing
-  edgeCurvature: 1, // curved routing: how far edges bend
   edgeQuantityLabels: "auto", // auto | on | off
   lineageUpColor: "#d6a74a", // hover/selection: path to the root
   lineageDownColor: "#62a4da", // hover/selection: ingredients
@@ -88,10 +85,9 @@ export const DEFAULT_SETTINGS = Object.freeze({
   animationDuration: 450,
   animationEasing: "smooth",
   growNewTrees: true,
-  canvasBackground: "gradient", // gradient | dots | grid | plain
   showLegend: true,
-  smoothZoom: !prefersReducedMotion,
-  zoomSpeed: 1,
+  showKpiStrip: true, // the root item's cost and profit over the graph
+  showMinimap: true, // the overview in the graph's corner (never on phones)
 });
 
 /** Pre-1.1 setting keys → current keys. */
@@ -117,8 +113,6 @@ export const LEGACY_SETTING_KEYS = {
   labelPos: "labelPosition",
   fontScale: "labelFontScale",
   labelWidth: "labelWrapScale",
-  labelWrap: "labelOverflow",
-  labelBg: "labelBackdrop",
   edgeStyle: "edgeRouting",
   edgeW: "edgeWidth",
   edgeColorBy: "edgeColorMode",
@@ -137,7 +131,6 @@ export const LEGACY_SETTING_KEYS = {
   animMs: "animationDuration",
   easing: "animationEasing",
   grow: "growNewTrees",
-  bg: "canvasBackground",
   legend: "showLegend",
 };
 
@@ -207,7 +200,22 @@ export function migrateLegacySettings(saved) {
     const flipped = { TB: "BT", BT: "TB", LR: "RL", RL: "LR" };
     saved.direction = flipped[saved.direction] ?? saved.direction;
   }
-  saved.settingsRevision = 2;
+  // Revision 3: edges are coloured by where the ingredient comes from by default. "Single color" was the old
+  // default, so move saved ones over (someone who picks it again keeps it).
+  if ((saved.settingsRevision ?? 1) < 3 && saved.edgeColorMode === "neutral")
+    saved.edgeColorMode = "source";
+  // Revision 4: the graph engine became Prismatrix 0.5. Shapes, label places and arrowheads it doesn't draw move
+  // to the nearest it does; label fading and wrapping, the background patterns, curvature and zoom smoothing went
+  // (their keys are dropped with any other unknown key).
+  if ((saved.settingsRevision ?? 1) < 4) {
+    if (saved.nodeShape === "octagon") saved.nodeShape = "hexagon";
+    const places = { above: "below", left: "right", center: "below" };
+    if (saved.labelPosition in places)
+      saved.labelPosition = places[saved.labelPosition];
+    if (saved.arrowShape && saved.arrowShape !== "circle")
+      saved.arrowShape = "triangle";
+  }
+  saved.settingsRevision = 4;
   // Layout engines went: the old "Concentric rings" and "Force-directed" engines became the radial layout (the
   // force web floats, as it did). Ranking, alignment and the drag-physics switch went with them.
   if (saved.layoutEngine === "concentric" || saved.engine === "concentric")
@@ -250,8 +258,8 @@ export const Redraw = Object.freeze({
  * Option definitions, split between two panels:
  *  - CUSTOMIZE_GROUPS (side panel "Customize"): how the graph *looks*. Presets only ever touch these.
  *  - SETTINGS_GROUPS (the Settings dialog): how the app *behaves*: recipes & prices, interaction, animation.
- * `visibleWhen` hides options that don't apply; `hint` becomes the tooltip. The ribbon reuses these definitions for
- * any setting it shows (labels, ranges, redraw level).
+ * `visibleWhen` hides options that don't apply; `hint` becomes the tooltip. The View popover reuses these
+ * definitions for the settings it shows (labels, ranges, redraw level).
  */
 export const CUSTOMIZE_GROUPS = [
   {
@@ -297,7 +305,7 @@ export const CUSTOMIZE_GROUPS = [
         label: "Mode",
         type: "select",
         redraw: Redraw.fit,
-        hint: "Elastic: the graph holds its shape, and a dragged item pulls the items linked to it, less with every link. Floating: the whole graph is a live simulation that sways and settles around whatever you move.",
+        hint: "Elastic: the graph holds its shape, and a dragged item pulls the items linked to it, springing back when let go. Floating (radial layouts): the whole graph is a live simulation that sways and settles around whatever you move.",
         choices: [
           ["elastic", "Elastic"],
           ["floating", "Floating"],
@@ -367,6 +375,29 @@ export const CUSTOMIZE_GROUPS = [
         ],
       },
       {
+        key: "nodeLook",
+        label: "Items as",
+        type: "select",
+        redraw: Redraw.relayout,
+        hint: "Icons: square item icons with their name beside them. Cards: wide cards with the name, quantity, source, cost and what you own inside.",
+        choices: [
+          ["icon", "Icons"],
+          ["card", "Cards"],
+        ],
+      },
+      {
+        key: "cardConnectors",
+        label: "Card links",
+        type: "select",
+        redraw: Redraw.restyle,
+        hint: "Where lines meet a card: port dots, arrowheads, or both.",
+        choices: [
+          ["dots", "Dots"],
+          ["arrows", "Arrows"],
+          ["both", "Both"],
+        ],
+      },
+      {
         key: "nodeShape",
         label: "Shape",
         type: "select",
@@ -376,7 +407,6 @@ export const CUSTOMIZE_GROUPS = [
           ["rectangle", "Square"],
           ["ellipse", "Circle"],
           ["hexagon", "Hexagon"],
-          ["octagon", "Octagon"],
           ["round-diamond", "Diamond"],
         ],
       },
@@ -448,17 +478,6 @@ export const CUSTOMIZE_GROUPS = [
         redraw: Redraw.relayout,
       },
       {
-        key: "labelFadeZoom",
-        label: "Fade below zoom",
-        hint: "Labels fade out when zoomed out past this level (0% = always shown). The root, selected, highlighted and hovered nodes stay labelled.",
-        type: "range",
-        min: 0,
-        max: 1.2,
-        step: 0.05,
-        redraw: Redraw.restyle,
-        unit: "%",
-      },
-      {
         key: "labelPosition",
         label: "Position",
         type: "select",
@@ -466,10 +485,7 @@ export const CUSTOMIZE_GROUPS = [
         choices: [
           ["auto", "Auto"],
           ["below", "Below"],
-          ["above", "Above"],
-          ["right", "Right"],
-          ["left", "Left"],
-          ["center", "On icon"],
+          ["right", "Beside"],
         ],
       },
       {
@@ -491,22 +507,6 @@ export const CUSTOMIZE_GROUPS = [
         step: 0.1,
         redraw: Redraw.relayout,
         unit: "×",
-      },
-      {
-        key: "labelOverflow",
-        label: "Long names",
-        type: "select",
-        redraw: Redraw.relayout,
-        choices: [
-          ["wrap", "Wrap"],
-          ["ellipsis", "Truncate…"],
-        ],
-      },
-      {
-        key: "labelBackdrop",
-        label: "Label backdrop",
-        type: "checkbox",
-        redraw: Redraw.restyle,
       },
     ],
   },
@@ -541,7 +541,9 @@ export const CUSTOMIZE_GROUPS = [
         label: "Color",
         type: "select",
         redraw: Redraw.restyle,
+        hint: "Where it comes from: each edge takes the colour of its ingredient's source (crafted, Mystic Forge, bought, currency), shown in the legend.",
         choices: [
+          ["source", "Where it comes from"],
           ["neutral", "Single color"],
           ["child", "Ingredient color"],
           ["parent", "Product color"],
@@ -587,19 +589,6 @@ export const CUSTOMIZE_GROUPS = [
         visibleWhen: (s) => s.edgeRouting === "round-taxi",
       },
       {
-        key: "edgeCurvature",
-        label: "Curvature",
-        hint: "How far curved edges bend (0 = straight). Applies to Curved routing, and to all edges in radial layouts.",
-        type: "range",
-        min: 0,
-        max: 2,
-        step: 0.05,
-        redraw: Redraw.restyle,
-        unit: "×",
-        visibleWhen: (s) =>
-          s.edgeRouting === "bezier" || s.direction === "radial",
-      },
-      {
         key: "showArrows",
         label: "Arrowheads",
         type: "checkbox",
@@ -612,13 +601,8 @@ export const CUSTOMIZE_GROUPS = [
         redraw: Redraw.restyle,
         visibleWhen: (s) => s.showArrows,
         choices: [
-          ["triangle", "Triangle"],
-          ["vee", "Vee"],
-          ["chevron", "Chevron"],
-          ["triangle-backcurve", "Swept"],
+          ["triangle", "Arrow"],
           ["circle", "Dot"],
-          ["square", "Square"],
-          ["tee", "Tee"],
         ],
       },
       {
@@ -766,22 +750,24 @@ export const CUSTOMIZE_GROUPS = [
     title: "Canvas",
     options: [
       {
-        key: "canvasBackground",
-        label: "Background",
-        type: "select",
-        redraw: Redraw.none,
-        choices: [
-          ["gradient", "Vignette"],
-          ["dots", "Dot grid"],
-          ["grid", "Blueprint grid"],
-          ["plain", "Plain"],
-        ],
-      },
-      {
         key: "showLegend",
         label: "Legend",
         type: "checkbox",
         redraw: Redraw.none,
+      },
+      {
+        key: "showKpiStrip",
+        label: "KPI strip",
+        type: "checkbox",
+        redraw: Redraw.none,
+        hint: "Craft cost, Trading Post price, profit after fees and margin for the item you're crafting, over the graph.",
+      },
+      {
+        key: "showMinimap",
+        label: "Minimap",
+        type: "checkbox",
+        redraw: Redraw.none,
+        hint: "An overview of the whole graph in its corner; click or drag it to move the view. Not shown on phones.",
       },
     ],
   },
@@ -863,24 +849,6 @@ export const SETTINGS_GROUPS = [
         type: "checkbox",
         redraw: Redraw.none,
       },
-      {
-        key: "smoothZoom",
-        label: "Smooth zoom",
-        hint: "Mouse-wheel and pinch zoom glide instead of jumping",
-        type: "checkbox",
-        redraw: Redraw.none,
-      },
-      {
-        key: "zoomSpeed",
-        label: "Zoom speed",
-        type: "range",
-        min: 0.25,
-        max: 3,
-        step: 0.05,
-        redraw: Redraw.none,
-        unit: "×",
-        visibleWhen: (s) => s.smoothZoom,
-      },
     ],
   },
   {
@@ -932,7 +900,7 @@ export const SETTINGS_GROUPS = [
 /** Every panel option (Customize + Settings). */
 export const VIEW_OPTION_GROUPS = [...CUSTOMIZE_GROUPS, ...SETTINGS_GROUPS];
 
-/** Settings changed only from the ribbon. */
+/** Settings changed only from the View popover's top rows (not option panels). */
 const RIBBON_ONLY_OPTIONS = [
   { key: "viewMode", label: "View", redraw: Redraw.fit },
   {
@@ -948,7 +916,7 @@ const RIBBON_ONLY_OPTIONS = [
   { key: "pathMode", label: "Path", redraw: Redraw.fit },
 ];
 
-/** Ribbon "Path" choices (see PathPlanner). */
+/** "Path" choices in the View popover (see PathPlanner). */
 export const PATH_MODES = {
   standard: {
     label: "Craft all",
@@ -983,9 +951,7 @@ export function formatOptionValue(option, value) {
     case "px":
       return `${number}px`;
     case "%":
-      return number === 0 && option.key === "labelFadeZoom"
-        ? "never"
-        : `${Math.round(number * 100)}%`;
+      return `${Math.round(number * 100)}%`;
     case "force":
       return number.toFixed(number >= 2 || number === 0 ? 1 : 2);
     case "×":
@@ -1002,7 +968,7 @@ export function formatOptionValue(option, value) {
  *  - layout: the Layout and Forces sections (engine, direction, alignment, ordering; center / repel / link forces);
  *  - style:  how things look (Nodes, Labels, Edges, Mystic Forge, Highlight, Canvas).
  * Applying a preset resets its slice to defaults, then applies its values; the other slice is untouched. Filters,
- * what you're viewing (ribbon: view, depth, path) and app behaviour (Settings) are never part of a preset.
+ * what you're viewing (View popover: view, depth, path) and app behaviour (Settings) are never part of a preset.
  */
 const groupKeys = (...ids) =>
   CUSTOMIZE_GROUPS.filter((group) => ids.includes(group.id)).flatMap((group) =>
@@ -1051,7 +1017,6 @@ export const PRESET_KINDS = {
         values: {
           nodeSizeScale: 0.7,
           labelFontScale: 0.85,
-          labelFadeZoom: 0.75,
           nodeBorderWidth: 2,
           edgeRouting: "straight",
           edgeWidth: 1,
@@ -1064,18 +1029,15 @@ export const PRESET_KINDS = {
           nodeSizeScale: 1.35,
           rootSizeScale: 1.7,
           labelFontScale: 1.25,
-          labelFadeZoom: 0.15,
           tintNodeFill: true,
           edgeRouting: "bezier",
           edgeColorMode: "child",
           edgeWidth: 2.2,
-          canvasBackground: "dots",
         },
       },
       Blueprint: {
         description: "Technical drawing: craft-source colours on a grid.",
         values: {
-          canvasBackground: "grid",
           nodeColorMode: "source",
           nodeShape: "rectangle",
           tintNodeFill: true,
@@ -1084,7 +1046,6 @@ export const PRESET_KINDS = {
           edgeWidth: 1.4,
           edgeLineStyle: "dashed",
           showArrows: false,
-          labelBackdrop: false,
           forgeIndicator: "outline",
         },
       },
@@ -1097,7 +1058,6 @@ export const PRESET_KINDS = {
           edgeColorMode: "child",
           edgeWidth: 2.4,
           showBuyCheaperHint: true,
-          labelFadeZoom: 0.25,
         },
       },
       "Forge focus": {
@@ -1123,8 +1083,6 @@ export const PRESET_KINDS = {
           edgeColorMode: "child",
           edgeOpacity: 0.5,
           showArrows: false,
-          canvasBackground: "dots",
-          labelFadeZoom: 0.55,
         },
       },
       Minimal: {
@@ -1132,12 +1090,10 @@ export const PRESET_KINDS = {
         values: {
           nodeShape: "ellipse",
           nodeBorderWidth: 1.5,
-          labelBackdrop: false,
           edgeRouting: "straight",
           edgeWidth: 1,
           edgeOpacity: 0.6,
           showArrows: false,
-          canvasBackground: "plain",
           forgeIndicator: "outline",
           highlightForgeEdges: false,
           showBuyCheaperHint: false,

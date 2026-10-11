@@ -1,8 +1,8 @@
 /**
- * Entry point for the engine sandbox: developer tools for Prism and Tether (the prism and tether packages) on made-up
- * graphs. Tabs: the graph; the crafting page's layout and physics options; Tether's constants (tuning.js), live;
- * Prism's rendering options; automated probes and benchmarks; tools to poke the engines. Live engine stats stay
- * visible. Everything here is kept apart from the crafting page's settings (its own storage key).
+ * Entry point for the engine sandbox: developer tools for Prismatrix on made-up GW2-shaped graphs. Tabs: the graph;
+ * the crafting page's layout and physics options; Prismatrix's rendering options; benchmarks; tools to poke the
+ * engine. Live engine stats stay visible. Everything here is kept apart from the crafting page's settings (its own
+ * storage key).
  */
 import {
   CUSTOMIZE_GROUPS,
@@ -12,15 +12,12 @@ import {
 } from "./config/settings-schema.js";
 import { UI_COLORS } from "./config/constants.js";
 import { createAccountSession } from "./data/site-account.js";
-import { LayoutGraph } from "tether/layout-graph.js";
-import { runLayout } from "tether/run-layout.js";
-import { PHYSICS_TUNING, TUNING_OPTIONS } from "tether/tuning.js";
+import { layoutGraph } from "prismatrix/layout";
 import { registerServiceWorker } from "./pwa.js";
-import { canDrawGraphs } from "./render/webgl-support.js";
-import { layoutSettings } from "./render/prism-settings.js";
+import { layoutSettings, modelOptions } from "./render/prism-settings.js";
 import { WebGLGraphView } from "./render/webgl-graph-view.js";
 import { GRAPH_SHAPES, generateGraph } from "./sandbox/generate-graph.js";
-import { hopColor, hopDistances, movementByHops } from "./sandbox/probes.js";
+import { hopColor, hopDistances } from "./sandbox/probes.js";
 import { hash, sandboxElements } from "./sandbox/sandbox-elements.js";
 import { OptionsPanel } from "./ui/options-panel.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
@@ -68,7 +65,6 @@ const settings = {
   values: { ...DEFAULT_SETTINGS, ...saved.values },
   get: (key) => settings.values[key],
 };
-let tuning = { ...PHYSICS_TUNING, ...saved.tuning };
 
 let graph = null;
 let collapsed = new Set();
@@ -80,30 +76,29 @@ let shownEdges = [];
 let selectedId = null;
 let lastLayoutMs = 0;
 let panels = [];
+/** The renderer's latest frame stats (Prismatrix's FrameStats), and frames drawn so far. */
+let frame = null;
+let frames = 0;
 
 function start() {
   view = new WebGLGraphView({
     container: $("#cy"),
-    canvasWrapper: $("#cyWrap"),
     settings,
     handlers: {
       onNodeTap: (id) => select(id),
       onNodeDoubleTap: (id) => toggle(id),
       onNodeContextTap: (id) => view.pulse(id),
       onBackgroundTap: () => select(null),
-      onNodeHoverStart: (id, event) => {
-        view.showLineage(id);
-        showTooltip(id, event);
-      },
-      onNodeHoverEnd: () => {
-        view.clearLineage();
-        $("#sbTooltip").hidden = true;
-      },
+      onNodeHoverStart: (id, event) => showTooltip(id, event),
+      onNodeHoverEnd: () => ($("#sbTooltip").hidden = true),
       onPointerMove: (event) => moveTooltip(event),
       onViewportChange: () => ($("#sbTooltip").hidden = true),
     },
   });
-  view.setPhysicsTuning(tuning);
+  view.controller.onFrame = (stats) => {
+    frame = stats;
+    frames++;
+  };
   const optionCallbacks = {
     onOptionChange: (key, value, redraw) => {
       settings.values[key] = value;
@@ -147,18 +142,13 @@ function start() {
       get graph() {
         return graph;
       },
-      get tuning() {
-        return tuning;
-      },
       tests: TESTS,
     }; // console access while developing
   bindTabs();
   bindGraphControls();
-  bindTuning();
   bindActions();
   bindTests();
   setInterval(showStats, 250);
-  setInterval(showAwake, 100);
   regenerate();
   if (graphOptions.icons) loadIcons();
 }
@@ -171,7 +161,7 @@ function regenerate() {
   collapsed = new Set();
   selectedId = null;
   const made = performance.now() - started;
-  draw({ fit: "smart", grow: true });
+  draw({ fit: "smart" });
   status(
     `${graph.nodes.length.toLocaleString()} items and ${graph.edges.length.toLocaleString()} links, made in ${Math.round(made)} ms; laid out and drawn in ${Math.round(lastLayoutMs)} ms.`,
   );
@@ -195,8 +185,8 @@ function elements() {
   });
 }
 
-/** Lay out and draw what's shown (Tether, then Prism morphs from the previous graph). */
-function draw({ fit = false, anchorNodeId = null, grow = false } = {}) {
+/** Lay out and draw what's shown (the layout layer, then the view morphs from the previous graph). */
+function draw({ fit = false, anchorNodeId = null } = {}) {
   const result = elements();
   hasChildren = result.hasChildren;
   shownIds = result.nodeElements.map((element) => element.data.id);
@@ -205,7 +195,7 @@ function draw({ fit = false, anchorNodeId = null, grow = false } = {}) {
     target: data.target,
   }));
   const started = performance.now();
-  view.render({ ...result, fit, anchorNodeId, grow });
+  view.render({ ...result, fit, anchorNodeId });
   lastLayoutMs = performance.now() - started;
   if (selectedId && shownIds.includes(selectedId)) view.select(selectedId);
 }
@@ -222,10 +212,7 @@ function recolour() {
 function applyRedraw(redraw) {
   if (redraw === Redraw.fit) draw({ fit: true });
   else if (redraw === Redraw.relayout) draw();
-  else {
-    view.applyStylesheet();
-    view.syncBackground();
-  }
+  else view.syncSettings();
 }
 
 function select(id) {
@@ -352,125 +339,6 @@ function bindGraphControls() {
   });
 }
 
-// ---------------------------------------------------------------- tuning
-
-function bindTuning() {
-  const root = $("#sbTuning");
-  const groups = [...new Set(TUNING_OPTIONS.map((option) => option.group))];
-  root.innerHTML = groups
-    .map(
-      (
-        group,
-      ) => `<details class="sb-tuning-group" open><summary>${group}</summary>
-      ${TUNING_OPTIONS.filter((option) => option.group === group)
-        .map((option) => {
-          const id = `sbt-${option.key}`;
-          const control =
-            option.min === undefined
-              ? `<input id="${id}" type="checkbox" data-tuning-key="${option.key}">`
-              : `<input id="${id}" type="range" min="${option.min}" max="${option.max}" step="${option.step}" data-tuning-key="${option.key}">`;
-          return `<div class="sb-tuning-row" data-row="${option.key}" title="${escapeHtml(option.hint)}">
-            <label for="${id}">${option.label}</label>${control}
-            <span class="sb-tuning-value" data-value="${option.key}"></span>
-            <button type="button" data-reset-tuning="${option.key}" title="Back to ${PHYSICS_TUNING[option.key]}" aria-label="Reset ${option.label}">↺</button>
-          </div>`;
-        })
-        .join("")}
-    </details>`,
-    )
-    .join("");
-  const sync = () => {
-    for (const option of TUNING_OPTIONS) {
-      const input = root.querySelector(`[data-tuning-key="${option.key}"]`);
-      const value = tuning[option.key];
-      if (input.type === "checkbox") input.checked = !!value;
-      else input.value = String(value);
-      root.querySelector(`[data-value="${option.key}"]`).textContent =
-        typeof value === "boolean" ? (value ? "on" : "off") : String(value);
-      root
-        .querySelector(`[data-row="${option.key}"]`)
-        .classList.toggle("modified", value !== PHYSICS_TUNING[option.key]);
-    }
-  };
-  sync();
-  let relayoutTimer = 0;
-  const apply = (keys) => {
-    view.setPhysicsTuning(tuning);
-    sync();
-    save();
-    // Simulation and Floating constants shape the layout itself: lay it out again (debounced while sliding).
-    const reshapes = keys.some((key) =>
-      ["Simulation", "Floating"].includes(
-        TUNING_OPTIONS.find((option) => option.key === key)?.group,
-      ),
-    );
-    if (reshapes && $("#sbAutoRelayout").checked) {
-      clearTimeout(relayoutTimer);
-      relayoutTimer = setTimeout(() => draw(), 250);
-    }
-  };
-  root.addEventListener("input", (event) => {
-    const key = event.target.dataset.tuningKey;
-    if (!key) return;
-    tuning[key] =
-      event.target.type === "checkbox"
-        ? event.target.checked
-        : Number(event.target.value);
-    apply([key]);
-  });
-  root.addEventListener("click", (event) => {
-    const key = event.target.closest("[data-reset-tuning]")?.dataset
-      .resetTuning;
-    if (!key) return;
-    tuning[key] = PHYSICS_TUNING[key];
-    apply([key]);
-  });
-  const json = $("#sbTuningJson");
-  $(".sb-page[data-page=tuning]").addEventListener("click", async (event) => {
-    const action = event.target.closest("[data-tuning]")?.dataset.tuning;
-    if (action === "relayout") draw();
-    else if (action === "reset") {
-      tuning = { ...PHYSICS_TUNING };
-      apply(Object.keys(tuning));
-    } else if (action === "copy") {
-      const changed = Object.fromEntries(
-        Object.entries(tuning).filter(
-          ([key, value]) => value !== PHYSICS_TUNING[key],
-        ),
-      );
-      const text = JSON.stringify(changed, null, 2);
-      try {
-        await navigator.clipboard.writeText(text);
-        status("Copied the changed constants.");
-      } catch {
-        json.hidden = false;
-        json.value = text;
-        status("Couldn't reach the clipboard: the JSON is in the box.");
-      }
-    } else if (action === "paste") {
-      json.hidden = !json.hidden;
-      if (!json.hidden) json.focus();
-    }
-  });
-  json.addEventListener("change", () => {
-    try {
-      const values = JSON.parse(json.value);
-      const known = Object.fromEntries(
-        Object.entries(values).filter(
-          ([key, value]) =>
-            key in PHYSICS_TUNING &&
-            typeof value === typeof PHYSICS_TUNING[key],
-        ),
-      );
-      tuning = { ...tuning, ...known };
-      apply(Object.keys(known));
-      status(`Applied ${Object.keys(known).length} constant(s).`);
-    } catch (error) {
-      status(`That isn't valid JSON: ${error.message}`);
-    }
-  });
-}
-
 // ---------------------------------------------------------------- actions
 
 function bindActions() {
@@ -482,9 +350,7 @@ function bindActions() {
       collapsed = new Set();
       draw();
     },
-    shake: () => view.settle({ heat: 0.7 }),
-    scatter: () => view.settle({ scatter: 500, heat: 1 }),
-    stop: () => view.stopPhysics(),
+    reset: () => view.controller.reset(),
     recolour: () => {
       graphOptions.colorBy =
         COLOR_MODES[
@@ -502,15 +368,15 @@ function bindActions() {
       ),
     lineage: () => select(randomShown(true)),
     fit: () => view.fit(),
-    export: () => {
+    export: async () => {
       const link = document.createElement("a");
       try {
-        link.href = view.toPngDataUri({
+        link.href = await view.toPngDataUri({
           scale: 1,
           backgroundColor: UI_COLORS.canvas,
         });
       } catch (error) {
-        status(`PNG export failed: ${error.message}`); // lost GPU context, or too big a canvas
+        status(`PNG export failed: ${error.message}`); // too big a canvas
         return;
       }
       link.download = `sandbox-${graphOptions.shape}-${graphOptions.seed}.png`;
@@ -543,7 +409,7 @@ function bindActions() {
       graph = loaded;
       collapsed = new Set();
       selectedId = null;
-      draw({ fit: true, grow: true });
+      draw({ fit: true });
       status(
         `Loaded ${graph.nodes.length.toLocaleString()} items from ${file.name}.`,
       );
@@ -600,159 +466,41 @@ async function loadIcons() {
   draw();
 }
 
-/** "Glow items the physics is moving": the elastic net's awake items, or the floating items still in motion. */
-let glowing = false;
-function showAwake() {
-  if (!view) return;
-  if (!$("#sbShowAwake").checked || !view.physicsRunning) {
-    if (glowing) view.graph.setEmphasis(null);
-    glowing = false;
-    return;
-  }
-  const moving = new Map();
-  const net = view.elasticNet;
-  if (net)
-    for (const i of net.active)
-      if (!net.held[i]) moving.set(net.ids[i], "#5ec8e5");
-  const simulation = view.simulation;
-  if (!net && simulation)
-    simulation.ids.forEach((id, i) => {
-      if (Math.abs(simulation.vx[i]) + Math.abs(simulation.vy[i]) > 0.05)
-        moving.set(id, "#5ec8e5");
-    });
-  view.graph.setEmphasis(moving.size ? moving : null);
-  glowing = true;
-}
-
 // ---------------------------------------------------------------- tests
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const nextFrame = () =>
   new Promise((resolve) => requestAnimationFrame(resolve));
 
-/** Wait until nothing animates and no physics runs (or give up after `limit` ms). */
+/** Wait until the view is at rest (or give up after `limit` ms). */
 async function atRest(limit = 8000) {
-  const until = performance.now() + limit;
-  while (
-    (view.physicsRunning || view.graph.stats.animating > 0) &&
-    performance.now() < until
-  )
-    await wait(50);
-}
-
-function snapshot() {
-  return new Map(
-    shownIds.map((id) => [id, { ...view.graph.livePositionOf(id) }]),
-  );
-}
-
-function probeTarget() {
-  return selectedId && shownIds.includes(selectedId)
-    ? selectedId
-    : randomShown(true);
-}
-
-/** Grab `id`, move it by `dx` screen px over a few frames, hold, measure, let go, measure again. */
-async function probe(id, dx) {
-  // At zoom 1, so a nudge of N px is N world units whatever the graph's size.
-  view.graph.centerOn(id, { zoom: 1, animate: false });
-  await atRest();
-  const zoom = 1;
-  const before = snapshot();
-  const hops = hopDistances(shownEdges, id);
-  const start = view.graph.livePositionOf(id);
-  const drag = view.beginDrag(id);
-  const steps = 8;
-  for (let k = 1; k <= steps; k++) {
-    drag.move(start.x + ((dx / zoom) * k) / steps, start.y);
-    await nextFrame();
-  }
-  await wait(Number($("#sbHold").value) || 1500);
-  const held = movementByHops(before, snapshot(), hops);
-  drag.end();
-  await wait(300);
-  await atRest();
-  const released = movementByHops(before, snapshot(), hops);
-  return { held, released, hops };
-}
-
-function hopTable(rows, probedId) {
-  const body = rows
-    .map(
-      (row) =>
-        `<tr><td>${row.hops === 0 ? "held" : row.hops === "unlinked" ? "unlinked" : row.hops}</td><td>${row.moved}/${row.count}</td><td>${row.max.toFixed(1)}</td><td>${row.mean.toFixed(2)}</td></tr>`,
-    )
-    .join("");
-  return `<table><thead><tr><th>Links from ${escapeHtml(probedId)}</th><th>Moved</th><th>Max</th><th>Mean</th></tr></thead><tbody>${body}</tbody></table>`;
+  await Promise.race([view.controller.settled(), wait(limit)]);
 }
 
 const TESTS = {
-  /** Grab without moving: nothing else should move. */
-  async hold() {
-    const id = probeTarget();
-    const { held } = await probe(id, 0);
-    const others = held.filter((row) => row.hops !== 0);
-    const worst = Math.max(0, ...others.map((row) => row.max));
-    return {
-      title: `Hold probe (${settings.values.physicsMode})`,
-      pass: worst < 0.5,
-      html: `${hopTable(held, id)}<p>Largest movement anywhere else: ${worst.toFixed(2)} world units.</p>`,
-    };
-  },
-  /** Grab, nudge, hold, let go: the pull should fade with each link. */
-  async drag() {
-    const id = probeTarget();
-    const dx = Number($("#sbNudge").value) || 8;
-    const { held, released } = await probe(id, dx);
-    const linked = held.filter(
-      (row) => typeof row.hops === "number" && row.hops > 0,
-    );
-    const nearMax = Math.max(
-      0,
-      ...linked.filter((row) => row.hops === 1).map((row) => row.max),
-    );
-    const farMax = Math.max(
-      0,
-      ...linked.filter((row) => row.hops >= 4).map((row) => row.max),
-    );
-    // Elastic pulls travel along links, so the far ones must move no more than the near ones. Floating repulsion
-    // acts through space too, so there the test is that nothing 4+ links away moves as far as the nudge itself.
-    const floating = settings.values.physicsMode === "floating";
-    return {
-      title: `Drag probe: ${dx} px (${settings.values.physicsMode})`,
-      pass: floating ? farMax < dx : farMax <= Math.max(1, nearMax),
-      html: `<p>While held:</p>${hopTable(held, id)}<p>After letting go:</p>${hopTable(released, id)}<p>Direct links moved up to ${nearMax.toFixed(1)}; 4+ links away up to ${farMax.toFixed(1)}.</p>`,
-    };
-  },
-  /** Tether alone: the same graph and settings must always lay out the same. */
+  /** The layout layer alone: the same graph and settings must always lay out the same. */
   async determinism() {
-    const layoutOnce = () => {
-      const layoutGraph = plainLayoutGraph();
-      runLayout(layoutGraph, layoutSettings(settings.values), { tuning });
-      return layoutGraph;
-    };
-    const a = layoutOnce(),
-      b = layoutOnce();
+    const a = layoutShown().positions,
+      b = layoutShown().positions;
     let worst = 0;
-    for (let i = 0; i < a.count; i++)
+    for (const [id, p] of a)
       worst = Math.max(
         worst,
-        Math.abs(a.x[i] - b.x[i]),
-        Math.abs(a.y[i] - b.y[i]),
+        Math.abs(p.x - b.get(id).x),
+        Math.abs(p.y - b.get(id).y),
       );
     return {
       title: "Determinism",
       pass: worst === 0,
-      html: `<p>${a.count.toLocaleString()} items laid out twice; largest difference ${worst}.</p>`,
+      html: `<p>${a.size.toLocaleString()} items laid out twice; largest difference ${worst}.</p>`,
     };
   },
-  /** How long Tether takes for this graph and these settings. */
+  /** How long the layout layer takes for this graph and these settings. */
   async layout() {
     const times = [];
     for (let k = 0; k < 3; k++) {
-      const layoutGraph = plainLayoutGraph();
       const started = performance.now();
-      runLayout(layoutGraph, layoutSettings(settings.values), { tuning });
+      layoutShown();
       times.push(performance.now() - started);
       await wait(0);
     }
@@ -761,31 +509,30 @@ const TESTS = {
     return {
       title: "Layout timing",
       pass: true,
-      html: `<p>${shownIds.length.toLocaleString()} items, ${s.direction === "radial" ? "radial" : `tree ${s.direction}`}, ${s.physicsMode}: ${times.map((t) => `${Math.round(t)} ms`).join(", ")} (mean ${Math.round(mean)} ms). Last full render (layout + first draw): ${Math.round(lastLayoutMs)} ms.</p>`,
+      html: `<p>${shownIds.length.toLocaleString()} items, ${s.direction === "radial" ? "radial" : `${s.viewMode} ${s.direction}`}: ${times.map((t) => `${Math.round(t)} ms`).join(", ")} (mean ${Math.round(mean)} ms).</p>`,
     };
   },
-  /** Prism: pan and zoom for 120 frames. */
+  /** Prismatrix: pan and zoom for 120 frames. */
   async render() {
     await atRest();
-    const engine = view.graph;
-    const camera = engine.camera;
-    const base = { zoom: camera.zoom, panX: camera.panX, panY: camera.panY };
+    const c = view.controller;
+    const base = { ...c.camera };
     const gaps = [],
       cpu = [];
     let last = performance.now();
     for (let k = 0; k < 120; k++) {
       const t = (k / 120) * Math.PI * 2;
-      camera.zoom = base.zoom * (1 + 0.8 * Math.sin(t / 2) ** 2);
-      camera.panX = base.panX + Math.cos(t) * 120;
-      camera.panY = base.panY + Math.sin(t) * 120;
-      engine.requestRender();
+      c.setCamera({
+        k: base.k * (1 + 0.8 * Math.sin(t / 2) ** 2),
+        x: base.x + (Math.cos(t) * 120) / base.k,
+        y: base.y + (Math.sin(t) * 120) / base.k,
+      });
       const now = await nextFrame();
       gaps.push(now - last);
       last = now;
-      cpu.push(engine.stats.drawMs);
+      cpu.push(frame?.drawMs ?? 0);
     }
-    Object.assign(camera, base);
-    engine.requestRender();
+    c.setCamera(base);
     gaps.shift();
     const sorted = [...gaps].sort((a, b) => a - b);
     const mean = (list) => list.reduce((sum, v) => sum + v, 0) / list.length;
@@ -798,18 +545,13 @@ const TESTS = {
   },
 };
 
-/** The shown graph as Tether sees it, with fixed sizes (for layout-only tests). */
-function plainLayoutGraph() {
-  return new LayoutGraph(
-    shownIds.map((id) => ({
-      id,
-      w: 48,
-      h: 48,
-      fullW: 150,
-      fullH: 64,
-      root: id === graph.rootId,
-    })),
-    shownEdges,
+/** The shown graph laid out by Prismatrix without a screen, with the sandbox's settings (for layout-only tests). */
+function layoutShown() {
+  const { layout, layoutOptions } = layoutSettings(settings.values);
+  const { node, edge } = modelOptions(settings.values);
+  return layoutGraph(
+    { nodes: shownIds.map((id) => ({ id })), edges: shownEdges },
+    { layout, layoutOptions, node, edge },
   );
 }
 
@@ -840,11 +582,7 @@ function bindTests() {
   $(".sb-page[data-page=tests]").addEventListener("click", (event) => {
     const name = event.target.closest("[data-test]")?.dataset.test;
     if (!name) return;
-    run(
-      name === "all"
-        ? ["determinism", "layout", "hold", "drag", "render"]
-        : [name],
-    );
+    run(name === "all" ? ["determinism", "layout", "render"] : [name]);
   });
 }
 
@@ -870,44 +608,31 @@ function moveTooltip(event) {
 let lastFrames = 0,
   lastTime = performance.now();
 function showStats() {
-  const stats = view.graph.stats;
   const now = performance.now();
-  const fps = ((stats.frames - lastFrames) * 1000) / (now - lastTime);
-  lastFrames = stats.frames;
+  const fps = ((frames - lastFrames) * 1000) / (now - lastTime);
+  lastFrames = frames;
   lastTime = now;
   const s = settings.values;
-  const simulation = view.simulation;
-  const net = view.elasticNet;
+  const c = view.controller;
+  const drawMs = frame?.drawMs ?? 0;
   const rows = [
     ["Items shown", shownIds.length.toLocaleString()],
     [
       "Layout",
-      `${s.direction === "radial" ? "radial" : `tree ${s.direction}`}, ${s.viewMode} seed`,
+      `${c.layout}${s.direction === "radial" ? "" : ` ${s.direction}`}`,
     ],
-    [
-      "Physics",
-      `${s.physicsMode}, ${view.physicsRunning ? "running" : "at rest"}`,
-    ],
+    ["Physics", `${c.mode}`],
+    ["State", frame?.state ?? "–"],
     ["Layout + first draw", `${Math.round(lastLayoutMs)} ms`],
     ["Frames drawn", fps < 0.5 ? "idle" : `${Math.round(fps)} / s`],
     [
       "CPU per frame",
-      `${stats.drawMs.toFixed(2)} ms`,
-      stats.drawMs < 4 ? "sb-good" : "sb-warn",
+      `${drawMs.toFixed(2)} ms`,
+      drawMs < 4 ? "sb-good" : "sb-warn",
     ],
-    [
-      "Last GPU upload",
-      `${stats.uploadMs.toFixed(2)} ms, ${stats.partialUpload ? "partial" : "full"}`,
-    ],
-    ["Animating", stats.animating.toLocaleString()],
-    ["Labels drawn", stats.labels.toLocaleString()],
-    [
-      "Simulation",
-      simulation
-        ? `heat ${simulation.alpha.toFixed(3)}, fastest ${Number.isFinite(simulation.motion) ? simulation.motion.toFixed(3) : "–"}`
-        : "–",
-    ],
-    ["Elastic net", net ? `${net.active.length} awake` : "–"],
+    ["Moving nodes", `${(frame?.simMs ?? 0).toFixed(2)} ms`],
+    ["Energy", (frame?.energy ?? 0).toFixed(2)],
+    ["Renderer", c.renderer?.name ?? "–"],
     ["Selected", selectedId ?? "–"],
   ];
   $("#sbStats").innerHTML = rows
@@ -946,7 +671,6 @@ function save() {
         ...load(),
         graph: graphOptions,
         values: changed(settings.values, DEFAULT_SETTINGS),
-        tuning: changed(tuning, PHYSICS_TUNING),
       }),
     );
   } catch {
@@ -969,5 +693,4 @@ mountSiteChrome({ page: "sandbox", account });
 account.restore();
 registerServiceWorker();
 
-if (!canDrawGraphs()) $("#sbUnsupported").hidden = false;
-else start();
+start();

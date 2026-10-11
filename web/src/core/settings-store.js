@@ -14,6 +14,10 @@ const LEGACY_STORAGE_KEY = "gw2ct.settings";
  * (Storage keys keep their original "gw2ct" prefix so existing users' settings carry over.)
  */
 export class SettingsStore {
+  #listeners = new Set();
+  /** Keys changed for this visit only (setMany persist: false) → the value to save instead. */
+  #visitOnly = new Map();
+
   constructor() {
     /** @type {typeof DEFAULT_SETTINGS} */
     this.values = { ...DEFAULT_SETTINGS, ...this.#readSaved() };
@@ -25,21 +29,68 @@ export class SettingsStore {
 
   set(key, value) {
     this.values[key] = value;
+    this.#visitOnly.delete(key);
     this.save();
+    this.#changed([key]);
+  }
+
+  /**
+   * Change several settings at once, with one notification.
+   * @param {Partial<typeof DEFAULT_SETTINGS>} patch
+   * @param {{ persist?: boolean }} [options]  persist: false keeps the change to this visit (not saved)
+   */
+  setMany(patch, { persist = true } = {}) {
+    for (const key of Object.keys(patch)) {
+      if (persist) this.#visitOnly.delete(key);
+      else if (!this.#visitOnly.has(key))
+        this.#visitOnly.set(key, this.values[key]);
+    }
+    Object.assign(this.values, patch);
+    if (persist) this.save();
+    this.#changed(Object.keys(patch));
+  }
+
+  /**
+   * Hear about every change: `listener({ keys })` with the keys that changed; returns a function that unsubscribes.
+   * The values are written before listeners run. A listener that throws is reported and doesn't stop the others.
+   * @param {(change: { keys: string[] }) => void} listener
+   */
+  onChange(listener) {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  #changed(keys) {
+    if (!keys.length) return;
+    for (const listener of [...this.#listeners]) {
+      try {
+        listener({ keys });
+      } catch (error) {
+        console.error("Error in a settings listener:", error);
+      }
+    }
   }
 
   /** Apply a layout or style preset: its slice of the look goes back to defaults + the preset's values. */
   applyPreset(kind, presetName) {
     const { keys, presets } = PRESET_KINDS[kind];
     for (const key of keys) this.values[key] = DEFAULT_SETTINGS[key];
-    Object.assign(this.values, presets[presetName]?.values);
+    const values = presets[presetName]?.values ?? {};
+    Object.assign(this.values, values);
+    for (const key of [...keys, ...Object.keys(values)])
+      this.#visitOnly.delete(key);
     this.save();
+    this.#changed([...new Set([...keys, ...Object.keys(values)])]);
   }
 
   /** Restore the given keys to their defaults. */
   reset(keys) {
-    for (const key of keys) this.values[key] = DEFAULT_SETTINGS[key];
+    for (const key of keys) {
+      this.values[key] = DEFAULT_SETTINGS[key];
+      this.#visitOnly.delete(key);
+    }
     this.save();
+    this.#changed([...keys]);
   }
 
   isDefault(key) {
@@ -48,7 +99,9 @@ export class SettingsStore {
 
   save() {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.values));
+      const saved = { ...this.values };
+      for (const [key, value] of this.#visitOnly) saved[key] = value;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
     } catch {
       /* storage unavailable (private mode) */
     }

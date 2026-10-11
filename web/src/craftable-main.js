@@ -35,14 +35,13 @@ import { WebGLGraphView } from "./render/webgl-graph-view.js";
 /** Looks for this page's own classes: "+N more" folds are placeholders, and the most profitable routes stand out. */
 const CLASS_STYLES = {
   nodes: {
-    overflow: { pattern: "dashed", fillAlpha: 0.4 },
-    "best-route": { aura: "#e5b83b", labelPriority: 1 },
+    overflow: { strokeStyle: "dashed", opacity: 0.4 },
+    "best-route": { aura: "#e5b83b", pinLabel: true },
   },
   edges: { "best-route": { color: "#e5b83b", width: 3, glow: true } },
 };
 import { NodeAppearance } from "./render/node-appearance.js";
 import { mountSiteChrome } from "./ui/site-chrome.js";
-import { canDrawGraphs, NO_WEBGL_MESSAGE } from "./render/webgl-support.js";
 import { registerServiceWorker } from "./pwa.js";
 import { escapeHtml, querySelector as $ } from "./utils/dom.js";
 import {
@@ -73,7 +72,6 @@ const PAGE_SIZE = 150;
 const GRAPH_OVERRIDES = {
   direction: "RL",
   arrowEnd: "ingredient",
-  flowToward: "target", // edges run ingredient → product here
   viewMode: "tree",
   showCostInLabel: false,
   edgeQuantityLabels: "on",
@@ -177,21 +175,14 @@ class CraftablePage {
   start() {
     this.graphView = new WebGLGraphView({
       container: $("#cy"),
-      canvasWrapper: $("#cyWrap"),
       settings: this.graphSettings,
+      flowToward: "target", // edges run ingredient → product here
       handlers: {
         onNodeTap: (nodeId) => this.#onNodeTap(nodeId),
         onNodeDoubleTap: (nodeId) => this.#toggle(nodeId),
-        onNodeContextTap: () => {},
         onBackgroundTap: () => this.#select(null),
-        onNodeHoverStart: (nodeId, event) => {
-          this.graphView.showLineage(nodeId);
-          this.#showTooltip(nodeId, event);
-        },
-        onNodeHoverEnd: () => {
-          this.graphView.clearLineage();
-          $("#craftTooltip").hidden = true;
-        },
+        onNodeHoverStart: (nodeId, event) => this.#showTooltip(nodeId, event),
+        onNodeHoverEnd: () => ($("#craftTooltip").hidden = true),
         onPointerMove: (event) => this.#moveTooltip(event),
         onViewportChange: () => ($("#craftTooltip").hidden = true),
       },
@@ -642,7 +633,6 @@ class CraftablePage {
         this.#revealRoute(route.dataset.routeFrom, Number(route.dataset.route));
       if (event.target.closest("[data-close-details]")) this.#select(null);
     });
-    window.addEventListener("resize", () => this.graphView.resize());
     const layoutButtons = document.querySelectorAll("[data-layout]");
     const syncLayoutButtons = () =>
       layoutButtons.forEach((button) =>
@@ -940,7 +930,6 @@ class CraftablePage {
     this.graphView.render({
       nodeElements,
       edgeElements,
-      nodesById: this.graph.nodesById,
       fit,
       anchorNodeId,
     });
@@ -1073,13 +1062,11 @@ class CraftablePage {
     this.graphView.select(nodeId);
     const node = nodeId && this.graph?.nodesById.get(nodeId);
     const details = $("#craftDetails");
-    const wasHidden = details.hidden;
     if (!node || node.isOverflow) details.hidden = true;
     else {
       details.innerHTML = this.#detailsHtml(node);
       details.hidden = false;
     }
-    if (wasHidden !== details.hidden) this.graphView.resize(); // the graph gives up or regains the column
   }
 
   #detailsHtml(node) {
@@ -1299,19 +1286,11 @@ function writeStored(key, value) {
   }
 }
 
-function showFatalError(message) {
-  $("#graphEmpty").innerHTML = `<p>${escapeHtml(message)}</p>`;
-}
-
 const account = createAccountSession();
 mountSiteChrome({ page: "craftable", account });
-if (!canDrawGraphs()) {
-  showFatalError(NO_WEBGL_MESSAGE);
-} else {
-  const page = new CraftablePage(account);
-  if (["localhost", "127.0.0.1"].includes(location.hostname))
-    globalThis.gw2Craftable = page; // console access while developing
-  page.start();
-  account.restore();
-}
+const page = new CraftablePage(account);
+if (["localhost", "127.0.0.1"].includes(location.hostname))
+  globalThis.gw2Craftable = page; // console access while developing
+page.start();
+account.restore();
 registerServiceWorker();

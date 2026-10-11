@@ -91,8 +91,6 @@ export function sandboxElements(
   return {
     nodeElements,
     edgeElements,
-    /** id → { depth } for the views that stagger growth by depth. */
-    nodesById: new Map([...shown].map((id) => [id, byId.get(id)])),
     hasChildren: (id) => children.has(id),
   };
 }

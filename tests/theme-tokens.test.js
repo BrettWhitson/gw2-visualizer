@@ -1,12 +1,12 @@
-// The design tokens (css/app.css) and the colours mirrored for the graph canvas (UI_COLORS) stay in step, and Prism
-// gets colours it accepts.
+// The design tokens (css/app.css) and the colours mirrored for the graph canvas (UI_COLORS) stay in step, and
+// Prismatrix gets colours it accepts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { isColor } from "tether/index.js";
+import { resolveTheme } from "prismatrix";
 import { UI_COLORS } from "../web/src/config/constants.js";
 import { tokenTheme } from "../web/src/render/theme-tokens.js";
-import { prismTheme } from "../web/src/render/prism-settings.js";
+import { themeOptions } from "../web/src/render/prism-settings.js";
 import { DEFAULT_SETTINGS } from "../web/src/config/settings-schema.js";
 
 const css = readFileSync(
@@ -24,6 +24,9 @@ const tokens = Object.fromEntries(
   ]),
 );
 
+/** A colour Prismatrix accepts: "#rrggbb". */
+const isHex = (value) => /^#[0-9a-f]{6}$/i.test(value);
+
 /** UI_COLORS key → the token it mirrors. */
 const MIRRORS = {
   canvas: "bg",
@@ -35,6 +38,9 @@ const MIRRORS = {
   accentLight: "brand-light",
   nodeFill: "raised",
   danger: "down",
+  gold: "gold",
+  silver: "silver",
+  copper: "copper",
 };
 
 test("UI_COLORS mirrors the design tokens", () => {
@@ -46,18 +52,21 @@ test("UI_COLORS mirrors the design tokens", () => {
     );
 });
 
-test("colour tokens are literal colours Prism accepts (older names may alias them)", () => {
-  for (const [name, value] of Object.entries(tokens)) {
-    if (name === "shadow" || value.startsWith("var(")) continue;
-    assert.ok(isColor(value), `--${name}: ${value}`);
-  }
+test("the tokens the graph reads are colours Prismatrix accepts", () => {
+  for (const name of ["bg", "text", "muted", "raised", "line"])
+    assert.ok(isHex(tokens[name]), `--${name}: ${tokens[name]}`);
 });
 
-test("Prism's theme: the tokens, then the settings' colours", () => {
-  const theme = { ...tokenTheme(), ...prismTheme(DEFAULT_SETTINGS) }; // no DOM here: the mirrored fallbacks
-  assert.equal(theme.nodeFill, UI_COLORS.nodeFill);
-  assert.equal(theme.labelText, UI_COLORS.text);
+test("Prismatrix's theme: the tokens, then the settings' colours, all accepted", () => {
+  const theme = themeOptions(
+    DEFAULT_SETTINGS,
+    tokenTheme(() => null),
+  ); // no DOM here: the mirrored fallbacks
+  assert.equal(theme.background, UI_COLORS.canvas);
+  assert.equal(theme.card, UI_COLORS.nodeFill);
   assert.equal(theme.edge, DEFAULT_SETTINGS.edgeColor);
-  for (const [key, value] of Object.entries(theme))
-    assert.ok(isColor(value), `${key}: ${value}`);
+  assert.equal(theme.ancestors, DEFAULT_SETTINGS.lineageUpColor);
+  const warnings = [];
+  resolveTheme(theme, (message) => warnings.push(message));
+  assert.deepEqual(warnings, []);
 });

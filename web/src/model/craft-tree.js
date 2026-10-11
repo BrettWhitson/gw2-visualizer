@@ -260,7 +260,7 @@ export class CraftTreeBuilder {
 
   #shouldCollapse(node, depth) {
     const { collapsedKeys, expandedKeys } = this.treeState;
-    const key = getCollapseKey(node, this.settings.values.viewMode);
+    const key = getCollapseKey(node, drawnViewMode(this.settings.values));
     if (collapsedKeys.has(key)) return true;
     if (node.isPlannedPurchase && !expandedKeys.has(key)) return true; // bought, not crafted
     const { maxDepth } = this.settings.values;
@@ -269,6 +269,14 @@ export class CraftTreeBuilder {
     );
   }
 }
+
+/**
+ * The view actually drawn: merged (one node per item) only in a directional layout. A radial layout has no clean
+ * path for a shared item's extra edges (they cross the centre), so it shows the tree: each use its own node.
+ * @param {{ viewMode: string, direction: string }} settings values
+ */
+export const drawnViewMode = ({ viewMode, direction }) =>
+  viewMode === "merged" && direction !== "radial" ? "merged" : "tree";
 
 /** Collapse state is per occurrence in tree view, per entity in merged view. */
 export function getCollapseKey(node, viewMode) {

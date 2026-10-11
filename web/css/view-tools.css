@@ -1,0 +1,196 @@
+/* The View popover (ui/view-popover.js), the KPI strip (ui/kpi-strip.js), the minimap (ui/minimap.js) and the
+   legend's edge-colour swatches. */
+
+/* ---------- View popover ---------- */
+#viewButton[aria-expanded="true"] {
+  border-color: var(--brand);
+}
+.view-popover {
+  position: fixed;
+  z-index: 60;
+  width: 330px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 10px 12px 12px;
+}
+.view-popover[hidden] {
+  display: none;
+}
+.vp-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.vp-row {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.vp-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.vp-pair select {
+  width: 100%;
+}
+.vp-seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+}
+.vp-seg button {
+  flex: 1;
+  border: 0;
+  background: none;
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.vp-seg button.on {
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.vp-step {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  width: max-content;
+}
+.vp-step button {
+  border: 0;
+  background: none;
+  width: 28px;
+  padding: 3px 0;
+}
+.vp-step output {
+  min-width: 36px;
+  text-align: center;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.vp-options {
+  border-top: 1px solid var(--line);
+  margin-top: 10px;
+  padding-top: 4px;
+}
+.vp-foot {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+/* ---------- KPI strip ---------- */
+.kpi-strip {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+.kpi-strip[hidden] {
+  display: none;
+}
+.kpi {
+  padding: 6px 14px;
+  border-left: 1px solid var(--line);
+  text-align: right;
+}
+.kpi:first-child {
+  border-left: 0;
+}
+.kpi > span {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.kpi b {
+  font-size: 13.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.kpi.up b {
+  color: var(--up);
+}
+.kpi.down b {
+  color: var(--down);
+}
+.kpi-chip {
+  font-style: normal;
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 999px;
+  vertical-align: 1px;
+}
+.kpi-chip.up {
+  background: color-mix(in srgb, var(--up) 15%, transparent);
+}
+.kpi-chip.down {
+  background: color-mix(in srgb, var(--down) 15%, transparent);
+}
+
+/* ---------- minimap (beside the zoom buttons) ---------- */
+.minimap {
+  position: absolute;
+  right: 56px;
+  bottom: 12px;
+  z-index: 3;
+  width: 184px;
+  height: 120px;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: crosshair;
+  touch-action: none;
+}
+.minimap[hidden] {
+  display: none;
+}
+
+/* ---------- legend: edge-colour swatches ---------- */
+#legend i.lg-line {
+  width: 14px;
+  height: 3px;
+  border: 0;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+/* Phones: no minimap (the graph needs the room); the KPI strip moves to the left and may wrap. */
+@media (max-width: 700px) {
+  .minimap {
+    display: none !important;
+  }
+  .kpi-strip {
+    left: 12px;
+    right: auto;
+    top: 8px;
+    flex-wrap: wrap;
+  }
+}

@@ -67,8 +67,7 @@
 .sb-row input[type="number"] {
   min-width: 0;
 }
-.sb-row output,
-.sb-tuning-value {
+.sb-row output {
   min-width: 3.5em;
   text-align: right;
   color: var(--muted);
@@ -94,15 +93,6 @@
   font-weight: 600;
   color: var(--accent2);
 }
-.sb-json {
-  width: 100%;
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: 12px;
-  background: var(--panel2);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-}
 .sb-file-button {
   position: relative;
   display: flex;
@@ -119,31 +109,6 @@
   inset: 0;
   opacity: 0;
   cursor: pointer;
-}
-
-/* ---------- tuning ---------- */
-.sb-tuning-group {
-  border-top: 1px solid var(--line);
-}
-.sb-tuning-group summary {
-  padding: 8px 12px;
-  cursor: pointer;
-  font-weight: 600;
-  color: var(--accent2);
-}
-.sb-tuning-row {
-  display: grid;
-  grid-template-columns: 110px minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 12px;
-}
-.sb-tuning-row.modified label {
-  color: var(--accent2);
-}
-.sb-tuning-row button {
-  padding: 0 6px;
-  font-size: 11px;
 }
 
 /* ---------- results ---------- */
@@ -245,15 +210,6 @@
   background: var(--panel2);
   pointer-events: none;
   white-space: nowrap;
-}
-.sb-unsupported {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  color: var(--muted);
 }
 
 @media (max-width: 700px) {

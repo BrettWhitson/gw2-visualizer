@@ -145,6 +145,47 @@ test("SettingsStore migrates pre-refactor keys and drops unknown ones", async ()
   assert.ok(!("bogus" in store.values));
 });
 
+test("revision 3: saved single-colour edges move to the new default, where they come from", async () => {
+  installFakeLocalStorage({
+    "gw2ct.settings.v2": JSON.stringify({
+      settingsRevision: 2,
+      edgeColorMode: "neutral",
+      ribbonCollapsed: true,
+    }),
+  });
+  const { SettingsStore } = await import("../web/src/core/settings-store.js");
+  const store = new SettingsStore();
+  assert.equal(store.values.edgeColorMode, "source");
+  assert.equal(store.values.settingsRevision, 4);
+  assert.ok(!("ribbonCollapsed" in store.values), "the ribbon is gone");
+
+  // Chosen again after the move, it stays.
+  store.set("edgeColorMode", "neutral");
+  const again = new SettingsStore();
+  assert.equal(again.values.edgeColorMode, "neutral");
+});
+
+test("revision 4: looks Prismatrix 0.5 doesn't draw move to the nearest, and retired settings go", async () => {
+  installFakeLocalStorage({
+    "gw2ct.settings.v2": JSON.stringify({
+      settingsRevision: 3,
+      nodeShape: "octagon",
+      labelPosition: "left",
+      arrowShape: "chevron",
+      labelFadeZoom: 0.5,
+      canvasBackground: "dots",
+      smoothZoom: false,
+    }),
+  });
+  const { SettingsStore } = await import("../web/src/core/settings-store.js");
+  const store = new SettingsStore();
+  assert.equal(store.values.nodeShape, "hexagon");
+  assert.equal(store.values.labelPosition, "right");
+  assert.equal(store.values.arrowShape, "triangle");
+  for (const gone of ["labelFadeZoom", "canvasBackground", "smoothZoom"])
+    assert.ok(!(gone in store.values), gone);
+});
+
 test("layout and style presets are independent and keep what is being viewed", async () => {
   installFakeLocalStorage();
   const { SettingsStore } = await import("../web/src/core/settings-store.js");
@@ -286,4 +327,82 @@ test("settings schema is self-consistent", () => {
       `${kind} presets are distinct`,
     );
   }
+});
+
+test("settings announce changes: set, setMany, presets and resets, with unsubscribe", async (t) => {
+  installFakeLocalStorage();
+  const { SettingsStore } = await import("../web/src/core/settings-store.js");
+  const store = new SettingsStore();
+  const seen = [];
+  const off = store.onChange(({ keys }) => seen.push([...keys].sort()));
+
+  store.set("viewMode", "merged");
+  store.setMany({ showLegend: false, sidebarOpen: false }, { persist: false });
+  store.applyPreset("layout", "Radial");
+  store.reset(["viewMode"]);
+  assert.deepEqual(seen[0], ["viewMode"]);
+  assert.deepEqual(seen[1], ["showLegend", "sidebarOpen"]);
+  assert.ok(
+    seen[2].includes("direction"),
+    "a preset names the keys it touched",
+  );
+  assert.deepEqual(seen[3], ["viewMode"]);
+  assert.equal(
+    store.values.viewMode,
+    DEFAULT_SETTINGS.viewMode,
+    "values are written before listeners run",
+  );
+
+  const saved = JSON.parse(localStorage.getItem("gw2ct.settings.v2"));
+  assert.equal(
+    saved.sidebarOpen,
+    DEFAULT_SETTINGS.sidebarOpen,
+    "persist: false isn't saved…",
+  );
+  assert.equal(
+    store.values.sidebarOpen,
+    false,
+    "…but is in effect for this visit",
+  );
+
+  off();
+  store.set("viewMode", "tree");
+  assert.equal(seen.length, 4, "unsubscribed");
+
+  const errors = t.mock.method(console, "error", () => {});
+  let later = 0;
+  store.onChange(() => {
+    throw new Error("listener boom");
+  });
+  store.onChange(() => later++);
+  store.set("maxDepth", 5);
+  assert.equal(later, 1, "a throwing listener doesn't stop the others");
+  assert.equal(errors.mock.callCount(), 1);
+
+  store.set("sidebarOpen", false);
+  assert.equal(
+    JSON.parse(localStorage.getItem("gw2ct.settings.v2")).sidebarOpen,
+    false,
+    "choosing a visit-only value on purpose saves it",
+  );
+});
+
+test("coins as card runs: each amount then its coin dot, silver and copper muted", async () => {
+  const { formatCoinsRuns } = await import("../web/src/utils/format.js");
+  const colors = { gold: "#g", silver: "#s", copper: "#c", muted: "#m" };
+  assert.deepEqual(formatCoinsRuns(1_234_505, colors), [
+    "123",
+    { dot: "#g" },
+    " ",
+    { text: "45", color: "#m" },
+    { dot: "#s" },
+    " ",
+    { text: "5", color: "#m" },
+    { dot: "#c" },
+  ]);
+  assert.deepEqual(formatCoinsRuns(7, colors), [
+    { text: "7", color: "#m" },
+    { dot: "#c" },
+  ]);
+  assert.equal(formatCoinsRuns(-150, colors)[0], "−");
 });

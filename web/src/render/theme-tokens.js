@@ -1,26 +1,34 @@
 import { UI_COLORS } from "../config/constants.js";
 
-/** Prism theme colour ← the CSS design token it follows (css/app.css :root), with the mirrored fallback. */
+/** Prismatrix theme colour ← the CSS design token it follows (css/app.css :root), with the mirrored fallback. */
 const TOKENS = {
+  background: ["bg", UI_COLORS.canvas],
+  text: ["text", UI_COLORS.text],
+  textHalo: ["bg", UI_COLORS.canvas],
   node: ["muted", UI_COLORS.muted],
-  nodeFill: ["raised", UI_COLORS.nodeFill],
-  labelText: ["text", UI_COLORS.text],
-  edgeLabelText: ["muted", UI_COLORS.muted],
+  card: ["raised", UI_COLORS.nodeFill],
+  cardBorder: ["line", UI_COLORS.line],
 };
 
-/**
- * The part of Prism's theme that comes from the page's design tokens, read from the CSS custom properties so the
- * graph follows the stylesheet (and a future light theme). Outside a browser, or for a token that isn't set, the
- * UI_COLORS mirror is used. Tokens must be literal colours: Prism rejects var() and color-mix().
- */
-export function tokenTheme() {
+/** A CSS custom property's value on the page, or null (outside a browser, or unset). */
+export function cssToken(name) {
   const style =
     globalThis.document &&
     globalThis.getComputedStyle?.(document.documentElement);
+  return style?.getPropertyValue(`--${name}`).trim() || null;
+}
+
+/**
+ * The part of Prismatrix's theme that comes from the page's design tokens, read from the CSS custom properties so the
+ * graph follows the stylesheet (and a future light theme). Outside a browser, or for a token that isn't set, the
+ * UI_COLORS mirror is used. Tokens must be literal "#rrggbb" colours: Prismatrix rejects anything else.
+ * @param {(token: string) => string | null} [readToken]
+ */
+export function tokenTheme(readToken = cssToken) {
   return Object.fromEntries(
     Object.entries(TOKENS).map(([key, [token, fallback]]) => [
       key,
-      style?.getPropertyValue(`--${token}`).trim() || fallback,
+      readToken(token) || fallback,
     ]),
   );
 }

@@ -44,48 +44,8 @@
       <div class="spacer"></div>
     </header>
 
-    <main id="charactersMain" tabindex="-1">
-      <section id="keyPanel" class="key-panel" hidden>
-        <h2>Connect your Guild Wars 2 account</h2>
-        <p>
-          Paste an API key to see your characters' gear. Create one at
-          <a
-            href="https://account.arena.net/applications"
-            target="_blank"
-            rel="noopener noreferrer"
-            >account.arena.net/applications</a
-          >
-          with the <b>characters</b> and <b>builds</b> permissions (add
-          <b>inventories</b> and <b>wallet</b> to use what you own on the
-          crafting page too).
-        </p>
-        <form id="keyForm" class="key-form" autocomplete="off">
-          <label for="apiKey" class="sr-only">API key</label>
-          <input
-            id="apiKey"
-            type="password"
-            spellcheck="false"
-            placeholder="XXXXXXXX-XXXX-…"
-            autocomplete="off"
-          />
-          <label class="remember"
-            ><input id="rememberKey" type="checkbox" /> Remember in this
-            browser</label
-          >
-          <button type="submit" class="primary">Connect</button>
-        </form>
-        <p id="keyError" class="key-error" role="alert"></p>
-        <p class="muted small">
-          The key stays in this browser and is sent only to the official API at
-          api.guildwars2.com; this site has no server that could store it. API
-          keys are read-only and can be revoked at any time on the same page.
-        </p>
-      </section>
-
-      <!-- Loading and error announcements only: the content itself isn't a live region. -->
-      <p id="characterStatus" class="sr-only" role="status"></p>
-      <div id="characterContent"></div>
-    </main>
+    <!-- The page itself is a Svelte app (ui/CharactersPage.svelte), mounted here. -->
+    <main id="charactersMain" tabindex="-1"></main>
 
     <footer id="status"></footer>
 

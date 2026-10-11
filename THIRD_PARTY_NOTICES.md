@@ -6,10 +6,9 @@ GW2 Visualizer's own source code is MIT licensed (see `LICENSE`). The components
 
 | Library | Version | License | Copyright |
 |---|---|---|---|
-| [Prism](https://github.com/BrettWhitson/prism) | commit pinned in `package.json` | MIT | © 2026 Brett Whitson |
-| [Tether](https://github.com/BrettWhitson/tether) | commit pinned in `package.json` | MIT | © 2026 Brett Whitson |
+| [Prismatrix](https://github.com/BrettWhitson/prismatrix) | release tag pinned in `package.json` | MIT | © 2026 Brett Whitson |
 
-Versions are pinned in `package.json`. Prism and Tether are bundled into the site by [Vite](https://vite.dev/) (MIT),
+Versions are pinned in `package.json`. Prismatrix is bundled into the site by [Vite](https://vite.dev/) (MIT),
 which adds a few small helpers of its own. Development-only tools (Vite, ESLint, Prettier, globals) are not otherwise
 shipped.
 
