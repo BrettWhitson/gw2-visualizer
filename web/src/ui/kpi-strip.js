@@ -38,8 +38,6 @@ export class KpiStrip {
       sellPrice: quote?.sell || null,
       quantity: tree.quantity,
     });
-    const coins = (copper) =>
-      copper == null ? '<span class="muted">—</span>' : formatCoinsHtml(copper);
     const partial = tree.isCraftCostPartial
       ? ' <span class="muted" title="Some ingredients have no price">(partial)</span>'
       : "";
@@ -52,7 +50,7 @@ export class KpiStrip {
           ? "not sold there"
           : "loading prices…";
       this.#element.innerHTML =
-        cell("Craft cost", coins(figures.craftCost) + partial) +
+        cell("Craft cost", formatCoinsHtml(figures.craftCost) + partial) +
         cell("Trading Post", `<span class="muted">${unknown}</span>`);
       return;
     }
@@ -63,14 +61,14 @@ export class KpiStrip {
         ? ""
         : ` <i class="kpi-chip${tone}">${figures.margin >= 0 ? "+" : "−"}${Math.abs(figures.margin * 100).toFixed(0)}%</i>`;
     this.#element.innerHTML =
-      cell("Craft cost", coins(figures.craftCost) + partial) +
-      cell("Buy on TP", coins(figures.buyNow)) +
-      cell("Sell after fees", coins(figures.sellNet)) +
+      cell("Craft cost", formatCoinsHtml(figures.craftCost) + partial) +
+      cell("Buy on TP", formatCoinsHtml(figures.buyNow)) +
+      cell("Sell after fees", formatCoinsHtml(figures.sellNet)) +
       cell(
         figures.profit != null && figures.profit < 0 ? "Loss" : "Profit",
-        (figures.profit == null
-          ? coins(null)
-          : coins(Math.abs(figures.profit))) + margin,
+        formatCoinsHtml(
+          figures.profit == null ? null : Math.abs(figures.profit),
+        ) + margin,
         tone,
       );
   }

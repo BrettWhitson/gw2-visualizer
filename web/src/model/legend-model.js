@@ -101,11 +101,9 @@ export function buildLegendEntries(s, nodes, context) {
     add("flag:owned", "Owned", UI_COLORS.owned);
 
   for (const entry of entries)
-    entry.count = nodes.reduce(
-      (count, node) =>
-        count + (legendMatches(entry.key, node, context) ? 1 : 0),
-      0,
-    );
+    entry.count = nodes.filter((node) =>
+      legendMatches(entry.key, node, context),
+    ).length;
   return entries;
 }
 

@@ -15,22 +15,14 @@ import { tradingPostNet } from "./craftable.js";
  */
 export function rootEconomics({ craftCost, sellPrice, quantity }) {
   const cost = craftCost != null && craftCost > 0 ? craftCost : null;
-  if (!sellPrice)
-    return {
-      craftCost: cost,
-      buyNow: null,
-      sellNet: null,
-      profit: null,
-      margin: null,
-    };
-  const buyNow = sellPrice * quantity;
-  const sellNet = tradingPostNet(sellPrice) * quantity;
-  const profit = cost == null ? null : sellNet - cost;
+  const buyNow = sellPrice ? sellPrice * quantity : null;
+  const sellNet = sellPrice ? tradingPostNet(sellPrice) * quantity : null;
+  const profit = cost == null || sellNet == null ? null : sellNet - cost;
   return {
     craftCost: cost,
     buyNow,
     sellNet,
     profit,
-    margin: cost == null ? null : profit / cost,
+    margin: profit == null ? null : profit / cost,
   };
 }

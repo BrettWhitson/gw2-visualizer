@@ -17,7 +17,8 @@ import { drawnViewMode, getCollapseKey } from "./craft-tree.js";
  * @returns {import('../types.js').GraphModel}
  */
 export function buildGraphModel(root, { settings, gameData }) {
-  const isMerged = drawnViewMode(settings) === "merged";
+  const viewMode = drawnViewMode(settings);
+  const isMerged = viewMode === "merged";
   const nodeIdOf = (treeNode) =>
     isMerged ? `${treeNode.kind}:${treeNode.entityId}` : treeNode.path;
   const nodesById = new Map(),
@@ -60,7 +61,7 @@ export function buildGraphModel(root, { settings, gameData }) {
         ownedQuantity: 0,
         isOwnedEnough: true, // until an occurrence isn't
         missingCraftingLevels: null,
-        collapseKey: getCollapseKey(treeNode, drawnViewMode(settings)),
+        collapseKey: getCollapseKey(treeNode, viewMode),
         occurrenceCount: 0,
         isRoot: treeNode.depth === 0,
       };

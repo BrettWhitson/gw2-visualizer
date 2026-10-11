@@ -113,8 +113,6 @@ export const LEGACY_SETTING_KEYS = {
   labelPos: "labelPosition",
   fontScale: "labelFontScale",
   labelWidth: "labelWrapScale",
-  labelWrap: "labelOverflow",
-  labelBg: "labelBackdrop",
   edgeStyle: "edgeRouting",
   edgeW: "edgeWidth",
   edgeColorBy: "edgeColorMode",
@@ -133,7 +131,6 @@ export const LEGACY_SETTING_KEYS = {
   animMs: "animationDuration",
   easing: "animationEasing",
   grow: "growNewTrees",
-  bg: "canvasBackground",
   legend: "showLegend",
 };
 
@@ -219,7 +216,6 @@ export function migrateLegacySettings(saved) {
       saved.arrowShape = "triangle";
   }
   saved.settingsRevision = 4;
-  delete saved.ribbonCollapsed; // the ribbon became the View popover
   // Layout engines went: the old "Concentric rings" and "Force-directed" engines became the radial layout (the
   // force web floats, as it did). Ranking, alignment and the drag-physics switch went with them.
   if (saved.layoutEngine === "concentric" || saved.engine === "concentric")

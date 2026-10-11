@@ -11,7 +11,7 @@ const TOKENS = {
 };
 
 /** A CSS custom property's value on the page, or null (outside a browser, or unset). */
-function cssToken(name) {
+export function cssToken(name) {
   const style =
     globalThis.document &&
     globalThis.getComputedStyle?.(document.documentElement);
@@ -31,9 +31,4 @@ export function tokenTheme(readToken = cssToken) {
       readToken(token) || fallback,
     ]),
   );
-}
-
-/** The face of a node that isn't tinted with its colour: the raised surface token. */
-export function nodeFillToken(readToken = cssToken) {
-  return readToken("raised") || UI_COLORS.nodeFill;
 }

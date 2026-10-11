@@ -10,7 +10,7 @@ import {
   nodeJSON,
   themeOptions,
 } from "./prism-settings.js";
-import { nodeFillToken, tokenTheme } from "./theme-tokens.js";
+import { tokenTheme } from "./theme-tokens.js";
 
 /** Old view event names → Prismatrix's (the minimap still asks by the old ones). */
 const EVENTS = {
@@ -54,7 +54,7 @@ export class WebGLGraphView {
   #pressed = null;
 
   /**
-   * @param {{ container: HTMLElement, canvasWrapper?: HTMLElement, settings: { values: object },
+   * @param {{ container: HTMLElement, settings: { values: object },
    *   handlers: object, flowToward?: "source" | "target" }} options flowToward: which way a lit lineage's pulses run
    *   along the page's edges (to the product: "source" where edges run product → ingredient)
    */
@@ -86,7 +86,7 @@ export class WebGLGraphView {
       tapSelects: false,
       worker: "auto",
     });
-    this.#remember(values);
+    this.#sent = this.#wanted(values);
     this.#bindEvents();
   }
 
@@ -123,10 +123,6 @@ export class WebGLGraphView {
     };
   }
 
-  #remember(values) {
-    this.#sent = this.#wanted(values);
-  }
-
   /**
    * Hand Prismatrix whatever settings changed: layout, physics, animation, theme, node and edge options, and the
    * nodes' and edges' own styles. Cheap when nothing did. The page calls it after every settings change.
@@ -157,12 +153,6 @@ export class WebGLGraphView {
       c.setPhysics(layout.physics, layout.physicsOptions);
   }
 
-  /** A style-only setting changed: syncSettings has handed it over already. */
-  applyStylesheet() {}
-
-  /** The background follows the theme (the design tokens): syncSettings has handed it over already. */
-  syncBackground() {}
-
   // ---------------------------------------------------------------- the graph
 
   /** The class styles in force: the item states', the edge sources' (when edges are coloured by source), the page's. */
@@ -181,7 +171,7 @@ export class WebGLGraphView {
   #graphJSON() {
     const values = this.#settings.values;
     const rules = this.#rules();
-    const fill = nodeFillToken();
+    const fill = tokenTheme().card;
     return {
       nodes: [...this.#nodes.values()].map((element) =>
         nodeJSON(element, values, rules, fill),
@@ -272,10 +262,6 @@ export class WebGLGraphView {
     return !!this.#model.node(nodeId);
   }
 
-  nodeIds() {
-    return this.#model.nodes.map((n) => n.id);
-  }
-
   /** A quick ring that leaves the node: feedback for a tap. */
   pulse(nodeId) {
     this.#controller.pulse(nodeId);
@@ -292,11 +278,6 @@ export class WebGLGraphView {
       nodeIds?.size || nodeIds?.length ? [...nodeIds] : null,
     );
   }
-
-  /** Hovering lights a node's lineage by itself (the hoverMode setting); the pages' calls are kept for them. */
-  showLineage() {}
-
-  clearLineage() {}
 
   // ---------------------------------------------------------------- viewport and export
 
@@ -371,9 +352,6 @@ export class WebGLGraphView {
       { animate: true },
     );
   }
-
-  /** The canvas follows its own size; nothing to do. */
-  resize() {}
 
   /**
    * A PNG of the whole graph as shown (highlight included), `scale` device px per graph px.

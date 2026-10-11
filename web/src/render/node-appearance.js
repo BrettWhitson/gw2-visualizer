@@ -5,7 +5,6 @@ import {
   UI_COLORS,
   DISCIPLINE_COLORS,
   COST_HEAT_COLORS,
-  FORGE_BADGE_URI,
   EntityKind,
 } from "../config/constants.js";
 import {
@@ -81,7 +80,7 @@ export class NodeAppearance {
       .join(" ");
   }
 
-  /** The element `data` for a node. `bgs` carries the icon + forge badge as a two-layer background. */
+  /** The element `data` for a node. */
   nodeData(node, rootCost) {
     const entity = this.gameData.getEntity(node.kind, node.entityId);
     const data = {
@@ -92,10 +91,6 @@ export class NodeAppearance {
     if (entity.icon) data.icon = entity.icon;
     if (this.settings.values.nodeLook === "card")
       Object.assign(data, this.cardData(node, entity.name));
-    if (isForgeResult(node))
-      data.bgs = entity.icon
-        ? [entity.icon, FORGE_BADGE_URI]
-        : [FORGE_BADGE_URI];
     return data;
   }
 

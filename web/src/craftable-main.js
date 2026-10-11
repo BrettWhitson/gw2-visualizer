@@ -175,22 +175,14 @@ class CraftablePage {
   start() {
     this.graphView = new WebGLGraphView({
       container: $("#cy"),
-      canvasWrapper: $("#cyWrap"),
       settings: this.graphSettings,
       flowToward: "target", // edges run ingredient → product here
       handlers: {
         onNodeTap: (nodeId) => this.#onNodeTap(nodeId),
         onNodeDoubleTap: (nodeId) => this.#toggle(nodeId),
-        onNodeContextTap: () => {},
         onBackgroundTap: () => this.#select(null),
-        onNodeHoverStart: (nodeId, event) => {
-          this.graphView.showLineage(nodeId);
-          this.#showTooltip(nodeId, event);
-        },
-        onNodeHoverEnd: () => {
-          this.graphView.clearLineage();
-          $("#craftTooltip").hidden = true;
-        },
+        onNodeHoverStart: (nodeId, event) => this.#showTooltip(nodeId, event),
+        onNodeHoverEnd: () => ($("#craftTooltip").hidden = true),
         onPointerMove: (event) => this.#moveTooltip(event),
         onViewportChange: () => ($("#craftTooltip").hidden = true),
       },
@@ -641,7 +633,6 @@ class CraftablePage {
         this.#revealRoute(route.dataset.routeFrom, Number(route.dataset.route));
       if (event.target.closest("[data-close-details]")) this.#select(null);
     });
-    window.addEventListener("resize", () => this.graphView.resize());
     const layoutButtons = document.querySelectorAll("[data-layout]");
     const syncLayoutButtons = () =>
       layoutButtons.forEach((button) =>
@@ -939,7 +930,6 @@ class CraftablePage {
     this.graphView.render({
       nodeElements,
       edgeElements,
-      nodesById: this.graph.nodesById,
       fit,
       anchorNodeId,
     });
@@ -1072,13 +1062,11 @@ class CraftablePage {
     this.graphView.select(nodeId);
     const node = nodeId && this.graph?.nodesById.get(nodeId);
     const details = $("#craftDetails");
-    const wasHidden = details.hidden;
     if (!node || node.isOverflow) details.hidden = true;
     else {
       details.innerHTML = this.#detailsHtml(node);
       details.hidden = false;
     }
-    if (wasHidden !== details.hidden) this.graphView.resize(); // the graph gives up or regains the column
   }
 
   #detailsHtml(node) {

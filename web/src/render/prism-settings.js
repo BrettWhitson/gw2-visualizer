@@ -136,9 +136,6 @@ export function modelOptions(s) {
             : "step",
       corner: s.edgeRouting === "round-taxi" ? s.edgeCornerRadius : 0,
       width: clamp(s.edgeWidth, 0.25, 8),
-      // Coloured by an end ("child", "parent"), each edge gets that end's colour as its own style (edgeJSON): a
-      // node's fill is its dark face unless it's tinted.
-      colorBy: "single",
       color: s.edgeColor,
       opacity: clamp(s.edgeOpacity, 0.05, 1),
       dash: s.edgeLineStyle,
@@ -203,7 +200,6 @@ export function animationOptions(s, { flowToward = "source" } = {}) {
  */
 export function themeOptions(s, tokens) {
   return {
-    base: "dark",
     ...tokens,
     edge: s.edgeColor,
     ancestors: s.lineageUpColor,

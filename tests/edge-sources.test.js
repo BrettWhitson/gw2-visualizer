@@ -2,10 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import {
-  edgeSourceColor,
-  edgeSourceRules,
-} from "../web/src/render/edge-sources.js";
+import { edgeSourceRules } from "../web/src/render/edge-sources.js";
 import {
   EDGE_SOURCE_STYLES,
   SOURCE_COLORS,
@@ -27,9 +24,9 @@ test("a rule for every source category but the root, in literal colours Prism ac
 test("colours follow the page's --s-* tokens when they're set", () => {
   const tokens = { "s-craft": "#123456" };
   const read = (name) => tokens[name] ?? null;
-  assert.equal(edgeSourceColor("craft", read), "#123456");
-  assert.equal(edgeSourceColor("mf", read), EDGE_SOURCE_STYLES.mf.color);
-  assert.equal(edgeSourceRules(read).edges["src-craft"].color, "#123456");
+  const { edges } = edgeSourceRules(read);
+  assert.equal(edges["src-craft"].color, "#123456");
+  assert.equal(edges["src-mf"].color, EDGE_SOURCE_STYLES.mf.color);
 });
 
 test("the mirrored colours match the tokens in app.css", () => {

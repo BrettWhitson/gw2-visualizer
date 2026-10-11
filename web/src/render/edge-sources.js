@@ -1,4 +1,5 @@
 import { EDGE_SOURCE_STYLES } from "../config/constants.js";
+import { cssToken } from "./theme-tokens.js";
 
 /**
  * Edge style patches (by class) for edges coloured by where the ingredient comes from (Customize → Edges → Color "Where it comes
@@ -7,32 +8,15 @@ import { EDGE_SOURCE_STYLES } from "../config/constants.js";
  * color-mix().
  */
 
-/** A CSS custom property's value on the page, or null (outside a browser, or unset). */
-function cssToken(name) {
-  const style =
-    globalThis.document &&
-    globalThis.getComputedStyle?.(document.documentElement);
-  return style?.getPropertyValue(`--${name}`).trim() || null;
-}
-
-/**
- * The colour for a source category: its token, else the mirrored fallback.
- * @param {keyof typeof EDGE_SOURCE_STYLES} category
- * @param {(token: string) => string | null} [readToken]
- */
-export function edgeSourceColor(category, readToken = cssToken) {
-  const style = EDGE_SOURCE_STYLES[category];
-  return readToken(style.token) || style.color;
-}
-
 /**
  * The `src-<category>` edge rules, as Prismatrix edge style: `{ edges: { "src-craft": { color, dash? }, … } }`.
  * @param {(token: string) => string | null} [readToken]
  */
 export function edgeSourceRules(readToken = cssToken) {
   const edges = {};
-  for (const [category, { pattern }] of Object.entries(EDGE_SOURCE_STYLES)) {
-    const color = edgeSourceColor(category, readToken);
+  for (const [category, style] of Object.entries(EDGE_SOURCE_STYLES)) {
+    const color = readToken(style.token) || style.color;
+    const { pattern } = style;
     edges[`src-${category}`] = pattern ? { color, dash: pattern } : { color };
   }
   return { edges };

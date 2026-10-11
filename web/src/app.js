@@ -121,7 +121,6 @@ export class CraftingTreeApp {
       handle: $("#panelHandle"),
       resizer: $("#panelResizer"),
       onResize: (width, isFinal) => {
-        this.graphView.resize();
         if (isFinal) this.settings.set("sidebarWidth", width);
       },
     });
@@ -191,7 +190,6 @@ export class CraftingTreeApp {
     });
     this.graphView = new WebGLGraphView({
       container: $("#cy"),
-      canvasWrapper: $("#cyWrap"),
       settings: this.settings,
       handlers: {
         onNodeTap: (nodeId, event) => this.#onNodeTap(nodeId, event),
@@ -200,10 +198,7 @@ export class CraftingTreeApp {
         onBackgroundTap: () => this.selectNode(null),
         onNodeHoverStart: (nodeId, event) =>
           this.#onNodeHoverStart(nodeId, event),
-        onNodeHoverEnd: () => {
-          this.graphView.clearLineage();
-          this.tooltip.hide();
-        },
+        onNodeHoverEnd: () => this.tooltip.hide(),
         onPointerMove: (event) => this.tooltip.moveTo(event),
         onViewportChange: () => this.tooltip.hide(),
       },
@@ -275,7 +270,7 @@ export class CraftingTreeApp {
     this.searchBox.setText(item.name);
     document.title = `${item.name} — ${SITE_TITLE}`;
     this.#syncLocationHash();
-    this.#render({ fit: "smart", grow: true });
+    this.#render({ fit: "smart" });
     this.selectNode(this.graphView.rootNodeId);
   }
 
@@ -407,7 +402,6 @@ export class CraftingTreeApp {
       if (redraw === Redraw.fit) this.#render({ fit: true });
       else if (redraw === Redraw.relayout)
         this.#render({ anchorNodeId: this.#anchorNodeId() });
-      else if (redraw === Redraw.restyle) this.graphView.applyStylesheet();
     }
   }
 
@@ -425,15 +419,12 @@ export class CraftingTreeApp {
 
   #afterBulkSettingsChange() {
     this.optionPanels.forEach((panel) => panel.render());
-    this.graphView.syncBackground();
-    this.graphView.applyStylesheet();
     if (this.treeState.hasRoot) this.#render({ fit: true });
   }
 
   toggleSidePanel() {
     this.settings.set("sidebarOpen", !this.settings.values.sidebarOpen);
     this.sidePanel.setOpen(this.settings.values.sidebarOpen);
-    this.graphView.resize();
   }
 
   openCustomizeTab() {
@@ -606,9 +597,9 @@ export class CraftingTreeApp {
 
   /**
    * Rebuild tree → graph → elements and hand them to the graph view, then refresh the side panels.
-   * @param {{ fit?: boolean | 'smart', anchorNodeId?: string | null, grow?: boolean }} [options]
+   * @param {{ fit?: boolean | 'smart', anchorNodeId?: string | null }} [options]
    */
-  #render({ fit = false, anchorNodeId = null, grow = false } = {}) {
+  #render({ fit = false, anchorNodeId = null } = {}) {
     if (!this.treeState.hasRoot) return;
     $("#empty").hidden = true;
 
@@ -631,10 +622,8 @@ export class CraftingTreeApp {
     this.graphView.render({
       nodeElements,
       edgeElements,
-      nodesById: this.graph.nodesById,
       fit,
       anchorNodeId,
-      grow,
     });
     this.statusBar.setCounts(this.graph.nodes.length, this.graph.edges.length);
     this.#refreshPanels();
@@ -748,7 +737,6 @@ export class CraftingTreeApp {
   }
 
   #onNodeHoverStart(nodeId, event) {
-    this.graphView.showLineage(nodeId);
     const node = this.graph.nodesById.get(nodeId);
     if (node && this.settings.values.showTooltips)
       this.tooltip.show(node, event);

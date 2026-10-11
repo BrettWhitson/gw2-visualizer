@@ -1,6 +1,6 @@
+import { mount } from "svelte";
 import Legend from "./Legend.svelte";
 import { LegendState } from "./legend-state.svelte.js";
-import { mountIsland } from "./islands.js";
 import { reactiveSettings } from "./settings.svelte.js";
 
 /**
@@ -19,6 +19,7 @@ export function createLegend(element, { gameData, settings }, callbacks) {
     element,
     callbacks,
   });
-  mountIsland(Legend, element, { legend });
+  element.replaceChildren();
+  mount(Legend, { target: element, props: { legend } });
   return legend;
 }

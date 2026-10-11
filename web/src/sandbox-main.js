@@ -83,21 +83,14 @@ let frames = 0;
 function start() {
   view = new WebGLGraphView({
     container: $("#cy"),
-    canvasWrapper: $("#cyWrap"),
     settings,
     handlers: {
       onNodeTap: (id) => select(id),
       onNodeDoubleTap: (id) => toggle(id),
       onNodeContextTap: (id) => view.pulse(id),
       onBackgroundTap: () => select(null),
-      onNodeHoverStart: (id, event) => {
-        view.showLineage(id);
-        showTooltip(id, event);
-      },
-      onNodeHoverEnd: () => {
-        view.clearLineage();
-        $("#sbTooltip").hidden = true;
-      },
+      onNodeHoverStart: (id, event) => showTooltip(id, event),
+      onNodeHoverEnd: () => ($("#sbTooltip").hidden = true),
       onPointerMove: (event) => moveTooltip(event),
       onViewportChange: () => ($("#sbTooltip").hidden = true),
     },
@@ -168,7 +161,7 @@ function regenerate() {
   collapsed = new Set();
   selectedId = null;
   const made = performance.now() - started;
-  draw({ fit: "smart", grow: true });
+  draw({ fit: "smart" });
   status(
     `${graph.nodes.length.toLocaleString()} items and ${graph.edges.length.toLocaleString()} links, made in ${Math.round(made)} ms; laid out and drawn in ${Math.round(lastLayoutMs)} ms.`,
   );
@@ -193,7 +186,7 @@ function elements() {
 }
 
 /** Lay out and draw what's shown (the layout layer, then the view morphs from the previous graph). */
-function draw({ fit = false, anchorNodeId = null, grow = false } = {}) {
+function draw({ fit = false, anchorNodeId = null } = {}) {
   const result = elements();
   hasChildren = result.hasChildren;
   shownIds = result.nodeElements.map((element) => element.data.id);
@@ -202,7 +195,7 @@ function draw({ fit = false, anchorNodeId = null, grow = false } = {}) {
     target: data.target,
   }));
   const started = performance.now();
-  view.render({ ...result, fit, anchorNodeId, grow });
+  view.render({ ...result, fit, anchorNodeId });
   lastLayoutMs = performance.now() - started;
   if (selectedId && shownIds.includes(selectedId)) view.select(selectedId);
 }
@@ -416,7 +409,7 @@ function bindActions() {
       graph = loaded;
       collapsed = new Set();
       selectedId = null;
-      draw({ fit: true, grow: true });
+      draw({ fit: true });
       status(
         `Loaded ${graph.nodes.length.toLocaleString()} items from ${file.name}.`,
       );

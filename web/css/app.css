@@ -902,25 +902,6 @@ table.mats tfoot td {
   background: linear-gradient(90deg, #34405a, #ffb347, #ff4d3d);
 }
 
-/* ---------- canvas backgrounds (pattern tracks pan/zoom from JS) ---------- */
-#cyWrap[data-bg="plain"] {
-  background: var(--bg);
-}
-#cyWrap[data-bg="dots"] {
-  background-color: var(--bg);
-  background-image: radial-gradient(
-    circle,
-    var(--line2) 1.2px,
-    transparent 1.6px
-  );
-}
-#cyWrap[data-bg="grid"] {
-  background-color: #0c1422;
-  background-image:
-    linear-gradient(#1b1d22 1px, transparent 1px),
-    linear-gradient(90deg, #1b1d22 1px, transparent 1px);
-}
-
 /* ---------- motion ---------- */
 @keyframes fadeUp {
   from {
@@ -978,9 +959,6 @@ table.mats td {
   transition:
     color 0.15s,
     box-shadow 0.2s;
-}
-#cyWrap {
-  transition: background-color 0.3s;
 }
 #legend {
   transition: opacity 0.2s;
