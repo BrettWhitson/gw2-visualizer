@@ -151,8 +151,8 @@ Larger architectural changes that have been weighed but not made. Each is worth 
   the pages over one at a time, crafting last.
 
 **Our own graph engine: Prismatrix**
-- [Prismatrix](https://github.com/BrettWhitson/prismatrix) ("lightning fast and lightweight graph rendering and
-  physics engine") is its own open-source project, free of anything GW2. It combines the former Prism (rendering)
+- [Prismatrix](https://github.com/BrettWhitson/prismatrix) ("force graph layout and rendering
+  engine") is its own open-source project, free of anything GW2. It combines the former Prism (rendering)
   and Tether (layout and physics) into one package with two layers: `prismatrix` for everything, and
   `prismatrix/layout` for layout and physics alone (no DOM or WebGL). The app pins a release tag as a package that
   Vite bundles (`npm run dev:local` uses the checkout beside this repo instead); `src/render/prism-settings.js` maps
