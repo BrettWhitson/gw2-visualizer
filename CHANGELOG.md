@@ -3,13 +3,14 @@
 All notable changes. Versions follow `0.MINOR.PATCH` until the first stable release; bump `APP_VERSION` in
 `web/src/config/constants.js` and `version` in `package.json` together (the service-worker cache is keyed on it).
 
-## Unreleased
+## 0.12.0 — 2026-10-10
 
-- **A new graph engine: Prismatrix 0.5.** The crafting, craftable and sandbox pages draw with Prismatrix's rebuilt
-  engine. Everything you could see before is still there (owned, cheaper, cycle, collapsed and Mystic Forge looks,
-  item cards, hover and selection lineage with its colours and flow, the legend highlight, flashes, the minimap, PNG
-  export), with tidier layouts: labels always have room, edges stop at a label instead of striking through it, and a
-  browser without WebGL2 still draws the graph (more slowly) instead of showing an error. A few looks changed or went:
+- **A new graph engine: Prismatrix 0.5, rewritten from scratch.** The crafting, craftable and sandbox pages draw with
+  Prismatrix's new engine, written anew rather than built on the 0.4 code. Everything you could see before is still
+  there (owned, cheaper, cycle, collapsed and Mystic Forge looks, item cards, hover and selection lineage with its
+  colours and flow, the legend highlight, flashes, the minimap, PNG export), with tidier layouts: labels always have
+  room, edges stop at a label instead of striking through it, and a browser without WebGL2 still draws the graph (more
+  slowly) instead of showing an error. A few looks changed or went:
   - Node labels are one line (a second line, like "(have 3)" or the cost line, follows on the same line after a
     dot), cut short with "…" past the wrap width (shown whole on hover).
   - Retired settings: label fading and the label backdrop (labels are never hidden or crowded now), wrapping
